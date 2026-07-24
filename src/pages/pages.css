@@ -1,0 +1,257 @@
+/* Pages CSS styles */
+
+/* Splash Page */
+.splash-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background-color: var(--bg-dark);
+  text-align: center;
+  padding: 24px;
+}
+
+.splash-logo {
+  width: 140px;
+  height: auto;
+  margin-bottom: 24px;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+/* Auth Pages (Login & Register) */
+.auth-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+  padding: 32px 16px;
+  gap: 20px;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.auth-logo {
+  height: 48px;
+  margin-bottom: 16px;
+}
+
+.auth-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.auth-subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+.auth-footer {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.auth-link {
+  color: var(--primary-green);
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Feed Page */
+.feed-header-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+/* Profile Page */
+.profile-header-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.profile-avatar-large {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--primary-green);
+  margin-bottom: 16px;
+}
+
+.profile-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.profile-username {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.profile-bio {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #dddddd;
+  max-width: 320px;
+  margin-bottom: 16px;
+}
+
+.profile-stats-row {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.profile-stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.profile-stat-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary-green);
+}
+
+.profile-stat-lbl {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Chat Page */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-thread-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.chat-thread-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+}
+
+.chat-thread-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.chat-thread-details {
+  flex: 1;
+}
+
+.chat-thread-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.chat-thread-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.chat-thread-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.chat-thread-msg {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.chat-messages-area {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+  gap: 8px;
+}
+
+.chat-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Admin Styles */
+.admin-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: var(--bg-card);
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-sidebar-item:hover {
+  background-color: #252525;
+  color: var(--text-primary);
+}
+
+.admin-sidebar-item.active {
+  background-color: rgba(136, 217, 130, 0.15);
+  color: var(--primary-green);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}

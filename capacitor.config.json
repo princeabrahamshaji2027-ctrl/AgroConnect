@@ -1,0 +1,6 @@
+{
+  "appId": "com.agroconnect.app",
+  "appName": "AgroConnect",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

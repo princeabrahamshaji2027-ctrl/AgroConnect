@@ -1,0 +1,38 @@
+[
+  {
+    "id": "comm1",
+    "name": "Organic Farmers India",
+    "members": 12400,
+    "description": "A group dedicated to chemical-free natural farming, vermicompost, and organic pesticide recipes.",
+    "category": "Organic",
+    "image": "https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?auto=format&fit=crop&q=80&w=300&h=200",
+    "joined": true
+  },
+  {
+    "id": "comm2",
+    "name": "Hydroponics & Soilless",
+    "members": 4300,
+    "description": "Sharing setups, water chemistry, and lighting advice for urban growers and hydroponic startups.",
+    "category": "Technology",
+    "image": "https://images.unsplash.com/photo-1530595467537-0b5996c41f2d?auto=format&fit=crop&q=80&w=300&h=200",
+    "joined": false
+  },
+  {
+    "id": "comm3",
+    "name": "Tractor & Machinery Owners",
+    "members": 8900,
+    "description": "Discussion about farm tractors, harvest machinery maintenance, implements, and rental tools.",
+    "category": "Equipment",
+    "image": "https://images.unsplash.com/photo-1533240332313-0db49b439ad3?auto=format&fit=crop&q=80&w=300&h=200",
+    "joined": false
+  },
+  {
+    "id": "comm4",
+    "name": "Pest & Disease Advisory",
+    "members": 15600,
+    "description": "Post photos of damaged crops, weeds, or insects, and get quick advice from qualified crop doctors.",
+    "category": "Advisory",
+    "image": "https://images.unsplash.com/photo-1563514223768-45198aeeed77?auto=format&fit=crop&q=80&w=300&h=200",
+    "joined": true
+  }
+]

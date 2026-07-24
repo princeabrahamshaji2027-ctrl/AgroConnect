@@ -1,0 +1,76 @@
+[
+  {
+    "id": "post1",
+    "userId": "user1",
+    "userName": "Ramesh Kumar",
+    "userAvatar": "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200",
+    "userRole": "Farmer",
+    "content": "Our organic Basmati crop is growing beautifully this season! Switching to vermicompost has significantly improved our soil water retention. Highly recommend fellow farmers to try it out. 🌾💧",
+    "image": "https://images.unsplash.com/photo-1530595467537-0b5996c41f2d?auto=format&fit=crop&q=80&w=600&h=400",
+    "likes": 245,
+    "comments": [
+      {
+        "id": "c1",
+        "userName": "Dr. Anita Rao",
+        "userAvatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=100&h=100",
+        "content": "Excellent work, Ramesh! Vermicompost increases soil microbial activity which aids nutrient absorption.",
+        "time": "2 hours ago"
+      },
+      {
+        "id": "c2",
+        "userName": "Suresh Patel",
+        "userAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=100&h=100",
+        "content": "Do you produce your own vermicompost or buy it? We supply premium organic fertilizer bags too.",
+        "time": "1 hour ago"
+      }
+    ],
+    "category": "Organic Farming",
+    "location": "Amritsar, Punjab",
+    "tags": ["organic", "basmati", "soilhealth"],
+    "time": "3 hours ago",
+    "bookmarked": false,
+    "liked": false
+  },
+  {
+    "id": "post2",
+    "userId": "user2",
+    "userName": "Dr. Anita Rao",
+    "userAvatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200",
+    "userRole": "Agronomist",
+    "content": "🚨 Alert for tomato growers in Maharashtra & Gujarat! We have reports of early blight leaf spots due to unexpected humidity. Look out for concentric dark rings on older leaves. Treat with organic copper fungicides early! 🍅🍂",
+    "image": "https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?auto=format&fit=crop&q=80&w=600&h=400",
+    "likes": 189,
+    "comments": [
+      {
+        "id": "c3",
+        "userName": "Ramesh Kumar",
+        "userAvatar": "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=100&h=100",
+        "content": "Thanks for the heads up, Doctor. Checking my tomato plants right away.",
+        "time": "30 mins ago"
+      }
+    ],
+    "category": "Pest Control",
+    "location": "Hyderabad, Telangana",
+    "tags": ["tomato", "blight", "cropcare"],
+    "time": "5 hours ago",
+    "bookmarked": true,
+    "liked": true
+  },
+  {
+    "id": "post3",
+    "userId": "user3",
+    "userName": "Suresh Patel",
+    "userAvatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200&h=200",
+    "userRole": "Distributor",
+    "content": "Excited to introduce the new IoT-based smart drip controllers. Allows you to monitor soil moisture level directly via mobile and automate water delivery. Drop a comment to check out wholesale pricing! 💧📱🚜",
+    "image": "https://images.unsplash.com/photo-1563514223768-45198aeeed77?auto=format&fit=crop&q=80&w=600&h=400",
+    "likes": 98,
+    "comments": [],
+    "category": "Agri Tech",
+    "location": "Ahmedabad, Gujarat",
+    "tags": ["agritech", "irrigation", "smartfarming"],
+    "time": "1 day ago",
+    "bookmarked": false,
+    "liked": false
+  }
+]

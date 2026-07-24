@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "totalUsers": 12450,
+    "userGrowth": 12.5,
+    "activeToday": 3840,
+    "activeGrowth": 8.2,
+    "totalPosts": 85600,
+    "postsGrowth": 18.4,
+    "pendingReports": 14,
+    "reportsGrowth": -15.0
+  },
+  "recentReports": [
+    {
+      "id": "rep1",
+      "reportedName": "Suresh Patel",
+      "reportedType": "user",
+      "reporterName": "Farmer Anil",
+      "reason": "Spamming seed listings multiple times in discussion channels.",
+      "time": "1 hour ago",
+      "status": "pending"
+    },
+    {
+      "id": "rep2",
+      "reportedName": "Crop weed killer spray advertisement",
+      "reportedType": "post",
+      "reporterName": "Dr. Anita Rao",
+      "reason": "Selling banned chemical fertilizers on organic discussion groups.",
+      "time": "3 hours ago",
+      "status": "pending"
+    }
+  ],
+  "dailyActiveUsersChart": [
+    {"label": "Mon", "value": 3100},
+    {"label": "Tue", "value": 3400},
+    {"label": "Wed", "value": 3200},
+    {"label": "Thu", "value": 3800},
+    {"label": "Fri", "value": 3600},
+    {"label": "Sat", "value": 4100},
+    {"label": "Sun", "value": 3840}
+  ],
+  "postsGrowthChart": [
+    {"label": "May", "value": 12000},
+    {"label": "Jun", "value": 15000},
+    {"label": "Jul", "value": 18400}
+  ]
+}
