@@ -1,0 +1,847 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2709
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww12000\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 <!DOCTYPE html>\
+\
+<html class="dark" lang="en"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>\
+<title>Agro Connect - Admin Dashboard</title>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "tertiary-fixed-dim": "#b9c8de",\
+                        "secondary-container": "#e89300",\
+                        "surface-container-low": "#161d17",\
+                        "surface-container-highest": "#2f372f",\
+                        "on-tertiary-container": "#384658",\
+                        "on-secondary-fixed-variant": "#663e00",\
+                        "on-secondary-container": "#563400",\
+                        "on-primary-fixed-variant": "#005228",\
+                        "tertiary-container": "#a5b4ca",\
+                        "surface-dim": "#0e150f",\
+                        "outline": "#869486",\
+                        "surface-bright": "#333b34",\
+                        "on-tertiary": "#233143",\
+                        "on-primary-fixed": "#00210c",\
+                        "on-secondary-fixed": "#2b1700",\
+                        "surface-container-high": "#242c25",\
+                        "surface": "#0e150f",\
+                        "error": "#ffb4ab",\
+                        "on-tertiary-fixed-variant": "#39485a",\
+                        "secondary-fixed-dim": "#ffb961",\
+                        "inverse-on-surface": "#2b322b",\
+                        "surface-container": "#1a211b",\
+                        "tertiary-fixed": "#d4e4fa",\
+                        "on-primary-container": "#005027",\
+                        "surface-tint": "#4ae183",\
+                        "primary-container": "#2ecc71",\
+                        "primary-fixed": "#6bfe9c",\
+                        "on-surface": "#dce5da",\
+                        "on-error-container": "#ffdad6",\
+                        "primary-fixed-dim": "#4ae183",\
+                        "inverse-surface": "#dce5da",\
+                        "on-tertiary-fixed": "#0d1c2d",\
+                        "on-background": "#dce5da",\
+                        "on-surface-variant": "#bbcbbb",\
+                        "tertiary": "#c0d0e6",\
+                        "error-container": "#93000a",\
+                        "secondary": "#ffb961",\
+                        "secondary-fixed": "#ffddb9",\
+                        "on-primary": "#003919",\
+                        "on-secondary": "#472a00",\
+                        "on-error": "#690005",\
+                        "outline-variant": "#3d4a3e",\
+                        "surface-container-lowest": "#09100a",\
+                        "inverse-primary": "#006d37",\
+                        "primary": "#54e98a",\
+                        "surface-variant": "#2f372f",\
+                        "background": "#0e150f"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "card-padding": "20px",\
+                        "unit-base": "4px",\
+                        "gutter-md": "16px",\
+                        "sidebar-width": "260px",\
+                        "container-gap": "24px"\
+                    \},\
+                    "fontFamily": \{\
+                        "body-md": ["Inter"],\
+                        "body-sm": ["Inter"],\
+                        "headline-lg": ["Inter"],\
+                        "headline-lg-mobile": ["Inter"],\
+                        "label-md": ["Inter"],\
+                        "label-sm": ["Inter"],\
+                        "headline-xl": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "body-md": ["14px", \{ "lineHeight": "20px", "fontWeight": "400" \}],\
+                        "body-sm": ["13px", \{ "lineHeight": "18px", "fontWeight": "400" \}],\
+                        "headline-lg": ["20px", \{ "lineHeight": "28px", "fontWeight": "600" \}],\
+                        "headline-lg-mobile": ["18px", \{ "lineHeight": "24px", "fontWeight": "600" \}],\
+                        "label-md": ["12px", \{ "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500" \}],\
+                        "label-sm": ["11px", \{ "lineHeight": "14px", "letterSpacing": "0.05em", "fontWeight": "600" \}],\
+                        "headline-xl": ["24px", \{ "lineHeight": "32px", "fontWeight": "600" \}]\
+                    \}\
+                \}\
+            \}\
+        \}\
+    </script>\
+<style>\
+        body \{\
+            background-color: #0F1112; /* Fallback */\
+        \}\
+        .card-bg \{\
+            background-color: #171A1D;\
+            box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);\
+        \}\
+        /* Custom Chart Line */\
+        .chart-path \{\
+            stroke-dasharray: 1000;\
+            stroke-dashoffset: 1000;\
+            animation: dash 2s ease-out forwards;\
+        \}\
+        @keyframes dash \{\
+            to \{\
+                stroke-dashoffset: 0;\
+            \}\
+        \}\
+        /* Custom Scrollbar for sidebar if needed */\
+        .custom-scrollbar::-webkit-scrollbar \{\
+            width: 4px;\
+        \}\
+        .custom-scrollbar::-webkit-scrollbar-track \{\
+            background: transparent;\
+        \}\
+        .custom-scrollbar::-webkit-scrollbar-thumb \{\
+            background: #2f372f;\
+            border-radius: 4px;\
+        \}\
+    </style>\
+</head>\
+<body class="bg-background text-on-surface font-body-md antialiased overflow-hidden">\
+<!-- TopNavBar -->\
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-6 z-40">\
+<div class="flex items-center">\
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer mr-4">menu</span>\
+</div>\
+<div class="flex-1 max-w-xl mx-4">\
+<div class="relative">\
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>\
+<input class="w-full bg-[#171A1D] border border-outline-variant rounded-lg pl-10 pr-4 py-2 text-on-surface text-body-sm focus:outline-none focus:border-primary-container transition-colors placeholder:text-on-surface-variant/50" placeholder="Search anything..." type="text"/>\
+</div>\
+</div>\
+<div class="flex items-center gap-6">\
+<div class="flex items-center gap-4">\
+<div class="relative cursor-pointer hover:text-primary transition-colors text-on-surface-variant">\
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>\
+<span class="absolute -top-1 -right-1 w-4 h-4 bg-primary-container rounded-full flex items-center justify-center text-[10px] font-bold text-on-primary">3</span>\
+</div>\
+<div class="cursor-pointer hover:text-primary transition-colors text-on-surface-variant">\
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>\
+</div>\
+</div>\
+<div class="flex items-center gap-3 border-l border-outline-variant pl-6 cursor-pointer">\
+<div class="flex flex-col items-end">\
+<span class="font-label-md text-on-surface font-bold">Admin</span>\
+<span class="font-label-sm text-on-surface-variant">Super Admin</span>\
+</div>\
+<img alt="Admin User Avatar" class="w-9 h-9 rounded-full object-cover border border-outline-variant" data-alt="A small circular avatar of a professional administrator in a dark, high-end studio setting. The lighting is focused and soft, highlighting a modern aesthetic. The background is a deep, dark grey. Corporate modern style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"/>\
+</div>\
+</div>\
+</header>\
+<!-- SideNavBar -->\
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-surface border-r border-outline-variant flex flex-col z-50">\
+<div class="h-16 flex items-center px-6 border-b border-outline-variant">\
+<div class="flex items-center gap-2">\
+<span class="material-symbols-outlined text-primary-container text-[28px]" style="font-variation-settings: 'FILL' 1;">eco</span>\
+<span class="font-headline-lg text-on-surface font-bold">Agro Connect</span>\
+</div>\
+</div>\
+<nav class="flex-1 overflow-y-auto custom-scrollbar py-4 flex flex-col gap-1 px-3">\
+<!-- Active Tab -->\
+<a class="bg-surface-container-highest text-primary-container border-l-4 border-primary-container px-4 py-2 flex items-center gap-3 rounded-r-lg mb-4" href="#">\
+<span class="material-symbols-outlined">dashboard</span>\
+<span class="font-label-md font-bold">Dashboard</span>\
+</a>\
+<!-- Groups -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">User Management</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">group</span>\
+<span class="font-label-md">Users</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">medical_services</span>\
+<span class="font-label-md">Experts</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">store</span>\
+<span class="font-label-md">Sellers</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">interests</span>\
+<span class="font-label-md">User Interests</span>\
+</a>\
+</div>\
+<!-- Content Management -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">Content Management</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">article</span>\
+<span class="font-label-md">Posts</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">chat</span>\
+<span class="font-label-md">Comments</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">report</span>\
+<span class="font-label-md">Reports</span>\
+</a>\
+</div>\
+<!-- Marketplace -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">Marketplace</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">shopping_bag</span>\
+<span class="font-label-md">Products</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">shopping_cart</span>\
+<span class="font-label-md">Orders</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">category</span>\
+<span class="font-label-md">Categories</span>\
+</a>\
+</div>\
+<!-- Consultations -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">Consultations</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">event</span>\
+<span class="font-label-md">Appointments</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">groups</span>\
+<span class="font-label-md">Meetings</span>\
+</a>\
+</div>\
+<!-- Reviews & Ratings -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">Reviews &amp; Ratings</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">grade</span>\
+<span class="font-label-md">Reviews</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">star</span>\
+<span class="font-label-md">Ratings</span>\
+</a>\
+</div>\
+<!-- News & Content -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">News &amp; Content</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">newspaper</span>\
+<span class="font-label-md">News</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">campaign</span>\
+<span class="font-label-md">Banners</span>\
+</a>\
+</div>\
+<!-- Notifications -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">Notifications</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">notifications</span>\
+<span class="font-label-md">Notifications</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">podcasts</span>\
+<span class="font-label-md">Broadcast</span>\
+</a>\
+</div>\
+<!-- Analytics -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">Analytics</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">analytics</span>\
+<span class="font-label-md">Analytics</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">insights</span>\
+<span class="font-label-md">Insights</span>\
+</a>\
+</div>\
+<!-- System -->\
+<div class="mb-4">\
+<h3 class="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">System</h3>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">settings</span>\
+<span class="font-label-md">Settings</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">admin_panel_settings</span>\
+<span class="font-label-md">Admins</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">history</span>\
+<span class="font-label-md">Activity Logs</span>\
+</a>\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">backup</span>\
+<span class="font-label-md">Backup</span>\
+</a>\
+</div>\
+</nav>\
+<div class="p-4 border-t border-outline-variant">\
+<a class="text-on-surface-variant hover:text-on-surface hover:bg-surface-variant px-4 py-2 flex items-center gap-3 rounded-lg transition-colors" href="#">\
+<span class="material-symbols-outlined text-[18px]">logout</span>\
+<span class="font-label-md">Logout</span>\
+</a>\
+</div>\
+</aside>\
+<!-- Main Content -->\
+<main class="ml-[260px] pt-16 h-screen overflow-y-auto bg-[#0F1112]">\
+<div class="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">\
+<!-- Page Header -->\
+<div class="flex justify-between items-end">\
+<div>\
+<h1 class="font-headline-xl text-on-surface mb-1">Dashboard</h1>\
+<p class="font-body-sm text-on-surface-variant">Welcome back, Admin! Here's what's happening on Agro Connect.</p>\
+</div>\
+<div class="flex items-center gap-2 bg-[#171A1D] border border-outline-variant rounded-lg px-4 py-2 text-body-sm text-on-surface-variant cursor-pointer hover:border-primary-container transition-colors">\
+<span class="material-symbols-outlined text-[16px]">calendar_today</span>\
+<span>May 18, 2025</span>\
+<span class="material-symbols-outlined text-[16px]">expand_more</span>\
+</div>\
+</div>\
+<!-- KPI Row -->\
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">\
+<!-- Total Users -->\
+<div class="card-bg rounded-xl p-4 flex flex-col gap-3">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 rounded-lg bg-[#1f2924] flex items-center justify-center">\
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">group</span>\
+</div>\
+<span class="font-label-sm text-on-surface-variant">Total Users</span>\
+</div>\
+<div class="font-headline-xl text-on-surface">12,458</div>\
+<div class="flex items-center gap-1 font-label-sm text-primary-container">\
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span>\
+<span>8.4% from last week</span>\
+</div>\
+</div>\
+<!-- Active Users -->\
+<div class="card-bg rounded-xl p-4 flex flex-col gap-3">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 rounded-lg bg-[#1f2924] flex items-center justify-center">\
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">person</span>\
+</div>\
+<span class="font-label-sm text-on-surface-variant">Active Users</span>\
+</div>\
+<div class="font-headline-xl text-on-surface">8,214</div>\
+<div class="flex items-center gap-1 font-label-sm text-primary-container">\
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span>\
+<span>6.7% from last week</span>\
+</div>\
+</div>\
+<!-- Total Posts -->\
+<div class="card-bg rounded-xl p-4 flex flex-col gap-3">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 rounded-lg bg-[#1f2924] flex items-center justify-center">\
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">eco</span>\
+</div>\
+<span class="font-label-sm text-on-surface-variant">Total Posts</span>\
+</div>\
+<div class="font-headline-xl text-on-surface">3,152</div>\
+<div class="flex items-center gap-1 font-label-sm text-primary-container">\
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span>\
+<span>12.3% from last week</span>\
+</div>\
+</div>\
+<!-- Expert Applications -->\
+<div class="card-bg rounded-xl p-4 flex flex-col gap-3">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 rounded-lg bg-[#2a2233] flex items-center justify-center">\
+<span class="material-symbols-outlined text-[#a074c4]" style="font-variation-settings: 'FILL' 1;">workspace_premium</span>\
+</div>\
+<span class="font-label-sm text-on-surface-variant">Expert Applications</span>\
+</div>\
+<div class="font-headline-xl text-on-surface">47</div>\
+<div class="flex items-center gap-1 font-label-sm text-primary-container">\
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span>\
+<span>15.2% from last week</span>\
+</div>\
+</div>\
+<!-- Total Orders -->\
+<div class="card-bg rounded-xl p-4 flex flex-col gap-3">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 rounded-lg bg-[#332514] flex items-center justify-center">\
+<span class="material-symbols-outlined text-secondary-container" style="font-variation-settings: 'FILL' 1;">shopping_cart</span>\
+</div>\
+<span class="font-label-sm text-on-surface-variant">Total Orders</span>\
+</div>\
+<div class="font-headline-xl text-on-surface">892</div>\
+<div class="flex items-center gap-1 font-label-sm text-primary-container">\
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span>\
+<span>9.8% from last week</span>\
+</div>\
+</div>\
+<!-- Pending Reports -->\
+<div class="card-bg rounded-xl p-4 flex flex-col gap-3">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 rounded-lg bg-[#331c1e] flex items-center justify-center">\
+<span class="material-symbols-outlined text-[#e74c3c]" style="font-variation-settings: 'FILL' 1;">warning</span>\
+</div>\
+<span class="font-label-sm text-on-surface-variant">Pending Reports</span>\
+</div>\
+<div class="font-headline-xl text-on-surface">23</div>\
+<div class="flex items-center gap-1 font-label-sm text-[#e74c3c]">\
+<span class="material-symbols-outlined text-[14px]">arrow_downward</span>\
+<span>4.1% from last week</span>\
+</div>\
+</div>\
+</div>\
+<!-- Middle Row -->\
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-6">\
+<!-- User Growth Chart -->\
+<div class="xl:col-span-4 card-bg rounded-xl p-5 flex flex-col">\
+<div class="flex justify-between items-center mb-6">\
+<h2 class="font-headline-lg-mobile text-on-surface">User Growth</h2>\
+<div class="flex items-center gap-1 bg-surface-variant rounded px-2 py-1 cursor-pointer">\
+<span class="font-label-sm text-on-surface-variant">This Month</span>\
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant">expand_more</span>\
+</div>\
+</div>\
+<div class="flex-1 relative w-full h-[220px]">\
+<!-- Chart Mockup with SVG -->\
+<div class="absolute inset-0 flex">\
+<!-- Y Axis Labels -->\
+<div class="flex flex-col justify-between text-[10px] text-on-surface-variant pr-3 pb-6 h-full">\
+<span>10K</span>\
+<span>8K</span>\
+<span>6K</span>\
+<span>4K</span>\
+<span>2K</span>\
+<span>0</span>\
+</div>\
+<!-- Chart Area -->\
+<div class="flex-1 relative border-l border-b border-outline-variant/30 h-[calc(100%-24px)]">\
+<!-- Grid Lines -->\
+<div class="absolute w-full top-0 border-t border-outline-variant/20"></div>\
+<div class="absolute w-full top-[20%] border-t border-outline-variant/20"></div>\
+<div class="absolute w-full top-[40%] border-t border-outline-variant/20"></div>\
+<div class="absolute w-full top-[60%] border-t border-outline-variant/20"></div>\
+<div class="absolute w-full top-[80%] border-t border-outline-variant/20"></div>\
+<!-- Line SVG -->\
+<svg class="absolute inset-0 w-full h-full" preserveaspectratio="none" viewbox="0 0 100 100">\
+<path class="chart-path" d="M 0 80 L 20 60 L 40 50 L 60 48 L 80 30 L 100 15" fill="none" stroke="#2ECC71" stroke-width="2" vector-effect="non-scaling-stroke"></path>\
+<!-- Dots -->\
+<circle cx="0" cy="80" fill="#2ECC71" r="3"></circle>\
+<circle cx="20" cy="60" fill="#2ECC71" r="3"></circle>\
+<circle cx="40" cy="50" fill="#2ECC71" r="3"></circle>\
+<circle cx="60" cy="48" fill="#2ECC71" r="3"></circle>\
+<circle cx="80" cy="30" fill="#2ECC71" r="3"></circle>\
+<circle cx="100" cy="15" fill="#2ECC71" r="3"></circle>\
+</svg>\
+</div>\
+</div>\
+<!-- X Axis Labels -->\
+<div class="absolute bottom-0 right-0 w-[calc(100%-32px)] flex justify-between text-[10px] text-on-surface-variant">\
+<span>May 1</span>\
+<span>May 5</span>\
+<span>May 9</span>\
+<span>May 13</span>\
+<span>May 18</span>\
+</div>\
+</div>\
+</div>\
+<!-- Recent Posts -->\
+<div class="xl:col-span-4 card-bg rounded-xl p-5 flex flex-col">\
+<div class="flex justify-between items-center mb-4">\
+<h2 class="font-headline-lg-mobile text-on-surface">Recent Posts</h2>\
+<a class="font-label-sm text-primary-container hover:underline" href="#">View All</a>\
+</div>\
+<div class="flex flex-col gap-4 flex-1 overflow-y-auto custom-scrollbar pr-2">\
+<!-- Post 1 -->\
+<div class="flex items-start justify-between group">\
+<div class="flex gap-3">\
+<img alt="Ramesh Kumar Avatar" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="Small circular avatar of a farmer in a sunlit field, wearing traditional attire. Warm lighting, realistic style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-JEc725xv7xekNyt8uoCt-FV8_qHvuDQ3UA7HoMkNU4RhIXAJeymcOpzT6KaSAwMULHIvLObEoBP1NcZivrkymmjC-z8GTA---tZa-ma4RpA5waRwSfEqYizRrBwO51Ma58_lYvAh14xSaCjZsMM_4v2jYcm01LWwSuBfE61mzXAYj88D8Y_A6Jfr5yMjM9d8yLCjnxWPLE1OpzxtnQIvuns2JEFqKow3Ny853ivXDSE0XzBitNRF"/>\
+<div class="flex flex-col gap-1">\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Ramesh Kumar</span>\
+<span class="bg-[#1f2924] text-primary-container text-[9px] font-bold px-2 py-0.5 rounded">Farmer</span>\
+<span class="text-[10px] text-on-surface-variant ml-1">3 hours ago</span>\
+</div>\
+<p class="font-body-sm text-on-surface-variant line-clamp-1 w-[180px]">Our organic Basmati crop is growing beautifully...</p>\
+</div>\
+</div>\
+<div class="flex items-center gap-2">\
+<img alt="Post Thumbnail" class="w-14 h-10 rounded object-cover" data-alt="Thumbnail of a golden basmati rice field ready for harvest under a bright blue sky. High quality agricultural photography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZqrRUe_Ceo0K5pRso1GHUhZOG98oY74KEcwinrXFvSphlY6ii3j5-E3TnaCP8wuUr2ErHVM4ApbrGExYLYB8qY8IjNM2AaQy9dpkan3N-yWuhyUV9fKtQRjAeUQls-VMcS5qmob7eaQPj3JbEIZIDXBYgTqKOG1M9Yj06-H18TeKg1dDxSD6-350UAe7vMph0BObqKwy_31GU_LLL73dnbDNQRgjL1B-FDsR7PfyHMBe-4XY2ncBH"/>\
+<span class="material-symbols-outlined text-on-surface-variant text-[18px] cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">more_vert</span>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- Post 2 -->\
+<div class="flex items-start justify-between group">\
+<div class="flex gap-3">\
+<img alt="Dr. Anita Rao Avatar" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="Small circular avatar of a female agronomist in a lab coat, professional lighting, dark grey background. Modern corporate style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBt0S6a6aX5BDO8sfgEtiDqwGKbsJOvJVSjl9neuVDDCjMdlBV-iDlsUwv_I81evoOXRGNz11k3Zu1stbdHzsRyvO77T78sPMIVqxQeru0X2OBlI1HwjFZBC_tskuV95CAzIy8aN_7iH-Iryf07IXOInsCS0p945TsOBrSycDpEJQj58i2yXdbvvroUIyoPFZYla2pefmKwUuTkuDrfnugPai2rBtY9j8xC1_vMWUJ8i_tGarVstIPJ"/>\
+<div class="flex flex-col gap-1">\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Dr. Anita Rao</span>\
+<span class="bg-[#1f2924] text-primary-container text-[9px] font-bold px-2 py-0.5 rounded">Agronomist</span>\
+<span class="text-[10px] text-on-surface-variant ml-1">5 hours ago</span>\
+</div>\
+<p class="font-body-sm text-on-surface-variant line-clamp-1 w-[180px]">Alert for tomato growers in Maharashtra...</p>\
+</div>\
+</div>\
+<div class="flex items-center gap-2">\
+<img alt="Post Thumbnail" class="w-14 h-10 rounded object-cover" data-alt="Thumbnail showing close up of tomato leaves with early blight spots, informative agricultural photography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuI6LD24QVKqz_gjo8lD2hp-FDavjNUUCBEdp_OtEHLgHkcMx1jgwQuDYShfkPrjimNYv-bdGt6d0WGqykJAEocyDcVQPmnIznhQx5ka8ywj4Ozze3rJlXHugxTF_IokoVWIBF6pn0MiJ8QKgC1_jwkew7_6ai1POhn-TVtMtRfuKRX_swKR5_BAw3d2fxCF7dinGLgoYU5g15jOgaoXbbO2u5AI_A4MzhtAkkSWGXAs15wxfZ3Kh9"/>\
+<span class="material-symbols-outlined text-on-surface-variant text-[18px] cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">more_vert</span>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- Post 3 -->\
+<div class="flex items-start justify-between group">\
+<div class="flex gap-3">\
+<img alt="Suresh Patel Avatar" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="Small circular avatar of a male distributor in a warehouse, wearing a safety vest. Bright lighting, realistic industrial setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAqe2mex7SohE5lImm1rSN__8-L6P3M-WZjcAiF_Xlqi1qXvy5V6qe0yHZt_WsXCb52lYQ97xHiDl1MQ5Wo8gVA1l-m1KrwQtaiRP7MsnJf9hZZ5etplaupsdYTY8XSTOHgnLfQsj_tJqT3l2JyOCPYdTND1Hl9Msolu-i4pGt0d8tu1LGGRFYOLW6ONWI5ESHAB5ymWSg8RnEvtOGWOBZx9FmDvceIa5gwa2JYvKE-v8SsJrwNi_nk"/>\
+<div class="flex flex-col gap-1">\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Suresh Patel</span>\
+<span class="bg-[#1f2924] text-primary-container text-[9px] font-bold px-2 py-0.5 rounded">Distributor</span>\
+<span class="text-[10px] text-on-surface-variant ml-1">1 day ago</span>\
+</div>\
+<p class="font-body-sm text-on-surface-variant line-clamp-1 w-[180px]">Excited to introduce the new IoT-based smart...</p>\
+</div>\
+</div>\
+<div class="flex items-center gap-2">\
+<img alt="Post Thumbnail" class="w-14 h-10 rounded object-cover" data-alt="Thumbnail of modern agricultural IoT sensor placed in soil, glowing LEDs, dark tech-nature style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4xmhgCp6pLyOVryWnrRpbBmHEZBNLtyWKqlJu931XY2bWtohv3GZ0YwDcMLW67V-9gsJAMW4ePh1i1G3w-SJ6cskzd5GLPLyb-TN57QCPr6xfwN6QSY1aY_uCQ8en0he_NluGdajKUx9Msup9O_7YxpDjoHidTMc-hhLKnnLViD9hIJMAGtx5Aapu41GDXPmTepUtQl-zGB7XsS7fv-vOKZzJTiSH8d2ncMD7G58efKeC_Vd87IQH"/>\
+<span class="material-symbols-outlined text-on-surface-variant text-[18px] cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">more_vert</span>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- Post 4 -->\
+<div class="flex items-start justify-between group">\
+<div class="flex gap-3">\
+<img alt="Meena Devi Avatar" class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="Small circular avatar of a female farmer smiling, wearing a straw hat, bright outdoor lighting. Realistic portrait." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBN8xbKRV_fUsK20yiMs_ObG4sDOb5JEaviEffAndXYeqyMIlrY3iy4lRYEFMRmWuZReAJukoGBJwC0POErHTt84bu83zTnMc-BbQqoy-jCMu3zrbOH74ZN71LSkZN0wBgO7bcYr34_c4nOBXoK3AOJbz1SQiUfGeaBhGtf4AxM9zRQI4cQhz2PQhd3j3P-q5GkoRZXpCAITqRSiLIv1D-2awJzC6xzzqX7rKOxB3h46UR5n_NhCHhu"/>\
+<div class="flex flex-col gap-1">\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Meena Devi</span>\
+<span class="bg-[#1f2924] text-primary-container text-[9px] font-bold px-2 py-0.5 rounded">Farmer</span>\
+<span class="text-[10px] text-on-surface-variant ml-1">1 day ago</span>\
+</div>\
+<p class="font-body-sm text-on-surface-variant line-clamp-1 w-[180px]">Drip irrigation has really improved our yield...</p>\
+</div>\
+</div>\
+<div class="flex items-center gap-2">\
+<img alt="Post Thumbnail" class="w-14 h-10 rounded object-cover" data-alt="Thumbnail of drip irrigation lines active in a green farm field, water droplets visible, high contrast photography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmgJq1txGtQmbOmIm-5vXeZ1Q_6EwgDBHdYnGHDX0o8ouNgus7a22LKVA48nt-5qVMLBTUDzfozw65dM91SnuCPSNt0jP5y64k1NIQdX8hWRuc-NZ1zedCmYdkTKPklgb8gx_D5qfgL7eE86XRCLgO2SPzo4n8sCw9POdSHtbQEBfcNtGUK5977L76HrIq18eZU2LSd7H0rcmfSpvupDNDwjtq65kVP6ozlmZC4_Vvps3WRN2lm4Ik"/>\
+<span class="material-symbols-outlined text-on-surface-variant text-[18px] cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">more_vert</span>\
+</div>\
+</div>\
+</div>\
+</div>\
+<!-- Expert Applications -->\
+<div class="xl:col-span-4 card-bg rounded-xl p-5 flex flex-col">\
+<div class="flex justify-between items-center mb-4">\
+<h2 class="font-headline-lg-mobile text-on-surface">Expert Applications</h2>\
+<a class="font-label-sm text-primary-container hover:underline" href="#">View All</a>\
+</div>\
+<div class="flex flex-col gap-4 flex-1 overflow-y-auto custom-scrollbar pr-2">\
+<!-- App 1 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<img alt="Akash Verma" class="w-10 h-10 rounded-full object-cover" data-alt="Avatar of a male professional, short dark hair, wearing a suit, dark background, corporate portrait style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB0_JWxepHgDkNUYYbUVSbjUfM1hp1Slez6P2LYoWj7WrjT2hcKaDPWa_27gIWUPmIu5Z2df5Pg4IUl7F-DTermcPULNB1lGA00jXk8Mz48ig3B8qOczYgsDz6lVoH5GvS4l7w11B69_em0t7XsuU0EW-6P0aFEHK7AoHwpGmMf7vVULehRy_bmQTqVn1cFYhycdKqUWyZnK6AMK1m0dzyIo-xKr-UMTV76xc2AYve9OMnBp4bYpL8b"/>\
+<div>\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Akash Verma</span>\
+<span class="text-[10px] text-on-surface-variant">Agronomist</span>\
+</div>\
+<div class="text-[10px] text-on-surface-variant">Applied on May 18, 2025</div>\
+</div>\
+</div>\
+<div class="flex gap-2">\
+<button class="bg-primary-container/10 text-primary-container hover:bg-primary-container/20 border border-primary-container/30 px-3 py-1 rounded font-label-sm transition-colors">Approve</button>\
+<button class="bg-surface-variant text-on-surface-variant hover:text-on-surface px-3 py-1 rounded font-label-sm transition-colors">Reject</button>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- App 2 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<img alt="Neha Sharma" class="w-10 h-10 rounded-full object-cover" data-alt="Avatar of a female professional, dark hair pulled back, wearing a blazer, dark background, corporate portrait style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB-CqwX-r1HEXEe16f7o44cX943o8j45T7EfG7CBxdbyybMiaer-b0kwKoQT8lK7KSEP6Waw7NWXpg5joU1uGyoBLiUELEj0xNlWmhHZP1_aLPdEAuyMQNF6VY61P5Obmy75P-vzMr6sGrEv1JbX6Fh5m9fqN_tRkVa565xbJmcUfQ0jLyr8EGdQ_L4utm7V1d2EvoiCQan_5ewFk5z90FfDTKYNYITYYqLByMSuYJlTauT3TwmvaUz"/>\
+<div>\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Neha Sharma</span>\
+<span class="text-[10px] text-on-surface-variant">Soil Expert</span>\
+</div>\
+<div class="text-[10px] text-on-surface-variant">Applied on May 17, 2025</div>\
+</div>\
+</div>\
+<div class="flex gap-2">\
+<button class="bg-primary-container/10 text-primary-container hover:bg-primary-container/20 border border-primary-container/30 px-3 py-1 rounded font-label-sm transition-colors">Approve</button>\
+<button class="bg-surface-variant text-on-surface-variant hover:text-on-surface px-3 py-1 rounded font-label-sm transition-colors">Reject</button>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- App 3 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<img alt="Vikram Singh" class="w-10 h-10 rounded-full object-cover" data-alt="Avatar of a male professional, glasses, beard, wearing a shirt, dark background, corporate portrait style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBPMDq6PQABnP3No0koSljnXGw3S8OeiWBvuAfYWzOTdr7Qcle8LubK-bYX9AacB_ZWFJLMC1uCgeDm0KRi1CR3AViML3iTinW5BhYmhHAz2hH63wy-Qa_NHJ_aIQrEa_TcbzjncE79YZO0aWjzvY21nqeH-IXdzAHruGBTlfJvFlxLJL9thpAAPiaYBQPfE52xIaaHtBm4LEylCKCnqpRv_42qfi33SWsVapDAYASP6SLhK8ESCA5_"/>\
+<div>\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Vikram Singh</span>\
+<span class="text-[10px] text-on-surface-variant">Plant Pathologist</span>\
+</div>\
+<div class="text-[10px] text-on-surface-variant">Applied on May 17, 2025</div>\
+</div>\
+</div>\
+<div class="flex gap-2">\
+<button class="bg-primary-container/10 text-primary-container hover:bg-primary-container/20 border border-primary-container/30 px-3 py-1 rounded font-label-sm transition-colors">Approve</button>\
+<button class="bg-surface-variant text-on-surface-variant hover:text-on-surface px-3 py-1 rounded font-label-sm transition-colors">Reject</button>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- App 4 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<img alt="Pooja Nair" class="w-10 h-10 rounded-full object-cover" data-alt="Avatar of a female professional, smiling, dark background, corporate portrait style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC8Fqqac_47hTHjik81238z0bM3CyH6BFAEo7D0s8ZrpWVs8LXEIkkd8BDzvQT9leQIk2TVAbz_CzS0vdu0DxJ7K8BLQfpPBmnyFN3hfjHpk6AGzMMFAFnbt7FFxXhYVb0TEGhgxtD_HS70LyI32_QxKFg8LaTWlyp3h86kvmSYflXNBlOhQPzwKGTPuiefJLchguAS5XKg3fImzBM-dkIvPH71JIxvx0_Dh6nSDW0_r8PnRKdRRwuH"/>\
+<div>\
+<div class="flex items-center gap-2">\
+<span class="font-label-md text-on-surface">Pooja Nair</span>\
+<span class="text-[10px] text-on-surface-variant">Horticulturist</span>\
+</div>\
+<div class="text-[10px] text-on-surface-variant">Applied on May 16, 2025</div>\
+</div>\
+</div>\
+<div class="flex gap-2">\
+<button class="bg-primary-container/10 text-primary-container hover:bg-primary-container/20 border border-primary-container/30 px-3 py-1 rounded font-label-sm transition-colors">Approve</button>\
+<button class="bg-surface-variant text-on-surface-variant hover:text-on-surface px-3 py-1 rounded font-label-sm transition-colors">Reject</button>\
+</div>\
+</div>\
+</div>\
+</div>\
+</div>\
+<!-- Lower Row -->\
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">\
+<!-- Top Selling Products -->\
+<div class="card-bg rounded-xl p-5 flex flex-col">\
+<div class="flex justify-between items-center mb-4">\
+<h2 class="font-headline-lg-mobile text-on-surface">Top Selling Products</h2>\
+<a class="font-label-sm text-primary-container hover:underline" href="#">View All</a>\
+</div>\
+<div class="flex flex-col gap-3">\
+<!-- Product 1 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 bg-surface-variant rounded flex items-center justify-center overflow-hidden">\
+<img alt="Organic Fertilizer" class="w-8 h-8 object-contain" data-alt="A sack of organic fertilizer, clear product photography, white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-_cRpdcJJNXWZPDpAEPs7b5G62lI3mpzlvIL4LRSfmFOMveqnLiaNNM0uXSuD9ccvvGBbSzK-Pl5V56uvxiotY65PtJGl3Ej3pUQr3A_1AMVR9KLT8M4S9F3NxSvtpvlhCR7dSM5sXyhJiyu1Ch-J-6L6RyeryRk1N-luz6pqip2FYg20XsbOTdeWZEEZtsEentUayw_b7XoyX8Xmlyx340ULLchFSPmsT5VO392nws00Qqng6lcT"/>\
+</div>\
+<div class="flex flex-col">\
+<span class="font-label-md text-on-surface">Organic Fertilizer</span>\
+<span class="text-[10px] text-on-surface-variant">Sold: 342</span>\
+</div>\
+</div>\
+<span class="font-label-sm text-primary-container">\uc0\u8377 450</span>\
+</div>\
+<!-- Product 2 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 bg-surface-variant rounded flex items-center justify-center overflow-hidden">\
+<img alt="Neem Oil" class="w-8 h-8 object-contain" data-alt="A bottle of Neem Oil, clear product photography, white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD1pyRE3c6LRaibVUM8Nbq6Ehretw03k3A-Ku-bKrHvS8Ib6ucIASlu0juvxh11cF-NiWDSFd48m0kaZT89w0Qx8hwwW4DGKatUM95L8bNl44Qz60EQCapxPcb6ttiqlfRR9DzheI3U-gRvf4dixn9QlQ5-grLi75iKJhC0ia3AFoy4dz0cH53CVz70CkKmCPI29n_jNobEOYaFqu9Fz2k5xhTmAzAMFuE9U-XZW7CYrtcBCUfl0d-0"/>\
+</div>\
+<div class="flex flex-col">\
+<span class="font-label-md text-on-surface">Neem Oil</span>\
+<span class="text-[10px] text-on-surface-variant">Sold: 289</span>\
+</div>\
+</div>\
+<span class="font-label-sm text-primary-container">\uc0\u8377 280</span>\
+</div>\
+<!-- Product 3 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 bg-surface-variant rounded flex items-center justify-center overflow-hidden">\
+<img alt="Vermicompost" class="w-8 h-8 object-contain" data-alt="A small bag of Vermicompost, clear product photography, white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDK8vSNbW4nKucLQGIFcqmoRUzruZDNN4meOhIUiEPTgu2QSqzwuQZgyoFspNe42Np7Vxrwd_igzaw4f6zwx7Zdb9bcYCw8xFpHimYzCmimjAHhAb0aPIMje97NeKSr7oGa3JCeFsDg3ypm4mejrw78UfcqV8ujQcNuXIXczddqVOS7Zk-9y76mrJ10p4bm3vRUxBxYyHTte8eOxC9iy04oG74IoUlanPGd_xvjv16fUG6AKl9LXLz5"/>\
+</div>\
+<div class="flex flex-col">\
+<span class="font-label-md text-on-surface">Vermicompost</span>\
+<span class="text-[10px] text-on-surface-variant">Sold: 256</span>\
+</div>\
+</div>\
+<span class="font-label-sm text-primary-container">\uc0\u8377 320</span>\
+</div>\
+<!-- Product 4 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 bg-surface-variant rounded flex items-center justify-center overflow-hidden">\
+<img alt="Drip Irrigation Kit" class="w-8 h-8 object-contain" data-alt="A box containing a Drip Irrigation Kit, clear product photography, white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA138hBmtg2gumMXr5dHvs894u0iRkmACBGkaNL-LkjyYPUWvBi9BFvBct4CikV0bj-u_Rn91n1hJMBwJT0mNmTjYMZ6Hmltg-CIRDcvDGJTbYZ9D3VEAqe-bY_ky_e-tAMXRuuro5L6kaOfbuclLy3OYGkruQ7gUR_4EANeUdK-FaE3CXXjFyRR5jW1UTjWeirK2wFbOhY4OP7jHvAtb7rNVuN13KWM0aougqEHQ3LWWNOGrl03TKp"/>\
+</div>\
+<div class="flex flex-col">\
+<span class="font-label-md text-on-surface">Drip Irrigation Kit</span>\
+<span class="text-[10px] text-on-surface-variant">Sold: 213</span>\
+</div>\
+</div>\
+<span class="font-label-sm text-primary-container">\uc0\u8377 1,250</span>\
+</div>\
+<!-- Product 5 -->\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 bg-surface-variant rounded flex items-center justify-center overflow-hidden">\
+<img alt="Bio Pesticide" class="w-8 h-8 object-contain" data-alt="A bottle of Bio Pesticide, clear product photography, white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDoA7m5w-Os-YrF7uwEck4I4SrSA4EwPnlwpA_wjO6fSJIuwxgac5WsaozKwlgPzYCdUgnTMahRUgcFBY35wY1wb41VqqP9LM5Kn7ZiPG4gw5w_L2gwUNhab5MJBqHDXRe6LgAmFm6ahYdS-Ju6HGUSWIDN_pVG6TyN35CbS_Imgl0Cz2NIs-zom585FGWThIPkfD87N4cmgGlC7G4lBO-_zmqtj2hKptfpDxDTNF23hETDdBB1J1cA"/>\
+</div>\
+<div class="flex flex-col">\
+<span class="font-label-md text-on-surface">Bio Pesticide</span>\
+<span class="text-[10px] text-on-surface-variant">Sold: 198</span>\
+</div>\
+</div>\
+<span class="font-label-sm text-primary-container">\uc0\u8377 350</span>\
+</div>\
+</div>\
+</div>\
+<!-- Recent Orders -->\
+<div class="card-bg rounded-xl p-5 flex flex-col">\
+<div class="flex justify-between items-center mb-4">\
+<h2 class="font-headline-lg-mobile text-on-surface">Recent Orders</h2>\
+<a class="font-label-sm text-primary-container hover:underline" href="#">View All</a>\
+</div>\
+<div class="flex flex-col gap-3 text-[11px]">\
+<!-- Order 1 -->\
+<div class="flex items-center justify-between">\
+<span class="text-on-surface-variant font-mono">#ORD-2025-8921</span>\
+<span class="text-on-surface w-20 truncate">Meena Devi</span>\
+<span class="bg-[#332514] text-secondary-container px-2 py-0.5 rounded font-bold">Pending</span>\
+<span class="text-on-surface-variant">18 May, 2025</span>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- Order 2 -->\
+<div class="flex items-center justify-between">\
+<span class="text-on-surface-variant font-mono">#ORD-2025-8920</span>\
+<span class="text-on-surface w-20 truncate">Ramesh Kumar</span>\
+<span class="bg-[#1f2924] text-primary-container px-2 py-0.5 rounded font-bold">Shipped</span>\
+<span class="text-on-surface-variant">18 May, 2025</span>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- Order 3 -->\
+<div class="flex items-center justify-between">\
+<span class="text-on-surface-variant font-mono">#ORD-2025-8919</span>\
+<span class="text-on-surface w-20 truncate">Suresh Patel</span>\
+<span class="bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded font-bold">Delivered</span>\
+<span class="text-on-surface-variant">17 May, 2025</span>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- Order 4 -->\
+<div class="flex items-center justify-between">\
+<span class="text-on-surface-variant font-mono">#ORD-2025-8918</span>\
+<span class="text-on-surface w-20 truncate">Anita Rao</span>\
+<span class="bg-[#332514] text-secondary-container px-2 py-0.5 rounded font-bold">Pending</span>\
+<span class="text-on-surface-variant">17 May, 2025</span>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<!-- Order 5 -->\
+<div class="flex items-center justify-between">\
+<span class="text-on-surface-variant font-mono">#ORD-2025-8917</span>\
+<span class="text-on-surface w-20 truncate">Vikram Singh</span>\
+<span class="bg-[#1f2924] text-primary-container px-2 py-0.5 rounded font-bold">Shipped</span>\
+<span class="text-on-surface-variant">16 May, 2025</span>\
+</div>\
+</div>\
+</div>\
+<!-- Quick Actions -->\
+<div class="card-bg rounded-xl p-5 flex flex-col">\
+<h2 class="font-headline-lg-mobile text-on-surface mb-4">Quick Actions</h2>\
+<div class="grid grid-cols-2 gap-3 flex-1">\
+<button class="bg-[#0F1112] hover:bg-surface-variant border border-outline-variant hover:border-primary-container/50 rounded-lg flex flex-col items-center justify-center gap-2 p-2 transition-all group">\
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container transition-colors">post_add</span>\
+<span class="font-label-sm text-on-surface group-hover:text-primary-container transition-colors">Add News</span>\
+</button>\
+<button class="bg-[#0F1112] hover:bg-surface-variant border border-outline-variant hover:border-primary-container/50 rounded-lg flex flex-col items-center justify-center gap-2 p-2 transition-all group">\
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container transition-colors">send</span>\
+<span class="font-label-sm text-on-surface group-hover:text-primary-container transition-colors text-center leading-tight">Send Notification</span>\
+</button>\
+<button class="bg-[#0F1112] hover:bg-surface-variant border border-outline-variant hover:border-primary-container/50 rounded-lg flex flex-col items-center justify-center gap-2 p-2 transition-all group">\
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container transition-colors">add_box</span>\
+<span class="font-label-sm text-on-surface group-hover:text-primary-container transition-colors text-center">Add Product</span>\
+</button>\
+<button class="bg-[#0F1112] hover:bg-surface-variant border border-outline-variant hover:border-primary-container/50 rounded-lg flex flex-col items-center justify-center gap-2 p-2 transition-all group">\
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container transition-colors">image</span>\
+<span class="font-label-sm text-on-surface group-hover:text-primary-container transition-colors text-center leading-tight">Manage Banners</span>\
+</button>\
+<button class="bg-[#0F1112] hover:bg-surface-variant border border-outline-variant hover:border-primary-container/50 rounded-lg flex flex-col items-center justify-center gap-2 p-2 transition-all group">\
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container transition-colors">flag</span>\
+<span class="font-label-sm text-on-surface group-hover:text-primary-container transition-colors text-center">View Reports</span>\
+</button>\
+<button class="bg-[#0F1112] hover:bg-surface-variant border border-outline-variant hover:border-primary-container/50 rounded-lg flex flex-col items-center justify-center gap-2 p-2 transition-all group">\
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container transition-colors">settings</span>\
+<span class="font-label-sm text-on-surface group-hover:text-primary-container transition-colors text-center leading-tight">System Settings</span>\
+</button>\
+</div>\
+</div>\
+<!-- System Overview -->\
+<div class="card-bg rounded-xl p-5 flex flex-col">\
+<h2 class="font-headline-lg-mobile text-on-surface mb-4">System Overview</h2>\
+<div class="flex flex-col gap-4 flex-1 justify-between">\
+<div class="flex justify-between items-center">\
+<span class="font-label-sm text-on-surface-variant">Server Status</span>\
+<div class="flex items-center gap-1.5">\
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span>\
+<span class="font-label-sm text-primary-container">Online</span>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<div class="flex justify-between items-center">\
+<span class="font-label-sm text-on-surface-variant">Database</span>\
+<div class="flex items-center gap-1.5">\
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>\
+<span class="font-label-sm text-primary-container">Connected</span>\
+</div>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<div class="flex justify-between items-center">\
+<span class="font-label-sm text-on-surface-variant">Storage Used</span>\
+<span class="font-label-sm text-on-surface">45%</span>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<div class="flex justify-between items-center">\
+<span class="font-label-sm text-on-surface-variant">Total Storage</span>\
+<span class="font-label-sm text-on-surface">100 GB</span>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<div class="flex justify-between items-center">\
+<span class="font-label-sm text-on-surface-variant">Backup Status</span>\
+<span class="font-label-sm text-on-surface">Up to date</span>\
+</div>\
+<div class="w-full h-px bg-outline-variant/30"></div>\
+<div class="flex justify-between items-center">\
+<span class="font-label-sm text-on-surface-variant">Active Sessions</span>\
+<span class="font-label-sm text-on-surface">32</span>\
+</div>\
+</div>\
+</div>\
+</div>\
+</div>\
+<!-- Footer -->\
+<footer class="w-full py-4 text-center border-t border-outline-variant/30 mt-auto">\
+<p class="font-label-sm text-on-surface-variant opacity-60">\'a9 2025 Agro Connect Admin Panel. All rights reserved.</p>\
+</footer>\
+</main>\
+</body></html>}

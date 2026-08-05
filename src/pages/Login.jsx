@@ -3,20 +3,44 @@ import InputField from '../components/InputField';
 import { Button } from '../components/Button';
 import './pages.css';
 
+import { supabase } from '../supabase';
+
 export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!username || !password) {
       setError('Please fill in all fields');
       return;
     }
-    // Perform dummy login
     setError('');
-    onLoginSuccess(username === 'admin' ? 'admin' : 'user');
+
+    // Check if user is using simple username or email
+    const emailStr = username.includes('@') ? username : `${username}@agroconnect.com`;
+
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email: emailStr,
+      password: password
+    });
+
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+
+    if (data?.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single();
+
+      const role = profile?.role?.toLowerCase() || 'farmer';
+      onLoginSuccess(role);
+    }
   };
 
   return (
@@ -78,9 +102,6 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
 
       <div className="auth-footer">
         <p>Don't have an account? <span className="auth-link" onClick={onGoToRegister}>Sign Up</span></p>
-        <p style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          Are you an admin? <span className="auth-link" style={{ color: 'var(--text-secondary)' }} onClick={onGoToAdminLogin}>Admin Portal</span>
-        </p>
       </div>
     </div>
   );

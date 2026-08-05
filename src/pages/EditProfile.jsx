@@ -1,32 +1,86 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
-import mockUsers from '../mock/users.json';
+import { supabase } from '../supabase';
 import './pages.css';
 
 export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
-  const user = mockUsers.find(u => u.id === userId) || mockUsers[0];
+  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [bio, setBio] = useState('');
+  const [location, setLocation] = useState('');
+  const [phone, setPhone] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const [name, setName] = useState(user.name);
-  const [username, setUsername] = useState(user.username);
-  const [bio, setBio] = useState(user.bio);
-  const [location, setLocation] = useState(user.location);
-  const [phone, setPhone] = useState(user.phone);
+  useEffect(() => {
+    const loadProfile = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const targetUserId = userId === 'user1' ? authUser?.id : userId;
+      if (!targetUserId) return;
 
-  const handleSave = (e) => {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', targetUserId)
+        .single();
+
+      if (profile) {
+        setName(profile.full_name || '');
+        setUsername(profile.full_name?.toLowerCase().replace(/\s+/g, '') || '');
+        setBio(profile.bio || '');
+        setLocation(profile.location || '');
+        setPhone(profile.phone || '');
+        setAvatar(profile.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200');
+      }
+      setLoading(false);
+    };
+
+    loadProfile();
+  }, [userId]);
+
+  const handleSave = async (e) => {
     e.preventDefault();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const targetUserId = userId === 'user1' ? authUser?.id : userId;
+    if (!targetUserId) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: name,
+        bio,
+        location,
+        phone
+      })
+      .eq('id', targetUserId);
+
+    if (error) {
+      alert(`Failed to save profile: ${error.message}`);
+      return;
+    }
+
     if (onSave) {
       onSave({
-        ...user,
+        id: targetUserId,
         name,
         username,
         bio,
         location,
-        phone
+        phone,
+        avatar
       });
     }
   };
+
+  if (loading) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)' }}>
+        <span style={{ color: 'var(--primary-green)' }}>Loading profile...</span>
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -37,7 +91,7 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
         {/* Avatar change */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '16px 0' }}>
           <img 
-            src={user.avatar} 
+            src={avatar} 
             alt="Profile Avatar" 
             style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary-green)', marginBottom: '8px' }} 
           />
@@ -60,6 +114,7 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
           onChange={(e) => setUsername(e.target.value)}
           icon="person"
           required
+          disabled
         />
 
         <div className="form-group">

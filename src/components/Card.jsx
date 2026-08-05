@@ -27,8 +27,13 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
         <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} onClick={() => onProfileClick && onProfileClick(post.userId)}>
           <img src={post.userAvatar} alt={post.userName} className="post-card-avatar" />
           <div className="post-card-user-info">
-            <div className="post-card-username">
-              {post.userName} <span className="badge-role">{post.userRole}</span>
+            <div className="post-card-username" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+              <span>{post.userName}</span>
+              {((JSON.parse(localStorage.getItem('users_db') || '[]').find(u => u.name === post.userName)?.role === 'Agronomist') || 
+                post.userRole === 'Agronomist' || post.userRole === 'Distributor') && (
+                <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
+              )}
+              <span className="badge-role">{post.userRole}</span>
             </div>
             <div className="post-card-meta">
               <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>location_on</span>
@@ -92,11 +97,17 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
 }
 
 export function ProfileCard({ user, onClick }) {
+  const isVerified = user.role === 'Agronomist' || user.role === 'Distributor';
   return (
     <div className="card fade-in" style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }} onClick={onClick}>
       <img src={user.avatar} alt={user.name} style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover' }} />
       <div style={{ flex: 1 }}>
-        <h4 style={{ fontWeight: '600', fontSize: '15px' }}>{user.name}</h4>
+        <h4 style={{ fontWeight: '600', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {user.name}
+          {isVerified && (
+            <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
+          )}
+        </h4>
         <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>@{user.username}</p>
         <span className="badge-role" style={{ marginTop: '4px', display: 'inline-block' }}>{user.role}</span>
       </div>

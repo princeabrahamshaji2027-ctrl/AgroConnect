@@ -1,16 +1,98 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
-import mockNotifs from '../mock/notifications.json';
+import { supabase } from '../supabase';
 import './pages.css';
 
-export default function Notifications() {
-  const [notifications, setNotifications] = useState(mockNotifs);
+const formatTimeAgo = (dateStr) => {
+  const date = new Date(dateStr);
+  const seconds = Math.floor((new Date() - date) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
 
-  const handleMarkAsRead = (id) => {
+export default function Notifications() {
+  const [notifications, setNotifications] = useState([]);
+
+  const fetchNotifications = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: notifsData } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (notifsData) {
+        setNotifications(notifsData.map(n => ({
+          id: n.id,
+          type: n.type,
+          message: n.message,
+          read: n.is_read,
+          senderName: 'AgroConnect',
+          time: formatTimeAgo(n.created_at)
+        })));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+
+    // Realtime: update list when a new notification is inserted
+    let channel = null;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      channel = supabase
+        .channel('notifications-realtime')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            if (!payload.new) return;
+            const n = payload.new;
+            setNotifications(prev => [{
+              id: n.id,
+              type: n.type,
+              message: n.message,
+              read: n.is_read,
+              senderName: 'AgroConnect',
+              time: 'Just now'
+            }, ...prev]);
+          }
+        )
+        .subscribe();
+    });
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleMarkAsRead = async (id) => {
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', id);
     setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', user.id);
     setNotifications(notifications.map(n => ({ ...n, read: true })));
   };
 

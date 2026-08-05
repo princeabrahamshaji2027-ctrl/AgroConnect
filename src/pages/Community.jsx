@@ -1,40 +1,105 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { CommCard } from '../components/Card';
 import InputField from '../components/InputField';
 import Dialog from '../components/Dialog';
 import { Button } from '../components/Button';
-import mockCommunities from '../mock/communities.json';
+import { supabase } from '../supabase';
 import './pages.css';
 
 export default function Community() {
-  const [communities, setCommunities] = useState(mockCommunities);
+  const [communities, setCommunities] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newCommName, setNewCommName] = useState('');
   const [newCommDesc, setNewCommDesc] = useState('');
 
-  const handleJoinToggle = (id, isJoined) => {
+  const fetchCommunities = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      let joinedSet = new Set();
+      if (user) {
+        const { data: joinedRows } = await supabase
+          .from('community_members')
+          .select('community_id')
+          .eq('user_id', user.id);
+        joinedSet = new Set(joinedRows?.map(r => r.community_id) || []);
+      }
+
+      const { data: commsData } = await supabase
+        .from('communities')
+        .select('*');
+
+      if (commsData) {
+        setCommunities(commsData.map(c => ({
+          id: c.id,
+          name: c.name,
+          members: c.member_count || 0,
+          description: c.description || '',
+          category: c.category || 'General',
+          image: c.image_path || 'https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?auto=format&fit=crop&q=80&w=300&h=200',
+          joined: joinedSet.has(c.id)
+        })));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCommunities();
+  }, []);
+
+  const handleJoinToggle = async (id, isJoined) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    if (isJoined) {
+      await supabase
+        .from('community_members')
+        .insert({ community_id: id, user_id: user.id, role: 'Member' });
+    } else {
+      await supabase
+        .from('community_members')
+        .delete()
+        .eq('community_id', id)
+        .eq('user_id', user.id);
+    }
+
     setCommunities(communities.map(c => c.id === id ? { ...c, joined: isJoined, members: isJoined ? c.members + 1 : c.members - 1 } : c));
   };
 
-  const handleCreateCommunity = () => {
+  const handleCreateCommunity = async () => {
     if (!newCommName.trim()) return;
 
-    const added = {
-      id: `comm_${Date.now()}`,
-      name: newCommName,
-      members: 1,
-      description: newCommDesc || 'No description provided.',
-      category: 'General',
-      image: 'https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?auto=format&fit=crop&q=80&w=300&h=200',
-      joined: true
-    };
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-    setCommunities([added, ...communities]);
+    const { data: inserted, error } = await supabase
+      .from('communities')
+      .insert({
+        name: newCommName,
+        description: newCommDesc,
+        category: 'General',
+        image_path: 'https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?auto=format&fit=crop&q=80&w=300&h=200'
+      })
+      .select()
+      .single();
+
+    if (error) {
+      alert(`Failed to create group: ${error.message}`);
+      return;
+    }
+
+    await supabase
+      .from('community_members')
+      .insert({ community_id: inserted.id, user_id: user.id, role: 'Admin' });
+
     setIsCreateOpen(false);
     setNewCommName('');
     setNewCommDesc('');
+    fetchCommunities();
   };
 
   const filtered = communities.filter(c => 
