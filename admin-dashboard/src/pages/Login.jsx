@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
+import logoImg from '../assets/logo.jpg';
 
-export default function Login({ onLoginSuccess }) {
+export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,7 +38,9 @@ export default function Login({ onLoginSuccess }) {
         if (profileError) throw profileError;
 
         if (profile && profile.role === 'Admin') {
-          onLoginSuccess(user);
+          // Do nothing here — App.jsx's onAuthStateChange listener already picks up
+          // the real session from the signInWithPassword call above and sets it correctly.
+          // Setting session state from here too was the cause of the login race/bounce-back bug.
         } else {
           // Sign out if not admin
           await supabase.auth.signOut();
@@ -56,8 +59,8 @@ export default function Login({ onLoginSuccess }) {
     <div className="min-h-screen bg-background flex flex-col justify-center items-center px-4">
       <div className="max-w-md w-full card-bg rounded-2xl border border-outline-variant p-8 flex flex-col gap-6 shadow-2xl">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-14 h-14 rounded-2xl bg-[#1f2924] flex items-center justify-center border border-primary-container/30">
-            <span className="material-symbols-outlined text-primary-container text-[36px]" style={{ fontVariationSettings: "'FILL' 1" }}>eco</span>
+          <div className="w-16 h-16 rounded-2xl overflow-hidden border border-primary-container/30">
+            <img src={logoImg} alt="AgroConnect Logo" className="w-full h-full object-cover" />
           </div>
           <div className="text-center">
             <h1 className="font-headline-xl text-on-surface font-bold">Agro Connect</h1>

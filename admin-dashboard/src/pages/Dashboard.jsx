@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import defaultAvatar from '../assets/default-avatar.png';
 import { supabase } from '../supabase';
 
 export default function Dashboard({ onTabChange }) {
@@ -251,65 +252,16 @@ export default function Dashboard({ onTabChange }) {
         </div>
       </div>
 
-      {/* Middle Row */}
+      {/* Middle Row — User Growth chart removed per fix 1.1d */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* User Growth Chart */}
-        <div className="xl:col-span-4 card-bg rounded-xl p-5 flex flex-col">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="font-headline-lg-mobile text-on-surface">User Growth</h2>
-            <div className="flex items-center gap-1 bg-surface-variant rounded px-2 py-1 cursor-pointer">
-              <span className="font-label-sm text-on-surface-variant">This Month</span>
-              <span className="material-symbols-outlined text-[14px] text-on-surface-variant">expand_more</span>
-            </div>
-          </div>
-          <div className="flex-1 relative w-full h-[220px]">
-            <div className="absolute inset-0 flex">
-              {/* Y Axis */}
-              <div className="flex flex-col justify-between text-[10px] text-on-surface-variant pr-3 pb-6 h-full">
-                <span>10K</span>
-                <span>8K</span>
-                <span>6K</span>
-                <span>4K</span>
-                <span>2K</span>
-                <span>0</span>
-              </div>
-              {/* Chart Area */}
-              <div className="flex-1 relative border-l border-b border-outline-variant/30 h-[calc(100%-24px)]">
-                <div className="absolute w-full top-0 border-t border-outline-variant/10"></div>
-                <div className="absolute w-full top-[20%] border-t border-outline-variant/10"></div>
-                <div className="absolute w-full top-[40%] border-t border-outline-variant/10"></div>
-                <div className="absolute w-full top-[60%] border-t border-outline-variant/10"></div>
-                <div className="absolute w-full top-[80%] border-t border-outline-variant/10"></div>
-                {/* SVG path */}
-                <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  <path className="chart-path" d="M 0 80 L 20 65 L 40 52 L 60 40 L 80 25 L 100 12" fill="none" stroke="#2ECC71" strokeWidth="2" vectorEffect="non-scaling-stroke"></path>
-                  <circle cx="0" cy="80" fill="#2ECC71" r="3"></circle>
-                  <circle cx="20" cy="65" fill="#2ECC71" r="3"></circle>
-                  <circle cx="40" cy="52" fill="#2ECC71" r="3"></circle>
-                  <circle cx="60" cy="40" fill="#2ECC71" r="3"></circle>
-                  <circle cx="80" cy="25" fill="#2ECC71" r="3"></circle>
-                  <circle cx="100" cy="12" fill="#2ECC71" r="3"></circle>
-                </svg>
-              </div>
-            </div>
-            {/* X Axis */}
-            <div className="absolute bottom-0 right-0 w-[calc(100%-32px)] flex justify-between text-[10px] text-on-surface-variant">
-              <span>May 1</span>
-              <span>May 5</span>
-              <span>May 9</span>
-              <span>May 13</span>
-              <span>Today</span>
-            </div>
-          </div>
-        </div>
 
         {/* Recent Posts */}
-        <div className="xl:col-span-4 card-bg rounded-xl p-5 flex flex-col">
+        <div className="xl:col-span-6 card-bg rounded-xl p-5 flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-headline-lg-mobile text-on-surface">Recent Posts</h2>
             <button className="font-label-sm text-primary-container hover:underline" onClick={() => onTabChange("posts")}>View All</button>
           </div>
-          <div className="flex flex-col gap-4 flex-1 overflow-y-auto custom-scrollbar pr-2">
+          <div className="flex flex-col gap-4">
             {recentPosts.length === 0 ? (
               <div className="text-on-surface-variant/50 text-body-sm text-center py-8">No recent posts found</div>
             ) : (
@@ -320,7 +272,7 @@ export default function Dashboard({ onTabChange }) {
                       <img
                         alt="Author avatar"
                         className="w-10 h-10 rounded-full object-cover border border-outline-variant"
-                        src={post.profiles?.profile_image_path || "https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"}
+                        src={post.profiles?.profile_image_path || defaultAvatar}
                       />
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -343,33 +295,33 @@ export default function Dashboard({ onTabChange }) {
         </div>
 
         {/* Expert Applications */}
-        <div className="xl:col-span-4 card-bg rounded-xl p-5 flex flex-col">
+        <div className="xl:col-span-6 card-bg rounded-xl p-5 flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-headline-lg-mobile text-on-surface">Expert Applications</h2>
             <button className="font-label-sm text-primary-container hover:underline" onClick={() => onTabChange("experts")}>View All</button>
           </div>
-          <div className="flex flex-col gap-4 flex-1 overflow-y-auto custom-scrollbar pr-2">
+          <div className="flex flex-col gap-4">
             {recentApps.length === 0 ? (
               <div className="text-on-surface-variant/50 text-body-sm text-center py-8">No pending applications</div>
             ) : (
               recentApps.map((app) => (
                 <div key={app.id} className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <img
                         alt="Applicant avatar"
-                        className="w-10 h-10 rounded-full object-cover"
-                        src={app.profiles?.profile_image_path || "https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"}
+                        className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                        src={app.profiles?.profile_image_path || defaultAvatar}
                       />
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-label-md text-on-surface">{app.profiles?.full_name || 'Anonymous'}</span>
-                          <span className="text-[10px] text-on-surface-variant">{app.qualification || 'Agronomist'}</span>
+                          <span className="font-label-md text-on-surface truncate">{app.profiles?.full_name || 'Anonymous'}</span>
+                          <span className="text-[10px] text-on-surface-variant truncate">{app.qualification || 'Agronomist'}</span>
                         </div>
                         <div className="text-[10px] text-on-surface-variant">Applied {timeAgo(app.created_at)}</div>
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-shrink-0">
                       <button
                         onClick={() => handleApproveExpert(app.id)}
                         className="bg-primary-container/10 text-primary-container hover:bg-primary-container/20 border border-primary-container/30 px-3 py-1 rounded font-label-sm transition-colors cursor-pointer"

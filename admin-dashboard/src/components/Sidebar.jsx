@@ -1,4 +1,5 @@
 import React from 'react';
+import logoImg from '../assets/logo.jpg';
 
 export default function Sidebar({ activeTab, onTabChange, onLogout }) {
   const menuGroups = [
@@ -34,32 +35,6 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }) {
       ]
     },
     {
-      title: "Reviews & Ratings",
-      items: [
-        { id: "reviews", label: "Reviews", icon: "grade" }
-      ]
-    },
-    {
-      title: "News & Content",
-      items: [
-        { id: "news", label: "News", icon: "newspaper" },
-        { id: "banners", label: "Banners", icon: "campaign" }
-      ]
-    },
-    {
-      title: "Notifications",
-      items: [
-        { id: "notifications", label: "Notifications", icon: "notifications" },
-        { id: "broadcasts", label: "Broadcast", icon: "podcasts" }
-      ]
-    },
-    {
-      title: "Analytics",
-      items: [
-        { id: "analytics", label: "Analytics", icon: "analytics" }
-      ]
-    },
-    {
       title: "System",
       items: [
         { id: "admins", label: "Admins", icon: "admin_panel_settings" },
@@ -72,13 +47,13 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }) {
     <aside className="fixed left-0 top-0 h-full w-[260px] bg-surface border-r border-outline-variant flex flex-col z-50">
       <div className="h-16 flex items-center px-6 border-b border-outline-variant">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => onTabChange("dashboard")}>
-          <span className="material-symbols-outlined text-primary-container text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>eco</span>
+          <img src={logoImg} alt="AgroConnect" className="w-8 h-8 rounded-lg object-cover" />
           <span className="font-headline-lg text-on-surface font-bold">Agro Connect</span>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto custom-scrollbar py-4 flex flex-col gap-1 px-3">
-        {/* Dashboard (Main item) */}
+      <nav className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
+        {/* Dashboard */}
         <button
           onClick={() => onTabChange("dashboard")}
           className={`w-full text-left px-4 py-2 flex items-center gap-3 rounded-lg mb-4 transition-colors font-bold ${
@@ -91,7 +66,6 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }) {
           <span className="font-label-md">Dashboard</span>
         </button>
 
-        {/* Dynamic Groups */}
         {menuGroups.map((group, groupIdx) => (
           <div key={groupIdx} className="mb-4">
             <h3 className="px-4 text-[10px] font-bold text-on-surface-variant/70 uppercase tracking-wider mb-2">
@@ -115,7 +89,6 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }) {
         ))}
       </nav>
 
-      {/* Logout button */}
       <div className="p-4 border-t border-outline-variant">
         <button
           onClick={onLogout}

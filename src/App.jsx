@@ -12,6 +12,7 @@ import Search from './pages/Search';
 import Notifications from './pages/Notifications';
 import Chat from './pages/Chat';
 import Settings from './pages/Settings';
+import PrivacySecurity from './pages/PrivacySecurity';
 import NavBar from './components/NavBar';
 import { FAB } from './components/Button';
 import './index.css';
@@ -223,7 +224,16 @@ export default function App() {
       return (
         <Settings 
           onLogout={handleLogout} 
-          onGoBack={() => setSubScreen(null)} 
+          onGoBack={() => setSubScreen(null)}
+          onNavigate={(target) => setSubScreen(target)}
+        />
+      );
+    }
+
+    if (subScreen === 'privacy') {
+      return (
+        <PrivacySecurity
+          onGoBack={() => setSubScreen('settings')}
         />
       );
     }

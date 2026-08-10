@@ -1,213 +1,147 @@
-# PROMPT FOR ANTIGRAVITY — Full Functional Wiring (Mobile App + Admin Panel)
+# PROMPT FOR ANTIGRAVITY — Diagnose: Admin Login Still Bounces Back to Login Page
 
-Run this in the order given. **Stop and show me a working demo after each phase** before starting the
-next one — do not chain all phases into one uninterrupted run. If phase 3 breaks, I need to know it
-was phase 3, not "somewhere in everything."
+A previous fix targeted a React state race in `Login.jsx`/`App.jsx` for this exact symptom. The
+symptom is still occurring. Do not assume that fix was wrong — first confirm whether it's even in the
+deployed code, then work through the remaining causes below in order. Do not apply a fix for any item
+until you've confirmed it's the actual cause using the diagnostic step given — fixing the wrong thing
+first wastes a cycle and makes it harder to tell what actually solved it.
 
-Assumes: the 25-table schema, RLS, and admin RPC functions from the two earlier prompts already exist
-in Supabase.
-
----
-
-## GROUND RULES
-
-1. Every screen currently importing from `src/mock/*.json` must be rewired to a real
-   `supabase.from(...)` call. No mock data may remain reachable from any screen after this is done.
-2. Every write from the client goes through Supabase's client SDK (`@supabase/supabase-js`) using the
-   logged-in user's session — never a raw fetch, never a hardcoded key in a component.
-3. Multi-step actions (place an order, approve an expert, resolve a report) go through the Postgres
-   RPC functions already defined — not multiple separate inserts from the frontend, which can leave
-   the database half-updated if one call fails.
-4. Permissions are requested **contextually** — at the moment the user taps the action that needs
-   them, not in bulk at app launch.
-5. Large media (video) goes to Supabase Storage as-is for this MVP. No transcoding, no adaptive
-   bitrate, no compression pipeline — that is a separate, later project once you have real usage data
-   to justify the cost. Flag file-size limits to the user on upload (recommend capping video uploads
-   at ~60 seconds / 50MB client-side before you ever hit a storage cost problem).
+**Ground rule: stop debugging blind.** Before checking anything else, do step 0.
 
 ---
 
-## PHASE 0 — Schema additions this wiring needs
+## STEP 0 — Add real error visibility (do this first, unconditionally)
 
-### Media support on posts
-```sql
-create type post_media_type as enum ('image', 'video');
-
-alter table public.posts
-  add column media_type post_media_type not null default 'image',
-  add column video_duration_seconds int,
-  add column like_count int not null default 0,
-  add column comment_count int not null default 0;
+`admin-dashboard/src/App.jsx`'s profile-fetch `useEffect` currently swallows errors silently:
+```jsx
+.then(({ data }) => setProfile(data))
+.catch(() => setProfile(null));
 ```
-(`like_count`/`comment_count` were specified as triggers in the first prompt — add them now if not
-already present; the Feed screen needs them to avoid a `count(*)` join on every scroll.)
-
-### Seller approval RPC (mirrors the expert approval flow — needed now since sellers can request status)
-```sql
-create or replace function public.approve_seller(p_seller_id uuid)
-returns void language plpgsql security definer as $$
-begin
-  if not public.is_admin() then raise exception 'not authorized'; end if;
-  update public.seller_profiles set verification_status = 'Verified' where id = p_seller_id;
-  insert into public.admin_audit_log (admin_id, action, target_table, target_id)
-    values (auth.uid(), 'approve_seller', 'seller_profiles', p_seller_id);
-end;
-$$;
-
-create or replace function public.reject_seller(p_seller_id uuid, p_notes text default null)
-returns void language plpgsql security definer as $$
-begin
-  if not public.is_admin() then raise exception 'not authorized'; end if;
-  update public.seller_profiles set verification_status = 'Rejected' where id = p_seller_id;
-  insert into public.admin_audit_log (admin_id, action, target_table, target_id, details)
-    values (auth.uid(), 'reject_seller', 'seller_profiles', p_seller_id, jsonb_build_object('notes', p_notes));
-end;
-$$;
+This throws away the exact information needed to diagnose this bug. Change it to:
+```jsx
+.then(({ data, error }) => {
+  if (error) {
+    console.error('Profile fetch failed:', error);
+  }
+  setProfile(data);
+})
+.catch((err) => {
+  console.error('Profile fetch threw:', err);
+  setProfile(null);
+});
 ```
-
-### Atomic order placement (referenced as "next step" in the original schema prompt — build it now)
-```sql
-create or replace function public.place_order(p_seller_id uuid, p_items jsonb)
--- p_items = [{ "product_id": "uuid", "quantity": 2 }, ...]
-returns uuid language plpgsql security definer as $$
-declare
-  v_order_id uuid;
-  v_item jsonb;
-  v_price numeric;
-  v_stock int;
-  v_total numeric := 0;
-begin
-  insert into public.orders (buyer_id, seller_id, total_amount, status)
-    values (auth.uid(), p_seller_id, 0, 'Pending') returning id into v_order_id;
-
-  for v_item in select * from jsonb_array_elements(p_items) loop
-    select price, stock into v_price, v_stock from public.products
-      where id = (v_item->>'product_id')::uuid for update;
-
-    if v_stock < (v_item->>'quantity')::int then
-      raise exception 'Insufficient stock for product %', v_item->>'product_id';
-    end if;
-
-    update public.products set stock = stock - (v_item->>'quantity')::int
-      where id = (v_item->>'product_id')::uuid;
-
-    insert into public.order_items (order_id, product_id, quantity, price)
-      values (v_order_id, (v_item->>'product_id')::uuid, (v_item->>'quantity')::int, v_price);
-
-    v_total := v_total + (v_price * (v_item->>'quantity')::int);
-  end loop;
-
-  update public.orders set total_amount = v_total where id = v_order_id;
-  return v_order_id;
-end;
-$$;
+Also add a log right before the redirect-to-login check, so it's visible in the browser console exactly
+what state caused the bounce:
+```jsx
+if (!profile || profile.role !== 'Admin') {
+  console.error('Bounced to login — profile:', profile, 'session user id:', session?.user?.id);
+  handleLogout();
+  return null;
+}
 ```
-This is why the whole checkout can't be plain client-side inserts: stock checks and total calculation
-have to happen inside one locked transaction, or two buyers can both "succeed" buying the last unit.
+Reproduce the bug once with these logs in place and report back exactly what they print — that output
+determines which of the causes below is real, rather than guessing.
 
 ---
 
-## PHASE 1 — Capacitor Permissions (contextual, not upfront)
+## STEP 1 — Confirm the previous fix is actually live
 
-Install: `@capacitor/camera`, `@capacitor/filesystem`.
+Check `admin-dashboard/src/pages/Login.jsx` and `admin-dashboard/src/App.jsx` for the exact state
+described below. If either file still looks like the "before" version, the previous fix was never
+applied or never deployed — apply it now before checking anything else.
 
-- **Camera/gallery** — request only when the user taps the image/video picker inside `CreatePost.jsx`.
-  Use `Camera.requestPermissions()` right before `Camera.getPhoto()` / gallery pick; if denied, show an
-  inline message with a link to app settings, don't silently fail.
-- **Microphone** — only if video recording (not just picking an existing video file) is supported;
-  request at the moment recording starts.
-- Do **not** add a blanket permissions screen on first launch. If you specifically want a one-time
-  "here's what we'll ask for and why" explainer screen before the OS prompt appears, that's fine and
-  actually good UX — but the OS-level permission dialog itself still only fires at first point of use.
-
----
-
-## PHASE 2 — Core Social Feed (posts, images, video, likes, comments)
-
-1. **`CreatePost.jsx`**: user picks image or video → upload to Storage bucket
-   (`post-images` for images, or a new `post-videos` bucket for video, both public-read) →
-   insert into `posts` with `media_type` set correctly → local feed refresh.
-2. **`Feed.jsx`**: replace `mock/posts.json` with
-   `supabase.from('posts').select('*, profiles(full_name, profile_image_path), like_count, comment_count').eq('status','Approved').order('created_at', {ascending:false})`.
-   Video posts render with a `<video>` element (native player), not an `<img>`.
-3. **Likes**: tapping like → insert/delete row in `likes` (unique constraint already prevents double-likes)
-   → trigger from Phase 3 of the first schema prompt keeps `posts.like_count` in sync — do not
-   increment the count from the client, trust the trigger.
-4. **Comments**: insert into `comments`, refetch or use Supabase Realtime on that post's comment thread.
-5. **Realtime**: subscribe the open Feed screen to `postgres_changes` on `posts` (insert) so new posts
-   from other users appear without a manual pull-to-refresh, matching normal social app behavior.
+- `Login.jsx` should **not** call any `onLoginSuccess(...)` / callback prop after a successful admin
+  login — session should be set only by `App.jsx`'s own `supabase.auth.onAuthStateChange` listener.
+- If `Login.jsx` still contains a line like `onLoginSuccess(user)`, or `App.jsx` still passes
+  `onLogin`/`onLoginSuccess` as a prop to `<Login>`, the old race is still present — fix it per the
+  previous prompt before moving on.
+- Also confirm the browser is actually running the new build, not a cached one: hard-refresh
+  (disable cache in devtools) or test in a fresh private/incognito window. A stale service worker or
+  browser cache showing the old JS bundle would reproduce the exact same symptom even after the source
+  is fixed.
 
 ---
 
-## PHASE 3 — Expert & Seller Request Flows
+## STEP 2 — Check whether RLS is blocking the admin from reading their own profile row
 
-1. **Become an Expert** (`ExpertApplication` screen): upload CV to the private `expert-cvs` bucket →
-   insert into `expert_applications` (`status = 'Pending'`) → show pending state to user until admin acts.
-2. **Become a Seller** (seller onboarding screen): insert into `seller_profiles`
-   (`verification_status = 'Pending'`).
-3. **Admin side**: "Approve"/"Reject" buttons on the admin Experts and Sellers screens call
-   `supabase.rpc('approve_expert_application', {...})` / `approve_seller` / their reject counterparts —
-   these already exist from the previous prompt (expert) and Phase 0 above (seller). Do not write new
-   direct-update logic in the admin frontend for these actions.
-4. User-facing status: the mobile app's profile/settings screen should reflect
-   `expert_applications.status` / `seller_profiles.verification_status` live (Realtime subscription or
-   refetch on screen focus) so the user sees "Approved" without reopening the app.
+This is the most likely remaining cause if Step 1's fix was already correctly in place. Supabase Row
+Level Security policies on the `profiles` table were designed around an `is_admin()` helper function
+that itself queries `profiles.role` for the current user. If the `select` policy on `profiles` was
+written to depend only on `is_admin()` without also allowing `id = auth.uid()`, a freshly-logged-in
+admin cannot read their own row — the RLS check to prove they're an admin requires reading their own
+row, which the same check is blocking. The result: the profile fetch returns zero rows (not an error,
+just empty), `profile` stays `null`, and the app treats this as "not an admin" and logs them straight
+back out — every single time, deterministically, regardless of any React state timing.
 
----
+**Diagnostic**: run this directly in the Supabase SQL editor, logged in as the actual admin user (or
+via `select * from public.profiles where id = '<the admin's auth.users id>';` while impersonating that
+role), and separately check the current policy definitions:
+```sql
+select * from pg_policies where tablename = 'profiles';
+```
+Look specifically at the `select` policy. It must allow **both** conditions, not only the admin check:
+```sql
+-- if the current policy looks like this, it's the bug:
+create policy "profiles_select" on public.profiles for select
+  using (public.is_admin());
 
-## PHASE 4 — Marketplace & Orders
-
-1. **Products browse/detail**: real `supabase.from('products').select()`, filtered by `category_id`.
-2. **Cart → Checkout**: client builds the `p_items` array locally, then calls
-   `supabase.rpc('place_order', { p_seller_id, p_items })` — one call, one transaction, returns the new
-   `order_id`. Do not insert into `orders`/`order_items` directly from the client.
-3. **Order history**: `supabase.from('orders').select('*, order_items(*, products(*))').eq('buyer_id', auth.uid())`.
-
----
-
-## PHASE 5 — Consultations, Chat, Notifications
-
-1. **Book a consultation**: insert into `consultation_bookings`; on confirm, insert `video_meetings`
-   row with a generated meeting link (or integrate a real video provider — flag to me if you want a
-   specific one, that's a separate integration, not a database task).
-2. **Reviews**: after a booking's `status = 'Completed'`, prompt the farmer to submit a review — insert
-   into `reviews`; the trigger from the first prompt recalculates `experts.rating` automatically.
-3. **Chat**: `conversations`/`messages` wired with Realtime subscription per open conversation —
-   this is what makes it behave like a live chat instead of a refresh-to-see-new-messages page.
-4. **Notifications**: `notifications` table read + Realtime subscription; mark-as-read updates `is_read`.
+-- it needs to be:
+create policy "profiles_select" on public.profiles for select
+  using (id = auth.uid() or public.is_admin());
+```
+If the policy is missing the `id = auth.uid()` clause, add it. This lets any user read their own row
+unconditionally (which is safe and necessary — self-read is not a privilege escalation) while still
+allowing admins to read everyone else's via `is_admin()`.
 
 ---
 
-## PHASE 6 — Admin Panel: Full Authority Wiring
+## STEP 3 — Check the actual data: is the role value exactly `'Admin'`?
 
-Every "view/remove/approve" button on the admin site maps to something already built — this phase is
-pure wiring, no new backend logic:
+`App.jsx` checks `profile.role !== 'Admin'` — an exact, case-sensitive string match against the
+Postgres enum value. If the admin account's row actually has `role = 'admin'` (lowercase), a typo, or
+trailing whitespace from manual data entry, this check fails even though RLS and the React code are
+both working correctly.
 
-| Admin action | Call |
-|---|---|
-| View all posts (incl. pending/rejected) | `select` on `posts`, RLS already grants admin full visibility |
-| Remove a post | `delete` on `posts` (RLS admin-override already in place) — or `resolve_report` with `p_delete_content = true` if it originated from a report |
-| Approve/reject expert | `approve_expert_application` / `reject_expert_application` |
-| Approve/reject seller | `approve_seller` / `reject_seller` |
-| Ban a user | `ban_user(user_id, reason)` |
-| Resolve a report | `resolve_report(report_id, action, delete_content)` |
-| Send broadcast | `send_broadcast(title, message, target_role)` |
-
-Every one of these already writes to `admin_audit_log` inside the function — do not add a second,
-separate audit write from the frontend, that would double-log.
+**Diagnostic**:
+```sql
+select id, email, role, length(role::text) as role_length from public.profiles
+where id = '<the admin auth user id>';
+```
+Confirm the value is exactly `Admin` (capital A, 5 characters, no surrounding whitespace) and matches
+the `user_role` enum definition precisely.
 
 ---
 
-## VERIFICATION AFTER EACH PHASE
+## STEP 4 — Check for a second, stale Login/Auth code path
 
-- Phase 2: create a post with a video from one test account, confirm it appears in another test
-  account's feed in real time, confirm like/comment counts update correctly.
-- Phase 3: submit an expert application, approve it from admin, confirm the user's role flips to
-  `Expert` and they can now access expert-only screens.
-- Phase 4: place an order for a product with stock = 1 from two accounts near-simultaneously, confirm
-  only one succeeds and the other gets the "insufficient stock" error — this is the actual test that
-  the transaction is working, not just that happy-path orders succeed.
-- Phase 5: send a chat message, confirm it appears on the recipient's open chat screen without a refresh.
-- Phase 6: log in as admin, ban a test user, confirm that account can no longer post or comment
-  (and remember — this still needs the `is_banned` check added to the write policies, flagged
-  previously and still outstanding).
+Confirm there is only one admin login component in the entire `admin-dashboard/` project and that
+`App.jsx` is the only place rendering it. If an older or duplicate login/auth file exists anywhere in
+the project (from an earlier build pass) and something is still importing it instead of the current
+`Login.jsx`, fixes applied to the "real" file would have no effect. Search the whole admin-dashboard
+source tree for every file that imports from `../supabase` and calls `signInWithPassword`, and confirm
+there's exactly one.
+
+---
+
+## STEP 5 — Confirm signInWithPassword is actually succeeding, not silently failing
+
+It's possible the bounce-back isn't a post-login state bug at all, but the sign-in call itself failing
+in a way that isn't surfaced as an error message. Check the Network tab (or add a log) around the
+`supabase.auth.signInWithPassword` call in `Login.jsx` to confirm `authError` is genuinely `null` and
+`user` is genuinely populated on the attempt that "bounces back." If `signInWithPassword` is actually
+failing (wrong password format, email domain suffix mismatch from the `email.includes('@') ? email :
+\`${email}@agroconnect.com\`` logic not matching how this admin's account was actually created), the
+symptom could look identical from the outside but the real fix is on the credentials/account side, not
+the session-handling code at all.
+
+---
+
+## REPORT BACK
+
+After Step 0's logging is in place and the bug is reproduced once more, report:
+1. What the two new console.error lines actually printed.
+2. Whether Step 1 found the old code still present, or confirms the previous fix was already live.
+3. The result of Step 2's `pg_policies` query on `profiles`.
+4. The result of Step 3's role-value query for the specific admin account being used to test.
+
+That combination will make the actual cause unambiguous instead of guessed.

@@ -9,6 +9,7 @@ export default function Dialog({
   onCancel, 
   confirmText = 'Confirm', 
   cancelText = 'Cancel',
+  confirmDisabled = false,  // fix 1.3: prevent spam submissions
   children
 }) {
   if (!isOpen) return null;
@@ -26,7 +27,18 @@ export default function Dialog({
             </button>
           )}
           {onConfirm && (
-            <button className="btn btn-primary" onClick={onConfirm} style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '12px' }}>
+            <button 
+              className="btn btn-primary" 
+              onClick={onConfirm} 
+              disabled={confirmDisabled}
+              style={{ 
+                padding: '8px 16px', 
+                fontSize: '13px', 
+                borderRadius: '12px',
+                opacity: confirmDisabled ? 0.5 : 1,
+                cursor: confirmDisabled ? 'not-allowed' : 'pointer'
+              }}
+            >
               {confirmText}
             </button>
           )}

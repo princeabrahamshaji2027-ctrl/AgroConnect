@@ -28,22 +28,14 @@ export default function Sellers() {
 
   const handleVerify = async (sellerId, newStatus) => {
     try {
-      const { error } = await supabase
-        .from('seller_profiles')
-        .update({ verification_status: newStatus })
-        .eq('id', sellerId);
-
-      if (error) throw error;
-
-      // Log audit trail
-      await supabase.from('admin_audit_log').insert({
-        admin_id: (await supabase.auth.getUser()).data.user?.id,
-        action: newStatus === 'Verified' ? 'verify_seller' : 'reject_seller',
-        target_table: 'seller_profiles',
-        target_id: sellerId,
-        details: { status: newStatus }
-      });
-
+      // Use the RPCs defined in Phase 0 — they handle the DB update AND the audit log
+      if (newStatus === 'Verified') {
+        const { error } = await supabase.rpc('approve_seller', { p_seller_id: sellerId });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.rpc('reject_seller', { p_seller_id: sellerId, p_notes: 'Rejected by admin' });
+        if (error) throw error;
+      }
       fetchSellers();
     } catch (err) {
       alert(err.message || 'Error updating seller status');

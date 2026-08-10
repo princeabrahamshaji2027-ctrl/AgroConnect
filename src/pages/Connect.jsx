@@ -7,7 +7,7 @@ import { supabase } from '../supabase';
 import './pages.css';
 
 export default function Connect({ onPeaAIClick, onShowToast }) {
-  const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews'
+  const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews' | 'marketplace'
   
   // Book Consultation States
   const [selectedExpert, setSelectedExpert] = useState(null);
@@ -33,6 +33,12 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   const [reviewingMeeting, setReviewingMeeting] = useState(null);
   const [ratingInput, setRatingInput] = useState(5);
   const [reviewTextInput, setReviewTextInput] = useState('');
+
+  // Marketplace state
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState({}); // { productId: quantity }
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [orderHistory, setOrderHistory] = useState([]);
 
   const fetchData = async () => {
     try {
@@ -169,6 +175,23 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           date: 'Recent'
         })));
       }
+
+      // 5. Fetch marketplace products
+      const { data: productsData } = await supabase
+        .from('products')
+        .select('*, seller_profiles:seller_id(shop_name, user_id, profiles:user_id(full_name))')
+        .gt('stock', 0)
+        .order('created_at', { ascending: false });
+      if (productsData) setProducts(productsData);
+
+      // 6. Fetch order history for this user
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('*, order_items(*, products(product_name, image_path))')
+        .eq('buyer_id', user.id)
+        .order('created_at', { ascending: false });
+      if (ordersData) setOrderHistory(ordersData);
+
     } catch (err) {
       console.error('Error fetching connect data:', err);
     }
@@ -216,6 +239,27 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
     if (error) {
       alert(`Booking failed: ${error.message}`);
       return;
+    }
+
+    // Phase 5: Insert a video_meetings row with the booking ID so the meeting link is stored
+    const { data: bookingRow } = await supabase
+      .from('consultation_bookings')
+      .select('id')
+      .eq('expert_id', selectedExpert.id)
+      .eq('farmer_id', farmerProfile.id)
+      .eq('meeting_date', bookingDate)
+      .eq('meeting_time', bookingTime)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (bookingRow) {
+      const meetingCode = `AGRI-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+      await supabase.from('video_meetings').insert({
+        booking_id: bookingRow.id,
+        meeting_link: `https://meet.agroconnect.app/${meetingCode}`,
+        status: 'Scheduled'
+      });
     }
 
     setSelectedExpert(null);
@@ -317,7 +361,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center' }}>
           
           {/* Remote participant card */}
-          <div style={{ flex: 1.2, position: 'relative', backgroundColor: '#1E1E1E', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifycontent: 'center' }}>
+          <div style={{ flex: 1.2, position: 'relative', backgroundColor: '#1E1E1E', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%', textAlign: 'center' }}>
               <img 
                 src={appointments.find(a => a.roomId === currentCallRoom)?.expertAvatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200'} 
@@ -340,7 +384,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           </div>
 
           {/* Local participant card (user preview) */}
-          <div style={{ flex: 1, position: 'relative', backgroundColor: '#2A2A2A', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifycontent: 'center' }}>
+          <div style={{ flex: 1, position: 'relative', backgroundColor: '#2A2A2A', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {!camOff ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%' }}>
                 <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--primary-green)', animation: 'spin 4s infinite linear' }}>filter_vintage</span>
@@ -477,6 +521,14 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         >
           Reviews
         </button>
+        <button 
+          onClick={() => setActiveSubTab('marketplace')}
+          className={`chip ${activeSubTab === 'marketplace' ? 'active' : ''}`}
+          style={{ flexShrink: 0, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>storefront</span>
+          Shop
+        </button>
       </div>
 
       <div className="page-container fade-in" style={{ paddingTop: '12px', overflowY: 'auto' }}>
@@ -537,7 +589,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
             
             {appointments.map((appt) => (
               <div key={appt.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <img src={appt.expertAvatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
                     <div>
@@ -651,7 +703,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
             
             {reviews.map((rev) => (
               <div key={rev.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <img src={rev.authorAvatar} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%' }} />
                     <div>
@@ -681,6 +733,139 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
             ))}
           </div>
         )}
+
+        {/* ================= MARKETPLACE ================= */}
+        {activeSubTab === 'marketplace' && (() => {
+          const cartTotal = Object.entries(cart).reduce((sum, [pid, qty]) => {
+            const p = products.find(pr => pr.id === pid);
+            return sum + (p ? p.price * qty : 0);
+          }, 0);
+
+          const cartItems = Object.entries(cart)
+            .filter(([, qty]) => qty > 0)
+            .map(([pid, qty]) => ({ product: products.find(p => p.id === pid), qty }))
+            .filter(i => i.product);
+
+          const handleCheckout = async () => {
+            if (cartItems.length === 0) return;
+            setCheckingOut(true);
+            try {
+              const sellerIds = [...new Set(cartItems.map(i => i.product.seller_id))];
+              for (const sellerId of sellerIds) {
+                const itemsForSeller = cartItems.filter(i => i.product.seller_id === sellerId);
+                const { error } = await supabase.rpc('place_order', {
+                  p_seller_id: sellerId,
+                  p_items: itemsForSeller.map(i => ({ product_id: i.product.id, quantity: i.qty }))
+                });
+                if (error) throw error;
+              }
+              setCart({});
+              if (onShowToast) onShowToast('🛒 Order placed successfully!');
+              fetchData(); // Refresh products (stock) + order history
+            } catch (err) {
+              alert(`Checkout failed: ${err.message}`);
+            } finally {
+              setCheckingOut(false);
+            }
+          };
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '32px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                Agro Marketplace — {products.length} Products
+              </h3>
+
+              {/* Product Grid */}
+              {products.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  No products available yet. Check back soon!
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {products.map(product => (
+                    <div key={product.id} style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                      {product.image_path ? (
+                        <img src={product.image_path} alt={product.product_name} style={{ width: '100%', height: '100px', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100px', backgroundColor: 'var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: '32px', color: 'var(--text-secondary)' }}>inventory_2</span>
+                        </div>
+                      )}
+                      <div style={{ padding: '10px', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: '700', lineHeight: '1.3' }}>{product.product_name}</div>
+                        {product.category && <span style={{ fontSize: '10px', color: 'var(--primary-green)', fontWeight: '600' }}>{product.category}</span>}
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Stock: {product.stock}</div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>₹{Number(product.price).toLocaleString('en-IN')}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: 'auto' }}>
+                          <button
+                            onClick={() => setCart(prev => ({ ...prev, [product.id]: Math.max(0, (prev[product.id] || 0) - 1) }))}
+                            style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}
+                          >−</button>
+                          <span style={{ fontSize: '13px', fontWeight: '700', minWidth: '20px', textAlign: 'center' }}>{cart[product.id] || 0}</span>
+                          <button
+                            onClick={() => setCart(prev => ({ ...prev, [product.id]: Math.min(product.stock, (prev[product.id] || 0) + 1) }))}
+                            style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}
+                          >+</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Cart Summary */}
+              {cartItems.length > 0 && (
+                <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.08)', border: '1px solid var(--primary-green)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--primary-green)' }}>🛒 Cart ({cartItems.length} items)</h4>
+                  {cartItems.map(({ product, qty }) => (
+                    <div key={product.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                      <span>{product.product_name} × {qty}</span>
+                      <span style={{ fontWeight: '700' }}>₹{(product.price * qty).toLocaleString('en-IN')}</span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: '700', fontSize: '14px' }}>
+                    <span>Total</span>
+                    <span style={{ color: 'var(--primary-green)' }}>₹{cartTotal.toLocaleString('en-IN')}</span>
+                  </div>
+                  <Button
+                    variant="primary"
+                    onClick={handleCheckout}
+                    disabled={checkingOut}
+                    style={{ width: '100%' }}
+                  >
+                    {checkingOut ? '⏳ Placing Order...' : 'Place Order (Cash on Delivery)'}
+                  </Button>
+                </div>
+              )}
+
+              {/* Order History */}
+              {orderHistory.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>My Orders</h4>
+                  {orderHistory.map(order => (
+                    <div key={order.id} style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>#{order.id.slice(0, 8).toUpperCase()}</span>
+                        <span style={{ fontSize: '10px', fontWeight: '700', backgroundColor: order.status === 'Delivered' ? 'rgba(136,217,130,0.15)' : 'rgba(255,167,38,0.15)', color: order.status === 'Delivered' ? 'var(--primary-green)' : '#FFA726', padding: '3px 8px', borderRadius: '20px' }}>
+                          {order.status}
+                        </span>
+                      </div>
+                      {(order.order_items || []).map(item => (
+                        <div key={item.id} style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>{item.products?.product_name || 'Product'} × {item.quantity}</span>
+                          <span style={{ fontWeight: '600' }}>₹{(item.price * item.quantity).toLocaleString('en-IN')}</span>
+                        </div>
+                      ))}
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--primary-green)', textAlign: 'right' }}>
+                        Total: ₹{Number(order.total_amount).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       </div>
 

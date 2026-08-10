@@ -1,16 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import Lottie from 'lottie-react';
+import splashAnimation from '../assets/splash-animation.json';
 import './pages.css';
 
 export default function Splash({ onFinish }) {
-  const videoRef = useRef(null);
   const [showSkeleton, setShowSkeleton] = useState(false);
-  const [fadeVideo, setFadeVideo] = useState(false);
+  const [fadeLottie, setFadeLottie] = useState(false);
 
   useEffect(() => {
-    // Check if splash video already played during this session
+    // If splash already played this session, skip to skeleton briefly
     const hasPlayed = sessionStorage.getItem('splashPlayed');
     if (hasPlayed) {
-      // If already played once, just show skeleton load for 800ms and finish
       setShowSkeleton(true);
       const timer = setTimeout(() => {
         if (onFinish) onFinish();
@@ -18,54 +18,51 @@ export default function Splash({ onFinish }) {
       return () => clearTimeout(timer);
     }
 
-    // Play video
-    if (videoRef.current) {
-      videoRef.current.play().catch(err => {
-        console.log("Auto-play blocked or failed, skipping video:", err);
-        handleVideoEnd();
-      });
-    }
-
-    // Backup timer in case video fails to fire 'ended' event
+    // Backup timer: if Lottie onComplete doesn't fire (e.g. animation loop=false but no callback), proceed anyway
     const backupTimer = setTimeout(() => {
-      handleVideoEnd();
-    }, 6000); // video length safety net
+      handleAnimationEnd();
+    }, 6000);
 
     return () => clearTimeout(backupTimer);
   }, []);
 
-  const handleVideoEnd = () => {
+  const handleAnimationEnd = () => {
     if (sessionStorage.getItem('splashPlayed')) return;
     sessionStorage.setItem('splashPlayed', 'true');
-    setFadeVideo(true);
-    // Show skeleton loading screen for 1.2 seconds after video fades
+    setFadeLottie(true);
     setTimeout(() => {
       setShowSkeleton(true);
       setTimeout(() => {
         if (onFinish) onFinish();
       }, 1200);
-    }, 400); // wait for fade transition of video
+    }, 400);
   };
 
   return (
-    <div className="splash-container" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', padding: 0, justifyContent: 'center', backgroundColor: '#121212' }}>
+    <div
+      className="splash-container"
+      style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', padding: 0, justifyContent: 'center', backgroundColor: '#121212' }}
+    >
       {!showSkeleton ? (
-        <video
-          ref={videoRef}
-          src="/animation.mp4"
-          muted
-          playsInline
-          onEnded={handleVideoEnd}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            transition: 'opacity 0.4s ease',
-            opacity: fadeVideo ? 0 : 1
-          }}
-        />
+        /* Lottie splash animation — replaces the old <video> element */
+        <div style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'opacity 0.4s ease',
+          opacity: fadeLottie ? 0 : 1
+        }}>
+          <Lottie
+            animationData={splashAnimation}
+            loop={false}
+            onComplete={handleAnimationEnd}
+            style={{ width: '100%', height: '100%' }}
+          />
+        </div>
       ) : (
-        /* Skeleton Loading Screen */
+        /* Skeleton Loading Screen — unchanged from original */
         <div className="fade-in" style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '20px', padding: '24px', boxSizing: 'border-box', justifyContent: 'flex-start', paddingTop: '80px' }}>
           {/* Header Skeleton */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>

@@ -4,6 +4,7 @@ import InputField from '../components/InputField';
 import { Button } from '../components/Button';
 import { PostCard, ProfileCard, CommCard } from '../components/Card';
 import { supabase } from '../supabase';
+import { DEFAULT_AVATAR } from '../constants/defaults';
 import './pages.css';
 
 export default function Search({ onProfileClick, onPostCommentClick }) {
@@ -219,10 +220,10 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
                   <div 
                     key={expert.id}
                     onClick={() => onProfileClick && onProfileClick(expert.id)}
-                    style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '12px 16px', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '12px 16px', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
                   >
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <img src={expert.avatar} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                      <img src={expert.avatar || DEFAULT_AVATAR} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
                           {expert.name}
@@ -254,26 +255,6 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
               </div>
             </div>
 
-            {/* 5. Popular Reels */}
-            <div>
-              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Popular Reels</h4>
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '6px' }}>
-                {[
-                  { title: 'Drip Irrigation hacks 💧', views: '15k views', img: 'https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?auto=format&fit=crop&q=80&w=200&h=300' },
-                  { title: 'Tractor maintenance 🚜', views: '24k views', img: 'https://images.unsplash.com/photo-1530595467537-0b5996c41f2d?auto=format&fit=crop&q=80&w=200&h=300' },
-                  { title: 'Organic compost spray 🌿', views: '9k views', img: 'https://images.unsplash.com/photo-1563514223768-45198aeeed77?auto=format&fit=crop&q=80&w=200&h=300' }
-                ].map((reel, i) => (
-                  <div key={i} style={{ width: '100px', height: '150px', borderRadius: '14px', position: 'relative', overflow: 'hidden', flexShrink: 0, cursor: 'pointer' }}>
-                    <img src={reel.img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}></div>
-                    <div style={{ position: 'absolute', bottom: '8px', left: '8px', right: '8px' }}>
-                      <p style={{ fontSize: '9px', fontWeight: '600', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{reel.title}</p>
-                      <span style={{ fontSize: '8px', color: 'var(--text-secondary)' }}>{reel.views}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
 
             {/* 6. Popular Posts */}
             <div>
@@ -287,7 +268,7 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
                     }}
                     style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '12px 16px', display: 'flex', gap: '10px', cursor: 'pointer' }}
                   >
-                    <img src={post.userAvatar} alt="" style={{ width: '30px', height: '30px', borderRadius: '50%' }} />
+                    <img src={post.userAvatar || DEFAULT_AVATAR} alt="" style={{ width: '30px', height: '30px', borderRadius: '50%' }} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: '12px', fontWeight: '600' }}>{post.userName}</div>
                       <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>{post.content}</p>
@@ -306,10 +287,10 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
                   <div 
                     key={sUser.id}
                     onClick={() => onProfileClick && onProfileClick(sUser.id)}
-                    style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '12px 16px', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '12px 16px', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
                   >
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <img src={sUser.avatar} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                      <img src={sUser.avatar || DEFAULT_AVATAR} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: '600' }}>{sUser.name}</div>
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>@{sUser.username}</div>

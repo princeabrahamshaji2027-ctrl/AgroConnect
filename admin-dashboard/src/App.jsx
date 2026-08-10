@@ -15,21 +15,21 @@ import Orders from './pages/Orders';
 import Categories from './pages/Categories';
 import Appointments from './pages/Appointments';
 import Meetings from './pages/Meetings';
-import Reviews from './pages/Reviews';
-import News from './pages/News';
-import Banners from './pages/Banners';
-import Broadcasts from './pages/Broadcasts';
-import Analytics from './pages/Analytics';
 import Admins from './pages/Admins';
 import ActivityLogs from './pages/ActivityLogs';
 
 function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
+    // Get the initial session
+    supabase.auth.getSession().then(({ data: { session: sess } }) => {
+      setSession(sess);
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession(sess);
     });
@@ -39,31 +39,50 @@ function App() {
   // Fetch user profile when session is available
   useEffect(() => {
     if (session?.user) {
+      setLoadingProfile(true);
       supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
         .single()
-        .then(({ data }) => setProfile(data))
-        .catch(() => setProfile(null));
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('Profile fetch failed:', error);
+          }
+          setProfile(data);
+          setLoadingProfile(false);
+        })
+        .catch((err) => {
+          console.error('Profile fetch threw:', err);
+          setProfile(null);
+          setLoadingProfile(false);
+        });
     } else {
       setProfile(null);
+      setLoadingProfile(false);
     }
   }, [session]);
 
-  // Redirect non-admins to logout
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
   };
 
-  // Authentication guard
   if (!session) {
-    return <Login onLogin={sess => setSession(sess)} />;
+    return <Login />;
   }
+
+  if (loadingProfile) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <span className="animate-spin h-8 w-8 border-4 border-primary-container border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
   if (!profile || profile.role !== 'Admin') {
-    // Not authorized – sign out immediately
+    console.error('Bounced to login — profile:', profile, 'session user id:', session?.user?.id);
     handleLogout();
     return null;
   }
@@ -71,7 +90,8 @@ function App() {
   const renderPage = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard />;
+        // Fix 1.1a: pass onTabChange so KPI cards and "View All" buttons work
+        return <Dashboard onTabChange={setActiveTab} />;
       case 'users':
         return <Users />;
       case 'experts':
@@ -94,22 +114,12 @@ function App() {
         return <Appointments />;
       case 'meetings':
         return <Meetings />;
-      case 'reviews':
-        return <Reviews />;
-      case 'news':
-        return <News />;
-      case 'banners':
-        return <Banners />;
-      case 'broadcasts':
-        return <Broadcasts />;
-      case 'analytics':
-        return <Analytics />;
       case 'admins':
         return <Admins />;
       case 'activity_logs':
         return <ActivityLogs />;
       default:
-        return <Dashboard />;
+        return <Dashboard onTabChange={setActiveTab} />;
     }
   };
 
@@ -117,13 +127,12 @@ function App() {
     <div className="flex min-h-screen bg-surface-variant">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} onLogout={handleLogout} />
       <div className="flex flex-col flex-1 ml-[260px]">
-        <TopNav
-          userProfile={profile}
-          onSearchChange={setSearchQuery}
-          notificationCount={0}
-        />
-        <main className="p-6 overflow-auto flex-1" id="main-content">
-          {renderPage()}
+        <TopNav userProfile={profile} />
+        {/* Fix 1.1b: pt-16 offsets fixed TopNav, h-screen + overflow-y-auto enables page scroll */}
+        <main className="pt-16 h-screen overflow-y-auto flex-1" id="main-content">
+          <div className="p-6">
+            {renderPage()}
+          </div>
         </main>
       </div>
     </div>
