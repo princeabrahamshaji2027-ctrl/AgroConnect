@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed": "node seed/index.js",
+    "seed:cleanup": "node seed/cleanup.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -25,9 +27,11 @@
     "react-swipeable": "^7.0.2"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.5.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "dotenv": "^17.4.2",
     "oxlint": "^1.71.0",
     "vite": "^8.1.1"
   }
