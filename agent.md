@@ -1,147 +1,244 @@
-# PROMPT FOR ANTIGRAVITY — Diagnose: Admin Login Still Bounces Back to Login Page
+# PROMPT FOR ANTIGRAVITY — Demo Data Seeding System (Supabase, extends seed-demo-users.js)
 
-A previous fix targeted a React state race in `Login.jsx`/`App.jsx` for this exact symptom. The
-symptom is still occurring. Do not assume that fix was wrong — first confirm whether it's even in the
-deployed code, then work through the remaining causes below in order. Do not apply a fix for any item
-until you've confirmed it's the actual cause using the diagnostic step given — fixing the wrong thing
-first wastes a cycle and makes it harder to tell what actually solved it.
+This builds on the existing `seed-demo-users.js` pattern already in the repo — same architecture
+(Node script, `@supabase/supabase-js` Admin API, `service_role` key from an env var, never committed).
+Do not introduce Django or any other backend framework — this project has none, and none is needed;
+the Supabase Admin API already gives correct password hashing and auth handling without one.
 
-**Ground rule: stop debugging blind.** Before checking anything else, do step 0.
+**Volume**: build for the "development/demo" tier, not millions of rows — 800 users, ~6,000 posts,
+~25,000 comments, realistic likes/notifications on top. This is enough to make every screen, filter,
+and admin chart look fully populated without bloating the database or making seeding slow. A `--scale`
+flag (see Phase 4) allows re-running at a larger size later if actually needed for stress testing.
 
 ---
 
-## STEP 0 — Add real error visibility (do this first, unconditionally)
+## SECURITY FIRST — fix before anything else in this prompt
 
-`admin-dashboard/src/App.jsx`'s profile-fetch `useEffect` currently swallows errors silently:
-```jsx
-.then(({ data }) => setProfile(data))
-.catch(() => setProfile(null));
+1. Rotate the `prince@agroconnect.com` admin account's password in the Supabase dashboard right now —
+   the current one is exposed in the public GitHub repo's commit history and will remain recoverable
+   there even after the file is changed.
+2. Add a `.env` file (gitignored) holding `SUPABASE_SERVICE_ROLE_KEY`, and confirm `.env` is listed in
+   `.gitignore`. Never hardcode a password or the service role key directly in any `.js` file again,
+   demo data or otherwise.
+3. Add `is_test` as a real column so seeded accounts can always be told apart from real ones and wiped
+   cleanly:
+```sql
+alter table public.profiles add column if not exists is_test boolean not null default false;
+create index if not exists idx_profiles_is_test on public.profiles(is_test);
+
+alter table public.posts add column if not exists is_test boolean not null default false;
+alter table public.comments add column if not exists is_test boolean not null default false;
+alter table public.products add column if not exists is_test boolean not null default false;
+alter table public.likes add column if not exists is_test boolean not null default false;
+alter table public.notifications add column if not exists is_test boolean not null default false;
 ```
-This throws away the exact information needed to diagnose this bug. Change it to:
-```jsx
-.then(({ data, error }) => {
-  if (error) {
-    console.error('Profile fetch failed:', error);
-  }
-  setProfile(data);
-})
-.catch((err) => {
-  console.error('Profile fetch threw:', err);
-  setProfile(null);
-});
+
+---
+
+## PHASE 1 — Project structure
+
+Organize under a new `seed/` folder at the project root (not inside `src/`, this never ships to the
+app bundle):
 ```
-Also add a log right before the redirect-to-login check, so it's visible in the browser console exactly
-what state caused the bounce:
-```jsx
-if (!profile || profile.role !== 'Admin') {
-  console.error('Bounced to login — profile:', profile, 'session user id:', session?.user?.id);
-  handleLogout();
-  return null;
+seed/
+  index.js              — orchestrator, runs generators in dependency order
+  cleanup.js            — deletes everything where is_test = true
+  generators/
+    users.js
+    posts.js
+    comments.js
+    likes.js
+    marketplace.js
+    expert-qa.js
+    notifications.js
+  lib/
+    supabaseAdmin.js     — the admin client, reused from seed-demo-users.js's pattern
+    randomHelpers.js      — shared random pickers (Indian states, crop names, etc.)
+```
+Install: `npm install --save-dev @faker-js/faker`.
+
+`seed/lib/supabaseAdmin.js`:
+```js
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
+
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('Set SUPABASE_SERVICE_ROLE_KEY in .env before running seed scripts.');
+  process.exit(1);
+}
+
+module.exports = createClient(
+  process.env.SUPABASE_URL || 'https://mgreapakfchcxcrauheq.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
+```
+
+---
+
+## PHASE 2 — Generators (agriculture-context, not generic Faker defaults)
+
+### `generators/users.js`
+Use `@faker-js/faker`'s `en_IN` locale where available for names, and a hand-written pool of Indian
+states/districts (Punjab, Kerala, Maharashtra, Karnataka, Uttar Pradesh, Tamil Nadu, etc.) for
+location — generic Faker city names won't read as authentically Indian agricultural users.
+```js
+const ROLE_WEIGHTS = [
+  { role: 'Farmer', weight: 0.70 },
+  { role: 'Seller', weight: 0.15 },
+  { role: 'Expert', weight: 0.10 },
+  { role: 'Distributor', weight: 0.05 }, // if this role exists in your enum; otherwise fold into Seller
+];
+
+// For each fake user:
+// - email: faker-generated but must be unique and end in a clearly fake domain, e.g. `@seedtest.agroconnect.local`
+//   so seeded accounts can never collide with or be mistaken for real signups
+// - password: a single shared strong-but-known demo password (e.g. crypto-random per user, doesn't
+//   matter — nobody needs to log into 800 fake accounts individually)
+// - Create via adminClient.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name } })
+// - Upsert into profiles with is_test: true, role, location (from the Indian state/district pool),
+//   profile_image_path set to a DiceBear URL: `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`
+// - For Expert-role users, also insert a matching row into `experts` (specialization from a pool:
+//   'Soil Health', 'Pest Control', 'Organic Farming', 'Irrigation', 'Crop Disease', etc.)
+// - For Seller-role users, also insert a matching row into `seller_profiles`
+```
+Batch this with Supabase Admin API's rate limits in mind — `createUser` calls cannot be parallelized
+without limit; run them in small concurrent batches (10-20 at a time) with a short delay between
+batches, not all 800 at once, or you'll hit rate limiting and get partial failures.
+
+### `generators/posts.js`
+This is the one that replaces the "scrape a news site" idea — realistic, synthetic, agriculture-themed
+posts, not copied articles. Build a template pool with placeholders filled from Faker + crop/location
+data, e.g.:
+```js
+const POST_TEMPLATES = [
+  "🌾 {crop} harvest looking great this season in {location}! {sentiment}",
+  "Need advice — my {crop} leaves are showing {symptom}. Any experts around?",
+  "Just tried {technique} on my farm and the results are {sentiment2}. Recommend to fellow farmers.",
+  "Selling fresh {crop} directly from the farm in {location}. DM for details.",
+  "Weather has been {weather} this week — how is everyone's {crop} holding up?",
+  "Attended a workshop on {technique} today, learned a lot. Sharing what I learned soon.",
+  // 15-20 total templates covering: harvest updates, questions to experts, technique sharing,
+  // produce-for-sale mentions, weather/crop condition chat, community shoutouts
+];
+```
+Fill `{crop}` from a pool of real Indian crops (rice, wheat, sugarcane, cotton, tomato, chili, banana,
+coconut, tea, coffee, etc.), `{location}` from the same state/district pool used for users,
+`{technique}` from real farming methods (drip irrigation, crop rotation, vermicomposting, organic
+pest control, mulching), and pick 1-3 posts per fake user, with `image_path` set to
+`https://picsum.photos/seed/${postId}/800/600` for a deterministic, varied placeholder photo per post,
+`status: 'Approved'`, `is_test: true`, and a randomized `created_at` spread across the last 90 days
+(not all "now") so the feed's timestamps look organic rather than a visible bulk-insert timestamp
+cluster.
+
+### `generators/comments.js`
+Short template pool ("Great work! 👏", "What's the yield like?", "Nice crop!", "How much per kg?",
+"Following your farm's journey, keep it up", "Which fertilizer did you use?") — attach 0-8 comments
+per seeded post, from other seeded users, `is_test: true`, randomized timestamps after the post's own
+`created_at`.
+
+### `generators/likes.js`
+For each seeded post, insert a random 5-150 `likes` rows from random seeded users (respecting the
+`unique(post_id, user_id)` constraint — dedupe user selection per post), `is_test: true`. Let the
+existing database trigger recompute `posts.like_count` from these — don't manually set the counter
+column from the seed script, that would double up with the trigger.
+
+### `generators/marketplace.js`
+For each seeded Seller-role user, insert 2-8 products using a template pool of real agricultural
+products (Organic Fertilizer, Neem Oil, Vermicompost, Drip Irrigation Kit, Bio Pesticide, Seed
+varieties, farming tools), realistic INR pricing ranges per product type, `image_path` via
+`picsum.photos`, `is_test: true`.
+
+### `generators/expert-qa.js`
+For a subset of seeded Farmer users, create posts/comments framed as questions directed at Experts
+(reuses the posts/comments tables — there's no separate Q&A table in the current schema; if a
+dedicated distinction is wanted later, that's a schema decision to raise separately, not part of this
+seed pass) using a template pool: "Why are my {crop} leaves turning yellow?", "Best time to plant
+{crop} in {location}?", "How do I treat {symptom} on {crop}?" — and have a random seeded Expert reply
+via `comments`.
+
+### `generators/notifications.js`
+For realism in the Notifications screen, insert a batch of `notifications` rows for a handful of the
+seeded users (not all 800 — just enough, e.g. 30-50, so a demo login into a specific seeded account
+shows a populated notifications feed), using the real `type` enum values already defined
+(`like`, `comment`, `announcement`), `is_test: true`.
+
+---
+
+## PHASE 3 — Orchestration and cleanup
+
+`seed/index.js` runs generators in dependency order (users → experts/sellers → posts → comments →
+likes → marketplace → notifications), logs progress per phase (`✅ 800 users created`,
+`✅ 6000 posts created`, etc.), and wraps each generator's bulk inserts in batches of ~500 rows per
+`.insert()` call rather than one row at a time — Supabase/Postgres handles large batched inserts far
+faster than thousands of individual round-trips, which is the actual performance lesson from the
+"Method 2 is fast" observation in the source document, achieved here without bypassing Supabase Auth
+for the user-creation step where correctness (password hashing) actually matters.
+
+`seed/cleanup.js`:
+```js
+// Delete in reverse dependency order so foreign keys don't block deletion:
+await supabaseAdmin.from('notifications').delete().eq('is_test', true);
+await supabaseAdmin.from('likes').delete().eq('is_test', true);
+await supabaseAdmin.from('comments').delete().eq('is_test', true);
+await supabaseAdmin.from('products').delete().eq('is_test', true);
+await supabaseAdmin.from('posts').delete().eq('is_test', true);
+// Then delete the actual auth users (this cascades to profiles/experts/seller_profiles via FK):
+const { data: testProfiles } = await supabaseAdmin.from('profiles').select('id').eq('is_test', true);
+for (const p of testProfiles) {
+  await supabaseAdmin.auth.admin.deleteUser(p.id);
+}
+console.log(`✅ Cleaned up ${testProfiles.length} test users and all their content.`);
+```
+
+Add both as `package.json` scripts:
+```json
+"scripts": {
+  "seed": "node seed/index.js",
+  "seed:cleanup": "node seed/cleanup.js"
 }
 ```
-Reproduce the bug once with these logs in place and report back exactly what they print — that output
-determines which of the causes below is real, rather than guessing.
 
 ---
 
-## STEP 1 — Confirm the previous fix is actually live
+## PHASE 4 — Scale flag (optional, only if actually needed later)
 
-Check `admin-dashboard/src/pages/Login.jsx` and `admin-dashboard/src/App.jsx` for the exact state
-described below. If either file still looks like the "before" version, the previous fix was never
-applied or never deployed — apply it now before checking anything else.
-
-- `Login.jsx` should **not** call any `onLoginSuccess(...)` / callback prop after a successful admin
-  login — session should be set only by `App.jsx`'s own `supabase.auth.onAuthStateChange` listener.
-- If `Login.jsx` still contains a line like `onLoginSuccess(user)`, or `App.jsx` still passes
-  `onLogin`/`onLoginSuccess` as a prop to `<Login>`, the old race is still present — fix it per the
-  previous prompt before moving on.
-- Also confirm the browser is actually running the new build, not a cached one: hard-refresh
-  (disable cache in devtools) or test in a fresh private/incognito window. A stale service worker or
-  browser cache showing the old JS bundle would reproduce the exact same symptom even after the source
-  is fixed.
+Support `npm run seed -- --scale=small|medium|large` mapping to:
+- `small` (default): 800 users, ~6,000 posts — this is what Phase 1-3 above targets.
+- `medium`: 5,000 users, ~40,000 posts — only run this against a staging project, never production.
+- `large`: reserved for explicit stress-testing only, not for demo purposes — do not run this without
+  a specific reason, per the source document's own caution about unnecessary million-row seeds
+  slowing down normal development.
 
 ---
 
-## STEP 2 — Check whether RLS is blocking the admin from reading their own profile row
+## PHASE 5 — News module (the legitimate way to use Krishi Jagran content)
 
-This is the most likely remaining cause if Step 1's fix was already correctly in place. Supabase Row
-Level Security policies on the `profiles` table were designed around an `is_admin()` helper function
-that itself queries `profiles.role` for the current user. If the `select` policy on `profiles` was
-written to depend only on `is_admin()` without also allowing `id = auth.uid()`, a freshly-logged-in
-admin cannot read their own row — the RLS check to prove they're an admin requires reading their own
-row, which the same check is blocking. The result: the profile fetch returns zero rows (not an error,
-just empty), `profile` stays `null`, and the app treats this as "not an admin" and logs them straight
-back out — every single time, deterministically, regardless of any React state timing.
-
-**Diagnostic**: run this directly in the Supabase SQL editor, logged in as the actual admin user (or
-via `select * from public.profiles where id = '<the admin's auth.users id>';` while impersonating that
-role), and separately check the current policy definitions:
-```sql
-select * from pg_policies where tablename = 'profiles';
-```
-Look specifically at the `select` policy. It must allow **both** conditions, not only the admin check:
-```sql
--- if the current policy looks like this, it's the bug:
-create policy "profiles_select" on public.profiles for select
-  using (public.is_admin());
-
--- it needs to be:
-create policy "profiles_select" on public.profiles for select
-  using (id = auth.uid() or public.is_admin());
-```
-If the policy is missing the `id = auth.uid()` clause, add it. This lets any user read their own row
-unconditionally (which is safe and necessary — self-read is not a privilege escalation) while still
-allowing admins to read everyone else's via `is_admin()`.
+Separately from the fake-post seeding above: for the `news` table, pull a small number (10-20) of
+**real, current** articles from Krishi Jagran's own published RSS feed if they provide one (check
+`krishijagran.com` for a `/rss` or similar published feed — using a site's own provided RSS feed is
+the legitimate, intended way to redistribute headlines/summaries), storing only `title`,
+a short excerpt (not the full article body), `source: 'Krishi Jagran'`, and a `link` back to the
+original article on their site for the full read. Do not scrape article bodies wholesale, and do not
+attribute these to any fake user — they populate the News module as News, exactly matching how
+the schema already models it. If no public RSS feed exists, use a small hand-curated set of real
+recent headlines with proper source links instead of automated scraping.
 
 ---
 
-## STEP 3 — Check the actual data: is the role value exactly `'Admin'`?
+## VERIFICATION
 
-`App.jsx` checks `profile.role !== 'Admin'` — an exact, case-sensitive string match against the
-Postgres enum value. If the admin account's row actually has `role = 'admin'` (lowercase), a typo, or
-trailing whitespace from manual data entry, this check fails even though RLS and the React code are
-both working correctly.
-
-**Diagnostic**:
-```sql
-select id, email, role, length(role::text) as role_length from public.profiles
-where id = '<the admin auth user id>';
-```
-Confirm the value is exactly `Admin` (capital A, 5 characters, no surrounding whitespace) and matches
-the `user_role` enum definition precisely.
-
----
-
-## STEP 4 — Check for a second, stale Login/Auth code path
-
-Confirm there is only one admin login component in the entire `admin-dashboard/` project and that
-`App.jsx` is the only place rendering it. If an older or duplicate login/auth file exists anywhere in
-the project (from an earlier build pass) and something is still importing it instead of the current
-`Login.jsx`, fixes applied to the "real" file would have no effect. Search the whole admin-dashboard
-source tree for every file that imports from `../supabase` and calls `signInWithPassword`, and confirm
-there's exactly one.
-
----
-
-## STEP 5 — Confirm signInWithPassword is actually succeeding, not silently failing
-
-It's possible the bounce-back isn't a post-login state bug at all, but the sign-in call itself failing
-in a way that isn't surfaced as an error message. Check the Network tab (or add a log) around the
-`supabase.auth.signInWithPassword` call in `Login.jsx` to confirm `authError` is genuinely `null` and
-`user` is genuinely populated on the attempt that "bounces back." If `signInWithPassword` is actually
-failing (wrong password format, email domain suffix mismatch from the `email.includes('@') ? email :
-\`${email}@agroconnect.com\`` logic not matching how this admin's account was actually created), the
-symptom could look identical from the outside but the real fix is on the credentials/account side, not
-the session-handling code at all.
-
----
-
-## REPORT BACK
-
-After Step 0's logging is in place and the bug is reproduced once more, report:
-1. What the two new console.error lines actually printed.
-2. Whether Step 1 found the old code still present, or confirms the previous fix was already live.
-3. The result of Step 2's `pg_policies` query on `profiles`.
-4. The result of Step 3's role-value query for the specific admin account being used to test.
-
-That combination will make the actual cause unambiguous instead of guessed.
+- [ ] Admin account password has been rotated (see Security First section) before this seed data is
+      even generated, independent of everything else in this prompt
+- [ ] `.env` holds the service role key; `.gitignore` excludes it; nothing in the repo history after
+      this point contains a real secret
+- [ ] Running `npm run seed` populates ~800 users, ~6,000 posts, comments, likes, products, and
+      notifications, all tagged `is_test = true`, in a reasonable time (batched inserts, not one row
+      at a time)
+- [ ] Every mobile screen (Feed, Search, Marketplace, Connect/Nearby Experts, Notifications) and every
+      admin screen (Dashboard KPIs/charts, Users, Experts, Products, Orders) shows populated, varied,
+      realistic-looking data after seeding
+- [ ] Running `npm run seed:cleanup` removes every seeded row and leaves real accounts (like your own)
+      completely untouched
+- [ ] News module shows real Krishi Jagran headlines with correct source attribution and working links
+      back to the original articles — not full article text, and not attributed to any fake user
