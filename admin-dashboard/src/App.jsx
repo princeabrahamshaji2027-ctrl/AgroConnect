@@ -20,8 +20,7 @@ import ActivityLogs from './pages/ActivityLogs';
 
 function App() {
   const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profile, setProfile] = useState(undefined); // undefined = loading, null = no profile / failed
   const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
@@ -39,7 +38,7 @@ function App() {
   // Fetch user profile when session is available
   useEffect(() => {
     if (session?.user) {
-      setLoadingProfile(true);
+      setProfile(undefined); // set to loading state while fetching
       supabase
         .from('profiles')
         .select('*')
@@ -48,18 +47,17 @@ function App() {
         .then(({ data, error }) => {
           if (error) {
             console.error('Profile fetch failed:', error);
+            setProfile(null);
+          } else {
+            setProfile(data);
           }
-          setProfile(data);
-          setLoadingProfile(false);
         })
         .catch((err) => {
           console.error('Profile fetch threw:', err);
           setProfile(null);
-          setLoadingProfile(false);
         });
     } else {
       setProfile(null);
-      setLoadingProfile(false);
     }
   }, [session]);
 
@@ -73,7 +71,7 @@ function App() {
     return <Login />;
   }
 
-  if (loadingProfile) {
+  if (profile === undefined) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <span className="animate-spin h-8 w-8 border-4 border-primary-container border-t-transparent rounded-full" />
