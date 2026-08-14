@@ -242,3 +242,5 @@ recent headlines with proper source links instead of automated scraping.
       completely untouched
 - [ ] News module shows real Krishi Jagran headlines with correct source attribution and working links
       back to the original articles — not full article text, and not attributed to any fake user
+
+      
