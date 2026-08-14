@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import logoImg from '../assets/logo.jpg';
 
-export default function Login() {
+export default function Login({ authError: externalError }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,42 +18,25 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Sign in user
+      // Format email if needed
       const emailStr = email.includes('@') ? email : `${email}@agroconnect.com`;
-      const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
+      const { error: authErr } = await supabase.auth.signInWithPassword({
         email: emailStr,
         password: password,
       });
 
-      if (authError) throw authError;
+      if (authErr) throw authErr;
 
-      if (user) {
-        // Fetch user profile to verify role
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-
-        if (profileError) throw profileError;
-
-        if (profile && profile.role === 'Admin') {
-          // Do nothing here — App.jsx's onAuthStateChange listener already picks up
-          // the real session from the signInWithPassword call above and sets it correctly.
-          // Setting session state from here too was the cause of the login race/bounce-back bug.
-        } else {
-          // Sign out if not admin
-          await supabase.auth.signOut();
-          setError('Access Denied: You do not have administrator privileges.');
-        }
-      }
+      // On successful sign-in, App.jsx's onAuthStateChange listener & profile useEffect
+      // automatically process the session, verify admin role, and render the dashboard.
     } catch (err) {
       console.error('Login error:', err);
       setError(err.message || 'An error occurred during login.');
-    } finally {
       setLoading(false);
     }
   };
+
+  const displayError = error || externalError;
 
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center px-4">
@@ -69,9 +52,9 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleLogin} className="flex flex-col gap-4 mt-2">
-          {error && (
+          {displayError && (
             <div className="bg-error-container/20 border border-error/30 text-error rounded-xl p-4 text-[13px] text-center font-medium leading-5">
-              {error}
+              {displayError}
             </div>
           )}
 
