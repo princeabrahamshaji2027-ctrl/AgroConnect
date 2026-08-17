@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import UserProfileModal from '../components/UserProfileModal';
+import defaultAvatar from '../assets/profile-placeholder.png';
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -8,6 +10,7 @@ export default function Users() {
   const [showBanModal, setShowBanModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [banReason, setBanReason] = useState('');
+  const [viewingProfileUserId, setViewingProfileUserId] = useState(null);
 
   const fetchUsers = async () => {
     try {
@@ -30,7 +33,8 @@ export default function Users() {
     fetchUsers();
   }, []);
 
-  const handleBanClick = (user) => {
+  const handleBanClick = (e, user) => {
+    e.stopPropagation();
     setSelectedUser(user);
     setBanReason('');
     setShowBanModal(true);
@@ -51,7 +55,8 @@ export default function Users() {
     }
   };
 
-  const handleUnbanUser = async (userId) => {
+  const handleUnbanUser = async (e, userId) => {
+    e.stopPropagation();
     try {
       const { error } = await supabase
         .from('profiles')
@@ -60,7 +65,6 @@ export default function Users() {
 
       if (error) throw error;
 
-      // Log the audit event manually
       await supabase.from('admin_audit_log').insert({
         admin_id: (await supabase.auth.getUser()).data.user?.id,
         action: 'unban_user',
@@ -90,7 +94,7 @@ export default function Users() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-headline-xl text-on-surface mb-1">Users</h1>
-          <p className="font-body-sm text-on-surface-variant">Manage Agro Connect user accounts, view roles, and handle bans.</p>
+          <p className="font-body-sm text-on-surface-variant">Manage Agro Connect user accounts, view profiles, and handle bans.</p>
         </div>
         <div className="relative w-80">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
@@ -128,15 +132,19 @@ export default function Users() {
                 </tr>
               ) : (
                 filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-surface-variant/20 transition-colors">
+                  <tr
+                    key={user.id}
+                    onClick={() => setViewingProfileUserId(user.id)}
+                    className="hover:bg-surface-variant/30 transition-colors cursor-pointer"
+                  >
                     <td className="p-4 flex items-center gap-3">
                       <img
                         alt={user.full_name}
                         className="w-9 h-9 rounded-full object-cover border border-outline-variant"
-                        src={user.profile_image_path || "https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"}
+                        src={user.profile_image_path || defaultAvatar}
                       />
                       <div className="flex flex-col">
-                        <span className="font-bold text-on-surface">{user.full_name || 'Anonymous'}</span>
+                        <span className="font-bold text-on-surface hover:text-primary transition-colors">{user.full_name || 'Anonymous'}</span>
                         <span className="text-[10px] text-on-surface-variant font-mono">{user.id.substring(0, 8)}...</span>
                       </div>
                     </td>
@@ -166,14 +174,14 @@ export default function Users() {
                     <td className="p-4 text-right">
                       {user.is_banned ? (
                         <button
-                          onClick={() => handleUnbanUser(user.id)}
+                          onClick={(e) => handleUnbanUser(e, user.id)}
                           className="bg-primary-container/10 text-primary-container hover:bg-primary-container/20 border border-primary-container/30 px-3 py-1.5 rounded font-label-sm transition-colors cursor-pointer"
                         >
                           Unban
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleBanClick(user)}
+                          onClick={(e) => handleBanClick(e, user)}
                           className="bg-error/10 text-error hover:bg-error/20 border border-error/30 px-3 py-1.5 rounded font-label-sm transition-colors cursor-pointer"
                         >
                           Ban User
@@ -187,6 +195,15 @@ export default function Users() {
           </table>
         )}
       </div>
+
+      {/* User Profile Detail Modal */}
+      {viewingProfileUserId && (
+        <UserProfileModal
+          userId={viewingProfileUserId}
+          onClose={() => setViewingProfileUserId(null)}
+          onRefresh={fetchUsers}
+        />
+      )}
 
       {/* Ban Reason Dialog Modal */}
       {showBanModal && selectedUser && (

@@ -4,10 +4,10 @@ import { PostCard } from '../components/Card';
 import { Button } from '../components/Button';
 import InputField from '../components/InputField';
 import Dialog from '../components/Dialog';
+import ComingSoon from '../components/ComingSoon';
 import { supabase } from '../supabase';
 import './pages.css';
 
-// Detect Capacitor
 const isCapacitor = () => typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.();
 
 export default function UserProfile({ 
@@ -23,18 +23,17 @@ export default function UserProfile({
   const [user, setUser] = useState(null);
   const [userPosts, setUserPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
 
   // Expert application state
-  const [expertAppStatus, setExpertAppStatus] = useState(null); // null | 'Pending' | 'Approved' | 'Rejected'
-
-  // Seller profile state
-  const [sellerStatus, setSellerStatus] = useState(null); // null | 'Pending' | 'Verified' | 'Rejected'
+  const [expertAppStatus, setExpertAppStatus] = useState(null);
+  const [sellerStatus, setSellerStatus] = useState(null);
 
   // KYC Expert Dialog states
   const [isKycOpen, setIsKycOpen] = useState(false);
   const [kycStep, setKycStep] = useState(1);
 
-  // Expert Form Fields
+  // Form fields
   const [fullName, setFullName] = useState('');
   const [qualification, setQualification] = useState('');
   const [degree, setDegree] = useState('');
@@ -45,17 +44,14 @@ export default function UserProfile({
   const [linkedin, setLinkedin] = useState('');
   const [expertBio, setExpertBio] = useState('');
 
-  // CV file for upload
   const [cvFile, setCvFile] = useState(null);
   const [cvFileName, setCvFileName] = useState('');
   const cvInputRef = useRef(null);
 
-  // Become Seller Dialog
   const [isSellerOpen, setIsSellerOpen] = useState(false);
+  const [isComingSoonOpen, setIsComingSoonOpen] = useState(false);
   const [shopName, setShopName] = useState('');
   const [sellerSubmitting, setSellerSubmitting] = useState(false);
-
-  // Expert submit state
   const [expertSubmitting, setExpertSubmitting] = useState(false);
 
   const fetchProfile = async () => {
@@ -76,13 +72,25 @@ export default function UserProfile({
           id: profile.id,
           name: profile.full_name,
           username: profile.full_name?.toLowerCase().replace(/\s+/g, '') || '',
-          avatar: profile.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+          avatar: profile.profile_image_path || '/profile-placeholder.png',
           role: profile.role,
           bio: profile.bio || '',
           location: profile.location || 'Punjab, India',
           isBanned: profile.is_banned || false,
+          followerCount: profile.follower_count || 0
         });
         setFullName(profile.full_name || '');
+      }
+
+      // Check if logged in user is connected to target profile
+      if (authUser && targetUserId !== authUser.id) {
+        const { data: followRow } = await supabase
+          .from('followers')
+          .select('id')
+          .eq('follower_id', authUser.id)
+          .eq('following_id', targetUserId)
+          .maybeSingle();
+        setIsConnected(!!followRow);
       }
 
       // Fetch user posts
@@ -97,7 +105,7 @@ export default function UserProfile({
           id: post.id,
           userId: post.user_id,
           userName: post.profiles?.full_name || 'Anonymous',
-          userAvatar: post.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+          userAvatar: post.profiles?.profile_image_path || '/profile-placeholder.png',
           userRole: post.profiles?.role || 'Farmer',
           content: post.caption,
           image: post.image_path,
@@ -112,8 +120,7 @@ export default function UserProfile({
         })));
       }
 
-      // Fetch expert application status (own profile only)
-      if (userId === 'user1' && authUser?.id) {
+      if (targetUserId === authUser?.id) {
         const { data: appData } = await supabase
           .from('expert_applications')
           .select('status')
@@ -123,7 +130,6 @@ export default function UserProfile({
           .maybeSingle();
         setExpertAppStatus(appData?.status || null);
 
-        // Fetch seller profile status
         const { data: sellerData } = await supabase
           .from('seller_profiles')
           .select('verification_status')
@@ -142,14 +148,42 @@ export default function UserProfile({
     fetchProfile();
   }, [userId]);
 
-  // Refetch on screen focus (visibility change covers app tab switching)
   useEffect(() => {
     const handleFocus = () => fetchProfile();
     document.addEventListener('visibilitychange', handleFocus);
     return () => document.removeEventListener('visibilitychange', handleFocus);
   }, [userId]);
 
-  // ─── Expert KYC ────────────────────────────────────────────────────────────
+  const handleToggleConnect = async () => {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser || !user) return;
+
+    try {
+      if (isConnected) {
+        const { error } = await supabase
+          .from('followers')
+          .delete()
+          .eq('follower_id', authUser.id)
+          .eq('following_id', user.id);
+        if (error) throw error;
+        setIsConnected(false);
+        setUser(prev => ({ ...prev, followerCount: Math.max(0, (prev.followerCount || 1) - 1) }));
+        if (onShowToast) onShowToast(`Disconnected from ${user.name}`);
+      } else {
+        const { error } = await supabase
+          .from('followers')
+          .insert({ follower_id: authUser.id, following_id: user.id });
+        if (error) throw error;
+        setIsConnected(true);
+        setUser(prev => ({ ...prev, followerCount: (prev.followerCount || 0) + 1 }));
+        if (onShowToast) onShowToast(`🤝 Connected with ${user.name}!`);
+      }
+    } catch (err) {
+      alert(`Connect action failed: ${err.message}`);
+    }
+  };
+
+  // Expert KYC
   const handleBecomeExpertClick = () => {
     setIsKycOpen(true);
     setKycStep(1);
@@ -183,13 +217,7 @@ export default function UserProfile({
   };
 
   const handleCvPick = async () => {
-    if (isCapacitor()) {
-      // On native: use Filesystem plugin or Camera to get a document
-      // For now fall through to web input (document picking not in Camera plugin)
-      cvInputRef.current?.click();
-    } else {
-      cvInputRef.current?.click();
-    }
+    cvInputRef.current?.click();
   };
 
   const handleKycSubmit = async () => {
@@ -207,7 +235,6 @@ export default function UserProfile({
 
     setExpertSubmitting(true);
     try {
-      // 1. Upload CV to expert-cvs bucket
       const ext = cvFile.name.split('.').pop() || 'pdf';
       const cvPath = `${authUser.id}/${Date.now()}_cv.${ext}`;
       const { error: uploadErr } = await supabase.storage
@@ -215,17 +242,13 @@ export default function UserProfile({
         .upload(cvPath, cvFile, { upsert: false, contentType: cvFile.type });
       if (uploadErr) throw uploadErr;
 
-      // Get a signed URL for the CV (private bucket — admins can view via service role, but store path)
-      const cvStoragePath = cvPath;
-
-      // 2. Insert expert application
       const { error: insertErr } = await supabase
         .from('expert_applications')
         .insert({
           user_id: authUser.id,
           qualification: `${qualification} in ${degree} from ${institution}`,
           experience: `${experience} years. Specialization: ${specialization}. Bio: ${expertBio}`,
-          cv_file_path: cvStoragePath,
+          cv_file_path: cvPath,
           status: 'Pending'
         });
       if (insertErr) throw insertErr;
@@ -240,10 +263,9 @@ export default function UserProfile({
     }
   };
 
-  // ─── Become Seller ──────────────────────────────────────────────────────────
+  // Become Seller Placeholder & Error handling
   const handleBecomeSellerClick = () => {
-    setShopName('');
-    setIsSellerOpen(true);
+    setIsComingSoonOpen(true);
   };
 
   const handleSellerSubmit = async () => {
@@ -263,7 +285,15 @@ export default function UserProfile({
           shop_name: shopName.trim(),
           verification_status: 'Pending'
         });
-      if (error) throw error;
+      
+      if (error) {
+        if (error.code === '23505' || error.message?.includes('unique') || error.message?.includes('duplicate')) {
+          alert("You've already applied to become a seller.");
+          setIsSellerOpen(false);
+          return;
+        }
+        throw error;
+      }
 
       setSellerStatus('Pending');
       setIsSellerOpen(false);
@@ -296,7 +326,6 @@ export default function UserProfile({
   const isExpert = user.role === 'Agronomist' || user.role === 'Expert' || user.role === 'Distributor';
   const isOwnProfile = userId === 'user1';
 
-  // Status badge helpers
   const ExpertStatusBadge = () => {
     if (isExpert) return null;
     if (!isOwnProfile) return null;
@@ -320,7 +349,6 @@ export default function UserProfile({
         </Button>
       </div>
     );
-    // No application yet
     return (
       <Button variant="secondary" onClick={handleBecomeExpertClick} style={{ width: '100%', padding: '10px 16px', borderRadius: '14px', fontSize: '13px', borderColor: 'var(--primary-green)', color: 'var(--primary-green)' }}>
         Become Verified Expert
@@ -338,16 +366,6 @@ export default function UserProfile({
     if (sellerStatus === 'Verified') return (
       <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: 'var(--primary-green)', backgroundColor: 'rgba(136, 217, 130, 0.1)', border: '1px solid rgba(136, 217, 130, 0.25)', fontWeight: '600' }}>
         🏪 Verified Seller
-      </div>
-    );
-    if (sellerStatus === 'Rejected') return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: 'var(--error)', backgroundColor: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.25)', fontWeight: '600' }}>
-          ❌ Seller Application Rejected
-        </div>
-        <Button variant="secondary" onClick={handleBecomeSellerClick} style={{ width: '100%', fontSize: '12px', borderRadius: '14px' }}>
-          Reapply as Seller
-        </Button>
       </div>
     );
     return (
@@ -385,10 +403,14 @@ export default function UserProfile({
 
           {user.bio && <p className="profile-bio">{user.bio}</p>}
 
-          <div className="profile-stats-row">
+          <div className="profile-stats-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
             <div className="profile-stat-box">
               <span className="profile-stat-val">{userPosts.length}</span>
               <span className="profile-stat-lbl">Posts</span>
+            </div>
+            <div className="profile-stat-box">
+              <span className="profile-stat-val" style={{ color: 'var(--primary-green)' }}>{user.followerCount}</span>
+              <span className="profile-stat-lbl">Connections</span>
             </div>
             <div className="profile-stat-box">
               <span className="profile-stat-val" style={{ color: 'var(--text-primary)', fontSize: '12px' }}>{user.location}</span>
@@ -397,7 +419,7 @@ export default function UserProfile({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', padding: '0 16px' }}>
-            {isOwnProfile && (
+            {isOwnProfile ? (
               <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
                 <Button variant="primary" onClick={onEditProfileClick} style={{ flex: 1, padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
                   Edit Profile
@@ -406,12 +428,17 @@ export default function UserProfile({
                   Share Profile
                 </Button>
               </div>
+            ) : (
+              <Button
+                variant={isConnected ? "secondary" : "primary"}
+                onClick={handleToggleConnect}
+                style={{ width: '100%', padding: '12px', borderRadius: '14px', fontSize: '14px', fontWeight: '700' }}
+              >
+                {isConnected ? 'Connected ✓' : 'Connect'}
+              </Button>
             )}
 
-            {/* Expert Status */}
             <ExpertStatusBadge />
-
-            {/* Seller Status */}
             <SellerStatusBadge />
           </div>
         </div>
@@ -440,7 +467,6 @@ export default function UserProfile({
 
       </div>
 
-      {/* Hidden CV file input */}
       <input
         ref={cvInputRef}
         type="file"
@@ -449,7 +475,7 @@ export default function UserProfile({
         onChange={handleCvFileChange}
       />
 
-      {/* ── KYC Expert Verification Dialog ─────────────────────────────── */}
+      {/* KYC Expert Verification Dialog */}
       <Dialog
         isOpen={isKycOpen}
         title={kycStep === 1 ? 'KYC: Professional Details' : kycStep === 2 ? 'KYC: Upload CV' : 'KYC: Expert Bio'}
@@ -457,7 +483,6 @@ export default function UserProfile({
         onConfirm={kycStep === 3 ? handleKycSubmit : handleNextKycStep}
         onCancel={() => setIsKycOpen(false)}
       >
-        {/* Step 1 */}
         {kycStep === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '12px 0', maxHeight: '55vh', overflowY: 'auto', paddingRight: '4px' }}>
             <InputField label="Highest Qualification" placeholder="e.g. M.Sc. in Agriculture" value={qualification} onChange={(e) => setQualification(e.target.value)} required />
@@ -470,7 +495,6 @@ export default function UserProfile({
           </div>
         )}
 
-        {/* Step 2 */}
         {kycStep === 2 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', margin: '12px 0' }}>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
@@ -496,7 +520,6 @@ export default function UserProfile({
           </div>
         )}
 
-        {/* Step 3 */}
         {kycStep === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '12px 0' }}>
             <div className="form-group">
@@ -519,7 +542,7 @@ export default function UserProfile({
         )}
       </Dialog>
 
-      {/* ── Become Seller Dialog ─────────────────────────────────────────── */}
+      {/* Become Seller Dialog */}
       <Dialog
         isOpen={isSellerOpen}
         title="Register as a Seller"
@@ -541,6 +564,17 @@ export default function UserProfile({
           />
           {sellerSubmitting && <div style={{ color: 'var(--primary-green)', fontSize: '13px', textAlign: 'center' }}>⏳ Submitting seller application...</div>}
         </div>
+      </Dialog>
+
+      {/* Coming Soon Dialog for Seller */}
+      <Dialog
+        isOpen={isComingSoonOpen}
+        title="Coming Soon"
+        confirmText="Understood"
+        onConfirm={() => setIsComingSoonOpen(false)}
+        onCancel={() => setIsComingSoonOpen(false)}
+      >
+        <ComingSoon feature="Seller Registration & Marketplace" />
       </Dialog>
     </div>
   );

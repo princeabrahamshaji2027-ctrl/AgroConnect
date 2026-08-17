@@ -28,6 +28,7 @@ export default function App() {
   // Toast Notifications States
   const [toastMessage, setToastMessage] = useState(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const [broadcastModalData, setBroadcastModalData] = useState(null);
 
   const showToastNotification = (msg) => {
     setToastMessage(msg);
@@ -43,7 +44,7 @@ export default function App() {
     }
   }, [toastVisible]);
 
-  // Realtime: show toast when a new notification arrives for the current user
+  // Realtime: handle notifications & broadcasts
   useEffect(() => {
     if (screen !== 'appLayout') return;
 
@@ -56,9 +57,22 @@ export default function App() {
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
-          (payload) => {
-            if (payload.new && !payload.new.is_read) {
-              showToastNotification(payload.new.message || '🔔 New notification');
+          async (payload) => {
+            if (payload.new) {
+              if (payload.new.type === 'announcement' && payload.new.related_id) {
+                const { data: broadcastRow } = await supabase
+                  .from('broadcasts')
+                  .select('*')
+                  .eq('id', payload.new.related_id)
+                  .maybeSingle();
+                if (broadcastRow) {
+                  setBroadcastModalData(broadcastRow);
+                  return;
+                }
+              }
+              if (!payload.new.is_read) {
+                showToastNotification(payload.new.message || '🔔 New notification');
+              }
             }
           }
         )
@@ -216,6 +230,10 @@ export default function App() {
       return (
         <Notifications 
           onGoBack={() => setSubScreen(null)} 
+          onProfileClick={(id) => {
+            setSubScreen(null);
+            setViewingProfileId(id);
+          }}
         />
       );
     }
@@ -332,6 +350,100 @@ export default function App() {
           <button onClick={() => setToastVisible(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex' }}>
             <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
           </button>
+        </div>
+      )}
+
+      {/* Broadcast System Announcement Modal */}
+      {broadcastModalData && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          zIndex: 3000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          backdropFilter: 'blur(8px)'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '2px solid var(--primary-green)',
+            borderRadius: '24px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
+            textAlign: 'center'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '40px', color: 'var(--primary-green)' }}>
+                campaign
+              </span>
+              <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                {broadcastModalData.title}
+              </h2>
+            </div>
+
+            {broadcastModalData.image_path && (
+              <img
+                src={broadcastModalData.image_path}
+                alt="Announcement Banner"
+                style={{ width: '100%', maxHeight: '180px', objectFit: 'cover', borderRadius: '16px', border: '1px solid var(--border-color)' }}
+              />
+            )}
+
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.5', textAlign: 'left' }}>
+              {broadcastModalData.message}
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px', justifyContent: 'center' }}>
+              {broadcastModalData.action_type === 'forced' ? (
+                <button
+                  onClick={() => {
+                    if (window.Capacitor?.Plugins?.App) {
+                      window.Capacitor.Plugins.App.exitApp();
+                    } else {
+                      document.body.innerHTML = '<div style="background:#121212;color:white;height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;"><h2>App Closed by Administrator Announcement</h2></div>';
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '14px',
+                    backgroundColor: 'var(--error)',
+                    color: 'white',
+                    fontWeight: '700',
+                    border: 'none',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Leave App
+                </button>
+              ) : (
+                <button
+                  onClick={() => setBroadcastModalData(null)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: '14px',
+                    backgroundColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                    fontWeight: '600',
+                    border: 'none',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

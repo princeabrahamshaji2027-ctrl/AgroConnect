@@ -7,14 +7,25 @@ import { supabase } from '../supabase';
 import './pages.css';
 
 export default function Connect({ onPeaAIClick, onShowToast }) {
-  const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews' | 'marketplace'
+  const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews' | 'marketplace' | 'availability'
   
   // Book Consultation States
   const [selectedExpert, setSelectedExpert] = useState(null);
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
   const [bookingIssue, setBookingIssue] = useState('');
-  
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+
+  // Expert Slot Management States
+  const [isCurrentExpert, setIsCurrentExpert] = useState(false);
+  const [currentExpertId, setCurrentExpertId] = useState(null);
+  const [mySlots, setMySlots] = useState([]);
+  const [newSlotDate, setNewSlotDate] = useState('');
+  const [newSlotStart, setNewSlotStart] = useState('10:00');
+  const [newSlotEnd, setNewSlotEnd] = useState('11:00');
+  const [newSlotRate, setNewSlotRate] = useState(500);
+
   // Database States
   const [expertsList, setExpertsList] = useState([]);
   const [appointments, setAppointments] = useState([]);
@@ -36,14 +47,38 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
 
   // Marketplace state
   const [products, setProducts] = useState([]);
-  const [cart, setCart] = useState({}); // { productId: quantity }
+  const [cart, setCart] = useState({});
   const [checkingOut, setCheckingOut] = useState(false);
   const [orderHistory, setOrderHistory] = useState([]);
+
+  const fetchMySlots = async (expertId) => {
+    if (!expertId) return;
+    const { data } = await supabase
+      .from('consultation_slots')
+      .select('*')
+      .eq('expert_id', expertId)
+      .order('slot_date', { ascending: true })
+      .order('start_time', { ascending: true });
+    setMySlots(data || []);
+  };
 
   const fetchData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      // 0. Check if logged in user is an expert
+      const { data: myExpert } = await supabase
+        .from('experts')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (myExpert) {
+        setIsCurrentExpert(true);
+        setCurrentExpertId(myExpert.id);
+        fetchMySlots(myExpert.id);
+      }
 
       // 1. Fetch experts
       const { data: expertsData } = await supabase
@@ -62,7 +97,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         setExpertsList(expertsData.map(exp => ({
           id: exp.id,
           name: exp.profiles?.full_name || 'Expert',
-          avatar: exp.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200',
+          avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
           role: exp.profiles?.role || 'Expert',
           bio: exp.profiles?.bio || '',
           rating: exp.rating || 0.0
@@ -74,7 +109,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         .from('farmer_profiles')
         .select('id')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (farmerProfile) {
         // 2. Fetch upcoming bookings
@@ -99,7 +134,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
             id: appt.id,
             expertId: appt.experts?.id,
             expertName: appt.experts?.profiles?.full_name || 'Expert',
-            expertAvatar: appt.experts?.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200',
+            expertAvatar: appt.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
             topic: appt.issue_description || '',
             date: appt.meeting_date,
             time: appt.meeting_time,
@@ -125,7 +160,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           .neq('status', 'Booked')
           .order('meeting_date', { ascending: false });
 
-        // Fetch reviews to check reviewed status
         const { data: reviewsData } = await supabase
           .from('reviews')
           .select('booking_id');
@@ -136,7 +170,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
             id: h.id,
             expertId: h.experts?.id,
             expertName: h.experts?.profiles?.full_name || 'Expert',
-            expertAvatar: h.experts?.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200',
+            expertAvatar: h.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
             topic: h.issue_description || '',
             date: h.meeting_date,
             duration: '30 mins',
@@ -145,7 +179,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         }
       }
 
-      // 4. Fetch all reviews
+      // 4. Fetch reviews
       const { data: revsData } = await supabase
         .from('reviews')
         .select(`
@@ -168,7 +202,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         setReviews(revsData.map(r => ({
           id: r.id,
           authorName: r.reviewer?.full_name || 'Farmer',
-          authorAvatar: r.reviewer?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+          authorAvatar: r.reviewer?.profile_image_path || '/profile-placeholder.png',
           expertName: r.experts?.profiles?.full_name || 'Expert',
           rating: r.rating,
           content: r.comment || '',
@@ -184,7 +218,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         .order('created_at', { ascending: false });
       if (productsData) setProducts(productsData);
 
-      // 6. Fetch order history for this user
+      // 6. Fetch order history
       const { data: ordersData } = await supabase
         .from('orders')
         .select('*, order_items(*, products(product_name, image_path))')
@@ -201,54 +235,122 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
     fetchData();
   }, []);
 
-  const handleBookClick = (expert) => {
+  const handleBookClick = async (expert) => {
     setSelectedExpert(expert);
+    setSelectedSlot(null);
+    setBookingDate('');
+    setBookingTime('');
+
+    const { data: slots } = await supabase
+      .from('consultation_slots')
+      .select('*')
+      .eq('expert_id', expert.id)
+      .order('slot_date', { ascending: true })
+      .order('start_time', { ascending: true });
+
+    setAvailableSlots(slots || []);
+  };
+
+  const handleCreateSlot = async () => {
+    if (!currentExpertId || !newSlotDate || !newSlotStart || !newSlotEnd) {
+      alert('Please select slot date and start/end time');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('consultation_slots')
+        .insert({
+          expert_id: currentExpertId,
+          slot_date: newSlotDate,
+          start_time: newSlotStart,
+          end_time: newSlotEnd,
+          rate: parseFloat(newSlotRate) || 500,
+          is_booked: false
+        });
+      if (error) throw error;
+      if (onShowToast) onShowToast('✅ Availability slot created!');
+      setNewSlotDate('');
+      fetchMySlots(currentExpertId);
+    } catch (err) {
+      alert(`Error creating slot: ${err.message}`);
+    }
   };
 
   const handleConfirmBooking = async () => {
-    if (!bookingDate || !bookingTime || !bookingIssue) {
-      alert('Please fill out all fields');
+    if (!bookingIssue) {
+      alert('Please explain the consultation topic/issue');
+      return;
+    }
+
+    if (selectedSlot && selectedSlot.is_booked) {
+      alert('This slot is already booked by another farmer.');
       return;
     }
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: farmerProfile } = await supabase
+    let { data: farmerProfile } = await supabase
       .from('farmer_profiles')
       .select('id')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
     if (!farmerProfile) {
-      alert('Farmer profile extension not found.');
+      const { data: newFarmer } = await supabase
+        .from('farmer_profiles')
+        .insert({ user_id: user.id })
+        .select('id')
+        .single();
+      farmerProfile = newFarmer;
+    }
+
+    const dateToUse = selectedSlot ? selectedSlot.slot_date : bookingDate;
+    const timeToUse = selectedSlot ? selectedSlot.start_time : bookingTime;
+
+    if (!dateToUse || !timeToUse) {
+      alert('Please select an available time slot.');
       return;
     }
 
-    const { error } = await supabase
+    // Insert booking
+    const { error: bookingErr } = await supabase
       .from('consultation_bookings')
       .insert({
         expert_id: selectedExpert.id,
         farmer_id: farmerProfile.id,
-        meeting_date: bookingDate,
-        meeting_time: bookingTime,
+        slot_id: selectedSlot ? selectedSlot.id : null,
+        meeting_date: dateToUse,
+        meeting_time: timeToUse,
         issue_description: bookingIssue,
         status: 'Booked'
       });
 
-    if (error) {
-      alert(`Booking failed: ${error.message}`);
+    if (bookingErr) {
+      if (bookingErr.code === '23505' || bookingErr.message.includes('unique') || bookingErr.message.includes('slot')) {
+        alert('This slot was just booked by another farmer. Please choose an available slot.');
+        handleBookClick(selectedExpert);
+        return;
+      }
+      alert(`Booking failed: ${bookingErr.message}`);
       return;
     }
 
-    // Phase 5: Insert a video_meetings row with the booking ID so the meeting link is stored
+    // Lock slot
+    if (selectedSlot) {
+      await supabase
+        .from('consultation_slots')
+        .update({ is_booked: true })
+        .eq('id', selectedSlot.id);
+    }
+
+    // Video meeting row
     const { data: bookingRow } = await supabase
       .from('consultation_bookings')
       .select('id')
       .eq('expert_id', selectedExpert.id)
       .eq('farmer_id', farmerProfile.id)
-      .eq('meeting_date', bookingDate)
-      .eq('meeting_time', bookingTime)
+      .eq('meeting_date', dateToUse)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -263,6 +365,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
     }
 
     setSelectedExpert(null);
+    setSelectedSlot(null);
     setBookingDate('');
     setBookingTime('');
     setBookingIssue('');
@@ -345,7 +448,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   if (inVideoCall) {
     return (
       <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', backgroundColor: '#090909', position: 'relative', zIndex: 1000 }}>
-        {/* Top Info Bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: 'rgba(0,0,0,0.5)', zIndex: 10 }}>
           <div>
             <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>Video Consultation</div>
@@ -357,14 +459,11 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           </div>
         </div>
 
-        {/* Video Grid layout */}
         <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center' }}>
-          
-          {/* Remote participant card */}
           <div style={{ flex: 1.2, position: 'relative', backgroundColor: '#1E1E1E', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%', textAlign: 'center' }}>
               <img 
-                src={appointments.find(a => a.roomId === currentCallRoom)?.expertAvatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200&h=200'} 
+                src={appointments.find(a => a.roomId === currentCallRoom)?.expertAvatar || '/profile-placeholder.png'} 
                 alt="Expert" 
                 style={{ width: '96px', height: '96px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary-green)' }} 
               />
@@ -376,19 +475,17 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
               </div>
             </div>
             
-            {/* Status indicators */}
             <div style={{ position: 'absolute', bottom: '16px', left: '16px', backgroundColor: 'rgba(0,0,0,0.6)', padding: '6px 12px', borderRadius: '10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--primary-green)' }}>mic</span>
               <span>Audio Connected</span>
             </div>
           </div>
 
-          {/* Local participant card (user preview) */}
           <div style={{ flex: 1, position: 'relative', backgroundColor: '#2A2A2A', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {!camOff ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%' }}>
                 <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--primary-green)', animation: 'spin 4s infinite linear' }}>filter_vintage</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Local Camera Active (Waves simulation)</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Local Camera Active</span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
@@ -404,64 +501,26 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
               <span>You (Farmer)</span>
             </div>
           </div>
-
         </div>
 
-        {/* Video Control Bar */}
         <div style={{ padding: '24px 20px 40px 20px', background: 'rgba(30, 30, 30, 0.95)', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'center', gap: '20px', zIndex: 10 }}>
-          {/* Mic Toggle */}
           <button 
             onClick={() => setMicMuted(!micMuted)}
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              backgroundColor: micMuted ? 'var(--error)' : 'rgba(255,255,255,0.08)',
-              border: 'none',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer'
-            }}
+            style={{ width: '50px', height: '50px', borderRadius: '50%', backgroundColor: micMuted ? 'var(--error)' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           >
             <span className="material-symbols-outlined">{micMuted ? 'mic_off' : 'mic'}</span>
           </button>
 
-          {/* Camera Toggle */}
           <button 
             onClick={() => setCamOff(!camOff)}
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              backgroundColor: camOff ? 'var(--error)' : 'rgba(255,255,255,0.08)',
-              border: 'none',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer'
-            }}
+            style={{ width: '50px', height: '50px', borderRadius: '50%', backgroundColor: camOff ? 'var(--error)' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           >
             <span className="material-symbols-outlined">{camOff ? 'videocam_off' : 'videocam'}</span>
           </button>
 
-          {/* End Call Button */}
           <button 
             onClick={handleLeaveCall}
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--error)',
-              border: 'none',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer'
-            }}
+            style={{ width: '50px', height: '50px', borderRadius: '50%', backgroundColor: 'var(--error)', border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           >
             <span className="material-symbols-outlined" style={{ transform: 'rotate(135deg)' }}>call_end</span>
           </button>
@@ -472,7 +531,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Header title="Expert Connect" onPeaAIClick={onPeaAIClick} />
+      <Header title="Catch Up" onPeaAIClick={onPeaAIClick} />
       
       {/* Sub tabs nav */}
       <div style={{ 
@@ -529,6 +588,15 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>storefront</span>
           Shop
         </button>
+        {isCurrentExpert && (
+          <button 
+            onClick={() => setActiveSubTab('availability')}
+            className={`chip ${activeSubTab === 'availability' ? 'active' : ''}`}
+            style={{ flexShrink: 0, fontSize: '12px', borderColor: 'var(--primary-green)', color: 'var(--primary-green)' }}
+          >
+            Manage Availability
+          </button>
+        )}
       </div>
 
       <div className="page-container fade-in" style={{ paddingTop: '12px', overflowY: 'auto' }}>
@@ -579,6 +647,48 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ================= EXPERT MANAGE AVAILABILITY ================= */}
+        {activeSubTab === 'availability' && isCurrentExpert && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Manage Expert Availability Slots</h3>
+            
+            <div className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--primary-green)' }}>Create New Slot</h4>
+              <InputField label="Slot Date" type="date" value={newSlotDate} onChange={(e) => setNewSlotDate(e.target.value)} required />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <InputField label="Start Time" type="time" value={newSlotStart} onChange={(e) => setNewSlotStart(e.target.value)} required />
+                <InputField label="End Time" type="time" value={newSlotEnd} onChange={(e) => setNewSlotEnd(e.target.value)} required />
+              </div>
+              <InputField label="Rate (₹)" type="number" value={newSlotRate} onChange={(e) => setNewSlotRate(e.target.value)} required />
+              <Button onClick={handleCreateSlot} variant="primary" style={{ marginTop: '8px', borderRadius: '12px' }}>
+                Add Available Slot
+              </Button>
+            </div>
+
+            <h4 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-secondary)' }}>My Active Slots ({mySlots.length})</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {mySlots.map(s => (
+                <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px' }}>
+                  <div>
+                    <div style={{ fontWeight: '700', fontSize: '13px' }}>{s.slot_date} ({s.start_time.substring(0,5)} - {s.end_time.substring(0,5)})</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Rate: ₹{s.rate}</div>
+                  </div>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    padding: '4px 8px',
+                    borderRadius: '8px',
+                    backgroundColor: s.is_booked ? 'rgba(255, 90, 90, 0.15)' : 'rgba(136, 217, 130, 0.15)',
+                    color: s.is_booked ? 'var(--error)' : 'var(--primary-green)'
+                  }}>
+                    {s.is_booked ? 'Booked' : 'Available'}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -671,7 +781,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           </div>
         )}
 
-        {/* ================= JOIN LOBBY (LOBBY/DIRECT JOIN) ================= */}
+        {/* ================= JOIN LOBBY ================= */}
         {activeSubTab === 'lobby' && (
           <div className="card fade-in" style={{ padding: '24px 16px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '8px' }}>Join Consultation Lobby</h3>
@@ -696,7 +806,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           </div>
         )}
 
-        {/* ================= MEETING REVIEWS ================= */}
+        {/* ================= REVIEWS ================= */}
         {activeSubTab === 'reviews' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Recent Meeting Reviews</h3>
@@ -736,38 +846,10 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
 
         {/* ================= MARKETPLACE ================= */}
         {activeSubTab === 'marketplace' && (() => {
-          const cartTotal = Object.entries(cart).reduce((sum, [pid, qty]) => {
-            const p = products.find(pr => pr.id === pid);
-            return sum + (p ? p.price * qty : 0);
-          }, 0);
-
           const cartItems = Object.entries(cart)
             .filter(([, qty]) => qty > 0)
             .map(([pid, qty]) => ({ product: products.find(p => p.id === pid), qty }))
             .filter(i => i.product);
-
-          const handleCheckout = async () => {
-            if (cartItems.length === 0) return;
-            setCheckingOut(true);
-            try {
-              const sellerIds = [...new Set(cartItems.map(i => i.product.seller_id))];
-              for (const sellerId of sellerIds) {
-                const itemsForSeller = cartItems.filter(i => i.product.seller_id === sellerId);
-                const { error } = await supabase.rpc('place_order', {
-                  p_seller_id: sellerId,
-                  p_items: itemsForSeller.map(i => ({ product_id: i.product.id, quantity: i.qty }))
-                });
-                if (error) throw error;
-              }
-              setCart({});
-              if (onShowToast) onShowToast('🛒 Order placed successfully!');
-              fetchData(); // Refresh products (stock) + order history
-            } catch (err) {
-              alert(`Checkout failed: ${err.message}`);
-            } finally {
-              setCheckingOut(false);
-            }
-          };
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '32px' }}>
@@ -775,7 +857,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
                 Agro Marketplace — {products.length} Products
               </h3>
 
-              {/* Product Grid */}
               {products.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
                   No products available yet. Check back soon!
@@ -796,68 +877,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
                         {product.category && <span style={{ fontSize: '10px', color: 'var(--primary-green)', fontWeight: '600' }}>{product.category}</span>}
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Stock: {product.stock}</div>
                         <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>₹{Number(product.price).toLocaleString('en-IN')}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: 'auto' }}>
-                          <button
-                            onClick={() => setCart(prev => ({ ...prev, [product.id]: Math.max(0, (prev[product.id] || 0) - 1) }))}
-                            style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}
-                          >−</button>
-                          <span style={{ fontSize: '13px', fontWeight: '700', minWidth: '20px', textAlign: 'center' }}>{cart[product.id] || 0}</span>
-                          <button
-                            onClick={() => setCart(prev => ({ ...prev, [product.id]: Math.min(product.stock, (prev[product.id] || 0) + 1) }))}
-                            style={{ width: '24px', height: '24px', borderRadius: '50%', border: '1px solid var(--border-color)', backgroundColor: 'transparent', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}
-                          >+</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Cart Summary */}
-              {cartItems.length > 0 && (
-                <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.08)', border: '1px solid var(--primary-green)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--primary-green)' }}>🛒 Cart ({cartItems.length} items)</h4>
-                  {cartItems.map(({ product, qty }) => (
-                    <div key={product.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                      <span>{product.product_name} × {qty}</span>
-                      <span style={{ fontWeight: '700' }}>₹{(product.price * qty).toLocaleString('en-IN')}</span>
-                    </div>
-                  ))}
-                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontWeight: '700', fontSize: '14px' }}>
-                    <span>Total</span>
-                    <span style={{ color: 'var(--primary-green)' }}>₹{cartTotal.toLocaleString('en-IN')}</span>
-                  </div>
-                  <Button
-                    variant="primary"
-                    onClick={handleCheckout}
-                    disabled={checkingOut}
-                    style={{ width: '100%' }}
-                  >
-                    {checkingOut ? '⏳ Placing Order...' : 'Place Order (Cash on Delivery)'}
-                  </Button>
-                </div>
-              )}
-
-              {/* Order History */}
-              {orderHistory.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>My Orders</h4>
-                  {orderHistory.map(order => (
-                    <div key={order.id} style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '14px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>#{order.id.slice(0, 8).toUpperCase()}</span>
-                        <span style={{ fontSize: '10px', fontWeight: '700', backgroundColor: order.status === 'Delivered' ? 'rgba(136,217,130,0.15)' : 'rgba(255,167,38,0.15)', color: order.status === 'Delivered' ? 'var(--primary-green)' : '#FFA726', padding: '3px 8px', borderRadius: '20px' }}>
-                          {order.status}
-                        </span>
-                      </div>
-                      {(order.order_items || []).map(item => (
-                        <div key={item.id} style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{item.products?.product_name || 'Product'} × {item.quantity}</span>
-                          <span style={{ fontWeight: '600' }}>₹{(item.price * item.quantity).toLocaleString('en-IN')}</span>
-                        </div>
-                      ))}
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--primary-green)', textAlign: 'right' }}>
-                        Total: ₹{Number(order.total_amount).toLocaleString('en-IN')}
                       </div>
                     </div>
                   ))}
@@ -887,21 +906,63 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
               </div>
             </div>
 
-            <InputField
-              label="Select Date"
-              type="date"
-              value={bookingDate}
-              onChange={(e) => setBookingDate(e.target.value)}
-              required
-            />
-
-            <InputField
-              label="Select Time Slot"
-              type="time"
-              value={bookingTime}
-              onChange={(e) => setBookingTime(e.target.value)}
-              required
-            />
+            {availableSlots.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label className="form-label">Select Available Time Slot *</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
+                  {availableSlots.map(slot => (
+                    <div
+                      key={slot.id}
+                      onClick={() => {
+                        if (!slot.is_booked) {
+                          setSelectedSlot(slot);
+                          setBookingDate(slot.slot_date);
+                          setBookingTime(slot.start_time);
+                        }
+                      }}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '12px',
+                        border: selectedSlot?.id === slot.id ? '2px solid var(--primary-green)' : '1px solid var(--border-color)',
+                        backgroundColor: slot.is_booked ? 'rgba(255,255,255,0.03)' : selectedSlot?.id === slot.id ? 'rgba(136, 217, 130, 0.15)' : '#252525',
+                        opacity: slot.is_booked ? 0.45 : 1,
+                        cursor: slot.is_booked ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px'
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: slot.is_booked ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                        {slot.slot_date}
+                      </div>
+                      <div style={{ fontSize: '10px', color: slot.is_booked ? 'var(--text-muted)' : 'var(--primary-green)', fontWeight: '600' }}>
+                        {slot.start_time.substring(0,5)} - {slot.end_time.substring(0,5)}
+                      </div>
+                      {slot.is_booked && (
+                        <span style={{ fontSize: '9px', color: 'var(--error)', fontWeight: 'bold' }}>Booked (Unavailable)</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <InputField
+                  label="Select Date"
+                  type="date"
+                  value={bookingDate}
+                  onChange={(e) => setBookingDate(e.target.value)}
+                  required
+                />
+                <InputField
+                  label="Select Time Slot"
+                  type="time"
+                  value={bookingTime}
+                  onChange={(e) => setBookingTime(e.target.value)}
+                  required
+                />
+              </>
+            )}
 
             <div className="form-group">
               <label className="form-label">Consultation Topic / Issue</label>
@@ -921,7 +982,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         )}
       </Dialog>
 
-      {/* Write Review Dialog */}
+      {/* Review Dialog */}
       <Dialog
         isOpen={!!reviewingMeeting}
         title="Write Consultation Review"
@@ -930,46 +991,34 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         onCancel={() => setReviewingMeeting(null)}
       >
         {reviewingMeeting && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '12px 0' }}>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <img src={reviewingMeeting.expertAvatar} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%' }} />
-              <div>
-                <div style={{ fontWeight: '600', fontSize: '13px' }}>{reviewingMeeting.expertName}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Session completed on {reviewingMeeting.date}</div>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '12px 0' }}>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Rating for session with <strong>{reviewingMeeting.expertName}</strong>
             </div>
 
-            <div className="form-group" style={{ alignItems: 'center' }}>
-              <label className="form-label">Tap to Rate</label>
-              <div style={{ display: 'flex', gap: '8px', margin: '8px 0' }}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => setRatingInput(star)}
-                    style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                  >
-                    <span 
-                      className="material-symbols-outlined" 
-                      style={{ fontSize: '32px', color: star <= ratingInput ? '#FFA726' : 'var(--text-muted)' }}
-                    >
-                      star
-                    </span>
-                  </button>
-                ))}
-              </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <span
+                  key={star}
+                  onClick={() => setRatingInput(star)}
+                  className="material-symbols-outlined"
+                  style={{ fontSize: '32px', color: star <= ratingInput ? '#FFA726' : 'var(--text-muted)', cursor: 'pointer' }}
+                >
+                  star
+                </span>
+              ))}
             </div>
 
             <div className="form-group">
-              <label className="form-label">Review Description</label>
+              <label className="form-label">Your Review / Feedback</label>
               <div className="input-container" style={{ padding: '8px 16px' }}>
                 <textarea
                   className="input-field"
                   rows="3"
                   value={reviewTextInput}
                   onChange={(e) => setReviewTextInput(e.target.value)}
-                  placeholder="Share details of your experience with the expert..."
-                  style={{ resize: 'none', height: '60px' }}
+                  placeholder="Share details about the expert advice you received..."
+                  style={{ resize: 'none', height: '80px' }}
                   required
                 />
               </div>

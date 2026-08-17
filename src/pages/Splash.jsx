@@ -59,6 +59,7 @@ export default function Splash({ onFinish }) {
             loop={false}
             onComplete={handleAnimationEnd}
             style={{ width: '100%', height: '100%' }}
+            rendererSettings={{ preserveAspectRatio: 'xMidYMid slice' }}
           />
         </div>
       ) : (

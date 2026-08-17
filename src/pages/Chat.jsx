@@ -81,7 +81,7 @@ export default function Chat() {
           id: conv.id,
           otherUserId,
           name: profile?.full_name || 'User',
-          avatar: profile?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+          avatar: profile?.profile_image_path || '/profile-placeholder.png',
           lastMsg: lastMsg?.content || 'Say hi!',
           lastTime: lastMsg ? formatTimeAgo(lastMsg.created_at) : '',
         };

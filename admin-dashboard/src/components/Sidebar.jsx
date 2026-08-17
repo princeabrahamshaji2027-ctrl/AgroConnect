@@ -1,7 +1,7 @@
 import React from 'react';
-import logoImg from '../assets/logo.jpg';
+import logoImg from '../assets/logo.png';
 
-export default function Sidebar({ activeTab, onTabChange, onLogout }) {
+export default function Sidebar({ activeTab, onTabChange, onLogout, isOpen = true }) {
   const menuGroups = [
     {
       title: "User Management",
@@ -35,19 +35,18 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }) {
       ]
     },
     {
-      title: "System",
+      title: "Notifications",
       items: [
-        { id: "admins", label: "Admins", icon: "admin_panel_settings" },
-        { id: "activity_logs", label: "Activity Logs", icon: "history" }
+        { id: "broadcasts", label: "Broadcasts", icon: "campaign" }
       ]
     }
   ];
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-[260px] bg-surface border-r border-outline-variant flex flex-col z-50">
+    <aside className={`fixed left-0 top-0 h-full w-[260px] bg-surface border-r border-outline-variant flex flex-col z-50 transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="h-16 flex items-center px-6 border-b border-outline-variant">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => onTabChange("dashboard")}>
-          <img src={logoImg} alt="AgroConnect" className="w-8 h-8 rounded-lg object-cover" />
+          <img src={logoImg} alt="AgroConnect" className="w-8 h-8 rounded-lg object-contain" />
           <span className="font-headline-lg text-on-surface font-bold">Agro Connect</span>
         </div>
       </div>

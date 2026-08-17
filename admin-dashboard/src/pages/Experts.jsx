@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import defaultAvatar from '../assets/profile-placeholder.png';
 
 export default function Experts() {
   const [activeSubTab, setActiveSubTab] = useState('applications'); // 'applications' | 'verified'
@@ -72,6 +73,18 @@ export default function Experts() {
     }
   };
 
+  const handleViewResume = async (path) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('expert-cvs')
+        .createSignedUrl(path, 3600);
+      if (error) { alert('Could not open resume: ' + error.message); return; }
+      window.open(data.signedUrl, '_blank');
+    } catch (err) {
+      alert('Could not open resume: ' + err.message);
+    }
+  };
+
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
       <div className="flex justify-between items-center">
@@ -130,7 +143,7 @@ export default function Experts() {
                       <img
                         alt="Applicant avatar"
                         className="w-9 h-9 rounded-full object-cover border border-outline-variant"
-                        src={app.profiles?.profile_image_path || "https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"}
+                        src={app.profiles?.profile_image_path || defaultAvatar}
                       />
                       <div className="flex flex-col">
                         <span className="font-bold text-on-surface">{app.profiles?.full_name || 'Anonymous'}</span>
@@ -141,15 +154,13 @@ export default function Experts() {
                     <td className="p-4 text-on-surface-variant max-w-[250px] truncate">{app.experience}</td>
                     <td className="p-4">
                       {app.cv_file_path ? (
-                        <a
-                          href={app.cv_file_path}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary-container hover:underline flex items-center gap-1 font-semibold"
+                        <button
+                          onClick={() => handleViewResume(app.cv_file_path)}
+                          className="text-primary-container hover:underline flex items-center gap-1 font-semibold cursor-pointer bg-transparent border-none p-0"
                         >
                           <span className="material-symbols-outlined text-[16px]">file_open</span>
                           <span>View Resume</span>
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-on-surface-variant/40">No CV attached</span>
                       )}
@@ -208,7 +219,7 @@ export default function Experts() {
                       <img
                         alt="Expert avatar"
                         className="w-9 h-9 rounded-full object-cover border border-outline-variant"
-                        src={exp.profiles?.profile_image_path || "https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"}
+                        src={exp.profiles?.profile_image_path || defaultAvatar}
                       />
                       <div className="flex flex-col">
                         <span className="font-bold text-on-surface">{exp.profiles?.full_name || 'Anonymous'}</span>

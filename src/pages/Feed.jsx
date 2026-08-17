@@ -29,6 +29,8 @@ export default function Feed({
 }) {
   const [posts, setPosts] = useState([]);
   const [usersDb, setUsersDb] = useState([]);
+  const [connectedUserIds, setConnectedUserIds] = useState(new Set());
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   // Pull to refresh simulation states
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -51,15 +53,22 @@ export default function Feed({
   const fetchPosts = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const currentUserId = user?.id;
+      const userId = user?.id;
+      setCurrentUserId(userId);
 
       let likedPostIds = new Set();
-      if (currentUserId) {
+      if (userId) {
         const { data: likedRows } = await supabase
           .from('likes')
           .select('post_id')
-          .eq('user_id', currentUserId);
+          .eq('user_id', userId);
         likedPostIds = new Set(likedRows?.map(r => r.post_id) || []);
+
+        const { data: followRows } = await supabase
+          .from('followers')
+          .select('following_id')
+          .eq('follower_id', userId);
+        setConnectedUserIds(new Set(followRows?.map(r => r.following_id) || []));
       }
 
       const { data: postsData, error } = await supabase
@@ -81,7 +90,7 @@ export default function Feed({
         id: post.id,
         userId: post.user_id,
         userName: post.profiles?.full_name || 'Anonymous',
-        userAvatar: post.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+        userAvatar: post.profiles?.profile_image_path || '/profile-placeholder.png',
         userRole: post.profiles?.role || 'Farmer',
         content: post.caption,
         image: post.image_path,
@@ -115,7 +124,7 @@ export default function Feed({
           id: p.id,
           name: p.full_name,
           username: p.full_name.toLowerCase().replace(/\s+/g, ''),
-          avatar: p.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+          avatar: p.profile_image_path || '/profile-placeholder.png',
           role: p.role
         })));
       }
@@ -141,7 +150,7 @@ export default function Feed({
                 id: newPost.id,
                 userId: newPost.user_id,
                 userName: newPost.profiles?.full_name || 'Anonymous',
-                userAvatar: newPost.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+                userAvatar: newPost.profiles?.profile_image_path || '/profile-placeholder.png',
                 userRole: newPost.profiles?.role || 'Farmer',
                 content: newPost.caption,
                 image: newPost.image_path,
@@ -213,7 +222,7 @@ export default function Feed({
     const formattedComments = (commentsData || []).map(c => ({
       id: c.id,
       userName: c.profiles?.full_name || 'Anonymous',
-      userAvatar: c.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+      userAvatar: c.profiles?.profile_image_path || '/profile-placeholder.png',
       content: c.comment,
       time: formatTimeAgo(c.created_at),
       likes: 0,
@@ -342,7 +351,7 @@ export default function Feed({
     const addedItem = {
       id: insertedComment.id,
       userName: insertedComment.profiles?.full_name || 'You',
-      userAvatar: insertedComment.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+      userAvatar: insertedComment.profiles?.profile_image_path || '/profile-placeholder.png',
       content: insertedComment.comment,
       time: 'Just now',
       likes: 0,
@@ -450,6 +459,35 @@ export default function Feed({
     </>
   );
 
+  const handleConnectToggle = async (targetUserId) => {
+    if (!currentUserId || !targetUserId) return;
+    try {
+      if (connectedUserIds.has(targetUserId)) {
+        const { error } = await supabase
+          .from('followers')
+          .delete()
+          .eq('follower_id', currentUserId)
+          .eq('following_id', targetUserId);
+        if (error) throw error;
+        setConnectedUserIds(prev => {
+          const next = new Set(prev);
+          next.delete(targetUserId);
+          return next;
+        });
+        if (onShowToast) onShowToast('Disconnected.');
+      } else {
+        const { error } = await supabase
+          .from('followers')
+          .insert({ follower_id: currentUserId, following_id: targetUserId });
+        if (error) throw error;
+        setConnectedUserIds(prev => new Set([...prev, targetUserId]));
+        if (onShowToast) onShowToast('🤝 Connected!');
+      }
+    } catch (err) {
+      alert(`Connect action failed: ${err.message}`);
+    }
+  };
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Header showLogo onPeaAIClick={onPeaAIClick} rightActions={rightActions} />
@@ -505,6 +543,9 @@ export default function Feed({
               onBookmark={handleBookmark}
               onCommentClick={handleCommentClick}
               onProfileClick={onProfileClick}
+              onConnectToggle={handleConnectToggle}
+              isConnected={connectedUserIds.has(post.userId)}
+              currentUserId={currentUserId}
             />
           </div>
         ))}

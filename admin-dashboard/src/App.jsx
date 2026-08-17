@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import Sidebar from './components/Sidebar';
 import TopNav from './components/TopNav';
+import ComingSoon from './components/ComingSoon';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
@@ -10,22 +11,18 @@ import Sellers from './pages/Sellers';
 import Posts from './pages/Posts';
 import Comments from './pages/Comments';
 import Reports from './pages/Reports';
-import Products from './pages/Products';
-import Orders from './pages/Orders';
-import Categories from './pages/Categories';
 import Appointments from './pages/Appointments';
 import Meetings from './pages/Meetings';
-import Admins from './pages/Admins';
-import ActivityLogs from './pages/ActivityLogs';
+import Broadcasts from './pages/Broadcasts';
 
 function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(undefined); // undefined = loading, null = no profile / failed
   const [authError, setAuthError] = useState('');
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
-    // Get the initial session
     supabase.auth.getSession().then(({ data: { session: sess } }) => {
       setSession(sess);
     });
@@ -39,7 +36,6 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch user profile when session is available
   useEffect(() => {
     if (!session?.user) {
       setProfile(null);
@@ -47,7 +43,7 @@ function App() {
     }
 
     let isMounted = true;
-    setProfile(undefined); // Set loading state while fetching
+    setProfile(undefined);
 
     supabase
       .from('profiles')
@@ -113,7 +109,6 @@ function App() {
   const renderPage = () => {
     switch (activeTab) {
       case 'dashboard':
-        // Fix 1.1a: pass onTabChange so KPI cards and "View All" buttons work
         return <Dashboard onTabChange={setActiveTab} />;
       case 'users':
         return <Users />;
@@ -128,19 +123,17 @@ function App() {
       case 'reports':
         return <Reports />;
       case 'products':
-        return <Products />;
+        return <ComingSoon feature="Marketplace Products Management" />;
       case 'orders':
-        return <Orders />;
+        return <ComingSoon feature="Marketplace Orders Management" />;
       case 'categories':
-        return <Categories />;
+        return <ComingSoon feature="Marketplace Categories Management" />;
       case 'appointments':
         return <Appointments />;
       case 'meetings':
         return <Meetings />;
-      case 'admins':
-        return <Admins />;
-      case 'activity_logs':
-        return <ActivityLogs />;
+      case 'broadcasts':
+        return <Broadcasts />;
       default:
         return <Dashboard onTabChange={setActiveTab} />;
     }
@@ -148,10 +141,19 @@ function App() {
 
   return (
     <div className="flex min-h-screen bg-surface-variant">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} onLogout={handleLogout} />
-      <div className="flex flex-col flex-1 ml-[260px]">
-        <TopNav userProfile={profile} />
-        {/* Fix 1.1b: pt-16 offsets fixed TopNav, h-screen + overflow-y-auto enables page scroll */}
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onLogout={handleLogout}
+        isOpen={sidebarOpen}
+      />
+      <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-[260px]' : 'ml-0'}`}>
+        <TopNav
+          userProfile={profile}
+          onMenuClick={() => setSidebarOpen(prev => !prev)}
+          sidebarOpen={sidebarOpen}
+          onProfileUpdate={(updatedProfile) => setProfile(updatedProfile)}
+        />
         <main className="pt-16 h-screen overflow-y-auto flex-1" id="main-content">
           <div className="p-6">
             {renderPage()}

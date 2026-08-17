@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
@@ -13,6 +13,8 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
   const [phone, setPhone] = useState('');
   const [avatar, setAvatar] = useState('');
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -32,13 +34,54 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
         setBio(profile.bio || '');
         setLocation(profile.location || '');
         setPhone(profile.phone || '');
-        setAvatar(profile.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200');
+        setAvatar(profile.profile_image_path || '/profile-placeholder.png');
       }
       setLoading(false);
     };
 
     loadProfile();
   }, [userId]);
+
+  const handleAvatarFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image file must be under 5MB');
+      return;
+    }
+
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) return;
+
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'png';
+      const filePath = `user_${authUser.id}_${Date.now()}.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadErr) throw uploadErr;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      setAvatar(publicUrl);
+
+      // Save immediately to DB
+      await supabase
+        .from('profiles')
+        .update({ profile_image_path: publicUrl })
+        .eq('id', authUser.id);
+
+    } catch (err) {
+      alert(`Avatar upload failed: ${err.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -52,7 +95,8 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
         full_name: name,
         bio,
         location,
-        phone
+        phone,
+        profile_image_path: avatar
       })
       .eq('id', targetUserId);
 
@@ -95,9 +139,21 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
             alt="Profile Avatar" 
             style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary-green)', marginBottom: '8px' }} 
           />
-          <span style={{ color: 'var(--primary-green)', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
-            Change Profile Picture
-          </span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handleAvatarFileChange}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            style={{ background: 'transparent', border: 'none', color: 'var(--primary-green)', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            {uploading ? '⏳ Uploading...' : 'Change Profile Picture'}
+          </button>
         </div>
 
         <InputField

@@ -15,7 +15,7 @@ const formatTimeAgo = (dateStr) => {
   return `${days}d ago`;
 };
 
-export default function Notifications() {
+export default function Notifications({ onGoBack, onProfileClick }) {
   const [notifications, setNotifications] = useState([]);
 
   const fetchNotifications = async () => {
@@ -34,6 +34,7 @@ export default function Notifications() {
           id: n.id,
           type: n.type,
           message: n.message,
+          relatedId: n.related_id,
           read: n.is_read,
           senderName: 'AgroConnect',
           time: formatTimeAgo(n.created_at)
@@ -116,6 +117,15 @@ export default function Notifications() {
     }
   };
 
+  const handleNotificationTap = (n) => {
+    handleMarkAsRead(n.id);
+    if (n.relatedId && onProfileClick) {
+      onProfileClick(n.relatedId);
+    } else if (n.type === 'announcement' && onProfileClick) {
+      onProfileClick('user1');
+    }
+  };
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Header 
@@ -135,7 +145,7 @@ export default function Notifications() {
           {notifications.map((n) => (
             <div 
               key={n.id}
-              onClick={() => handleMarkAsRead(n.id)}
+              onClick={() => handleNotificationTap(n)}
               style={{
                 display: 'flex',
                 gap: '12px',

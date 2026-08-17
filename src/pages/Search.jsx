@@ -37,7 +37,7 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
           id: post.id,
           userId: post.user_id,
           userName: post.profiles?.full_name || 'Anonymous',
-          userAvatar: post.profiles?.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+          userAvatar: post.profiles?.profile_image_path || '/profile-placeholder.png',
           userRole: post.profiles?.role || 'Farmer',
           content: post.caption,
           image: post.image_path,
@@ -61,7 +61,7 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
           id: u.id,
           name: u.full_name,
           username: u.full_name.toLowerCase().replace(/\s+/g, ''),
-          avatar: u.profile_image_path || 'https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200&h=200',
+          avatar: u.profile_image_path || '/profile-placeholder.png',
           role: u.role,
           location: u.location || 'Punjab, India'
         })));

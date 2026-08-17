@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import PostDetailModal from '../components/PostDetailModal';
+import UserProfileModal from '../components/UserProfileModal';
+import defaultAvatar from '../assets/profile-placeholder.png';
 
 export default function Comments() {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedPostId, setSelectedPostId] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
   const fetchComments = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('comments')
-        .select('*, profiles(full_name, profile_image_path), posts(caption)')
+        .select('*, profiles(id, full_name, profile_image_path), posts(id, caption)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -26,7 +31,8 @@ export default function Comments() {
     fetchComments();
   }, []);
 
-  const handleDeleteComment = async (commentId) => {
+  const handleDeleteComment = async (e, commentId) => {
+    e.stopPropagation();
     if (!window.confirm('Are you sure you want to delete this comment?')) return;
     try {
       const { error } = await supabase
@@ -36,7 +42,6 @@ export default function Comments() {
 
       if (error) throw error;
 
-      // Log audit trail
       await supabase.from('admin_audit_log').insert({
         admin_id: (await supabase.auth.getUser()).data.user?.id,
         action: 'delete_comment',
@@ -55,7 +60,7 @@ export default function Comments() {
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
       <div>
         <h1 className="font-headline-xl text-on-surface mb-1">Comments Moderation</h1>
-        <p className="font-body-sm text-on-surface-variant">Monitor and remove abusive or spam comments across community posts.</p>
+        <p className="font-body-sm text-on-surface-variant">Monitor and remove abusive or spam comments. Click post context to view the full thread, or user to view profile.</p>
       </div>
 
       <div className="card-bg rounded-xl overflow-hidden border border-outline-variant">
@@ -82,16 +87,22 @@ export default function Comments() {
               ) : (
                 comments.map((comment) => (
                   <tr key={comment.id} className="hover:bg-surface-variant/20 transition-colors">
-                    <td className="p-4 flex items-center gap-3">
+                    <td
+                      className="p-4 flex items-center gap-3 cursor-pointer hover:opacity-85"
+                      onClick={() => setSelectedUserId(comment.profiles?.id || comment.user_id)}
+                    >
                       <img
                         alt="User avatar"
                         className="w-8 h-8 rounded-full object-cover border border-outline-variant"
-                        src={comment.profiles?.profile_image_path || "https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"}
+                        src={comment.profiles?.profile_image_path || defaultAvatar}
                       />
-                      <span className="font-bold text-on-surface">{comment.profiles?.full_name || 'Anonymous'}</span>
+                      <span className="font-bold text-on-surface hover:text-primary transition-colors">{comment.profiles?.full_name || 'Anonymous'}</span>
                     </td>
                     <td className="p-4 text-on-surface max-w-[300px] leading-relaxed">{comment.comment}</td>
-                    <td className="p-4 text-on-surface-variant max-w-[200px] truncate">
+                    <td
+                      className="p-4 text-primary-container max-w-[200px] truncate cursor-pointer hover:underline font-medium"
+                      onClick={() => comment.posts?.id && setSelectedPostId(comment.posts.id)}
+                    >
                       {comment.posts?.caption || '(Deleted Post)'}
                     </td>
                     <td className="p-4 text-on-surface-variant font-mono text-[12px]">
@@ -99,7 +110,7 @@ export default function Comments() {
                     </td>
                     <td className="p-4 text-right">
                       <button
-                        onClick={() => handleDeleteComment(comment.id)}
+                        onClick={(e) => handleDeleteComment(e, comment.id)}
                         className="bg-error/10 hover:bg-error/20 text-error border border-error/30 px-3 py-1.5 rounded font-label-sm transition-colors cursor-pointer"
                       >
                         Delete
@@ -112,6 +123,28 @@ export default function Comments() {
           </table>
         )}
       </div>
+
+      {/* Post Detail Modal */}
+      {selectedPostId && (
+        <PostDetailModal
+          postId={selectedPostId}
+          onClose={() => setSelectedPostId(null)}
+          onUserClick={(userId) => {
+            setSelectedPostId(null);
+            setSelectedUserId(userId);
+          }}
+          onRefresh={fetchComments}
+        />
+      )}
+
+      {/* User Profile Modal */}
+      {selectedUserId && (
+        <UserProfileModal
+          userId={selectedUserId}
+          onClose={() => setSelectedUserId(null)}
+          onRefresh={fetchComments}
+        />
+      )}
     </div>
   );
 }

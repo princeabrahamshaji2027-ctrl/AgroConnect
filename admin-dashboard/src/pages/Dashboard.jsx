@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import defaultAvatar from '../assets/default-avatar.png';
+import defaultAvatar from '../assets/profile-placeholder.png';
 import { supabase } from '../supabase';
 
 export default function Dashboard({ onTabChange }) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import defaultAvatar from '../assets/profile-placeholder.png';
 
 export default function Sellers() {
   const [sellers, setSellers] = useState([]);
@@ -77,7 +78,7 @@ export default function Sellers() {
                       <img
                         alt="Owner avatar"
                         className="w-9 h-9 rounded-full object-cover border border-outline-variant"
-                        src={seller.profiles?.profile_image_path || "https://lh3.googleusercontent.com/aida-public/AB6AXuCBppjcEyZbhisQCBybkq6-kIO6Nx43RhZKz7bgZ7ecB5kBxE1VrMLz8MFwq7eH0QK-HXaZQ1R9SndR2NOMV4sBtnIzunCDMwZtv4gyxLkuo3ku2x1vR2rx4r3p8BUZkXqTIG2o34p078QeSEYc9YrxW2B2vcTDoi7aJyS3zngube3F720kKwCA6XLKFyKSbhOawoKFdWeT_7v8XdNvcQjqlSIABpjPDLmWmzlAcOsfWvPmxWfp5bYn"}
+                        src={seller.profiles?.profile_image_path || defaultAvatar}
                       />
                       <div className="flex flex-col">
                         <span className="font-bold text-on-surface">{seller.profiles?.full_name || 'Anonymous'}</span>

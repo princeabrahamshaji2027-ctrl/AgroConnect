@@ -47,6 +47,11 @@ body {
   position: fixed; /* Prevents bounce scroll on iOS */
 }
 
+#root {
+  height: 100%;
+  width: 100%;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 4px;

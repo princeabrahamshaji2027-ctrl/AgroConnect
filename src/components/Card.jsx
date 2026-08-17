@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './components.css';
 
-export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileClick }) {
+export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileClick, onConnectToggle, isConnected = false, currentUserId }) {
   const [isLiked, setIsLiked] = useState(post.liked);
   const [likesCount, setLikesCount] = useState(post.likes);
   const [isBookmarked, setIsBookmarked] = useState(post.bookmarked);
@@ -24,7 +24,7 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
   return (
     <div className="card fade-in">
       <div className="post-card-header">
-        <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} onClick={() => onProfileClick && onProfileClick(post.userId)}>
+        <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', flex: 1 }} onClick={() => onProfileClick && onProfileClick(post.userId)}>
           <img src={post.userAvatar} alt={post.userName} className="post-card-avatar" />
           <div className="post-card-user-info">
             <div className="post-card-username" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
@@ -43,6 +43,28 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
             </div>
           </div>
         </div>
+        {onConnectToggle && post.userId !== currentUserId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onConnectToggle(post.userId);
+            }}
+            style={{
+              padding: '4px 10px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              fontWeight: '600',
+              border: isConnected ? '1px solid var(--border-color)' : '1px solid var(--primary-green)',
+              backgroundColor: isConnected ? 'rgba(255,255,255,0.08)' : 'rgba(136, 217, 130, 0.15)',
+              color: isConnected ? 'var(--text-secondary)' : 'var(--primary-green)',
+              cursor: 'pointer',
+              marginLeft: '8px',
+              marginRight: '4px'
+            }}
+          >
+            {isConnected ? 'Connected ✓' : 'Connect'}
+          </button>
+        )}
         <button className="post-card-action-btn">
           <span className="material-symbols-outlined">more_vert</span>
         </button>

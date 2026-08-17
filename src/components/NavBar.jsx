@@ -5,7 +5,7 @@ export default function NavBar({ activeTab, onTabChange }) {
   const tabs = [
     { id: 'feed', label: 'Feed', icon: 'home' },
     { id: 'search', label: 'Search', icon: 'search' },
-    { id: 'connect', label: 'Connect', icon: 'handshake' },
+    { id: 'connect', label: 'Catch Up', icon: 'handshake' },
     { id: 'chat', label: 'Chat', icon: 'chat' },
     { id: 'profile', label: 'Profile', icon: 'person' }
   ];
