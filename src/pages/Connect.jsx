@@ -6,6 +6,76 @@ import Dialog from '../components/Dialog';
 import { supabase } from '../supabase';
 import './pages.css';
 
+const DAYS_OF_WEEK = [
+  { short: 'Mon', full: 'Monday' },
+  { short: 'Tue', full: 'Tuesday' },
+  { short: 'Wed', full: 'Wednesday' },
+  { short: 'Thu', full: 'Thursday' },
+  { short: 'Fri', full: 'Friday' },
+  { short: 'Sat', full: 'Saturday' },
+  { short: 'Sun', full: 'Sunday' }
+];
+
+function getNextDateForWeekday(fromDate, weekdayStr, weekOffset = 0) {
+  const dayIndexMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const targetDay = dayIndexMap[weekdayStr];
+  const currentDay = fromDate.getDay();
+  let daysUntilTarget = targetDay - currentDay;
+  if (daysUntilTarget < 0) {
+    daysUntilTarget += 7;
+  }
+  const result = new Date(fromDate);
+  result.setDate(fromDate.getDate() + daysUntilTarget + (weekOffset * 7));
+  return result;
+}
+
+function formatDateYYYYMMDD(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addOneHour(timeStr) {
+  if (!timeStr) return '10:00';
+  const parts = timeStr.split(':');
+  let h = parseInt(parts[0], 10);
+  const m = parts[1] || '00';
+  h = (h + 1) % 24;
+  return `${String(h).padStart(2, '0')}:${m}`;
+}
+
+function formatTime12h(timeStr) {
+  if (!timeStr) return '';
+  const parts = timeStr.split(':');
+  let h = parseInt(parts[0], 10);
+  const m = parts[1] || '00';
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+}
+
+function getDaysInMonthGrid(year, monthIndex) {
+  const firstDayOfMonth = new Date(year, monthIndex, 1);
+  const startingDayOfWeek = firstDayOfMonth.getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+
+  const cells = [];
+  for (let i = 0; i < startingDayOfWeek; i++) {
+    cells.push({ isPadding: true, dayNum: '' });
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const monthStr = String(monthIndex + 1).padStart(2, '0');
+    const dayStr = String(day).padStart(2, '0');
+    const dateStr = `${year}-${monthStr}-${dayStr}`;
+    cells.push({ isPadding: false, dayNum: day, dateStr });
+  }
+
+  return cells;
+}
+
 export default function Connect({ onPeaAIClick, onShowToast }) {
   const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews' | 'marketplace' | 'availability'
   
@@ -21,16 +91,39 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   const [isCurrentExpert, setIsCurrentExpert] = useState(false);
   const [currentExpertId, setCurrentExpertId] = useState(null);
   const [mySlots, setMySlots] = useState([]);
-  const [newSlotDate, setNewSlotDate] = useState('');
-  const [newSlotStart, setNewSlotStart] = useState('10:00');
-  const [newSlotEnd, setNewSlotEnd] = useState('11:00');
-  const [newSlotRate, setNewSlotRate] = useState(500);
 
-  // Database States
+  // Rebuilt Manage Availability States
+  const [selectedDays, setSelectedDays] = useState(['Mon', 'Tue', 'Wed']);
+  const [expandedDays, setExpandedDays] = useState(['Mon']);
+  const [timesByDay, setTimesByDay] = useState({
+    Mon: [
+      { time: '09:00', rate: 500 },
+      { time: '11:00', rate: 500 },
+      { time: '14:00', rate: 500 },
+      { time: '16:00', rate: 500 }
+    ],
+    Tue: [],
+    Wed: [],
+    Thu: [],
+    Fri: [],
+    Sat: [],
+    Sun: []
+  });
+  const [meetingDuration, setMeetingDuration] = useState(30);
+  const [bufferTime, setBufferTime] = useState(10);
+  const [slotPickerTime, setSlotPickerTime] = useState({ Mon: '09:00', Tue: '09:00', Wed: '09:00', Thu: '09:00', Fri: '09:00', Sat: '09:00', Sun: '09:00' });
+  const [slotPickerRate, setSlotPickerRate] = useState({ Mon: 500, Tue: 500, Wed: 500, Thu: 500, Fri: 500, Sat: 500, Sun: 500 });
+
+  // Database States & Calendar States
   const [expertsList, setExpertsList] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [history, setHistory] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [allExpertSlotsMap, setAllExpertSlotsMap] = useState({});
+
+  const currentDateObj = new Date();
+  const [calYear, setCalYear] = useState(currentDateObj.getFullYear());
+  const [calMonth, setCalMonth] = useState(currentDateObj.getMonth());
 
   // Video call simulation states
   const [inVideoCall, setInVideoCall] = useState(false);
@@ -38,7 +131,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   const [meetingIdInput, setMeetingIdInput] = useState('');
   const [micMuted, setMicMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
-  const [videoCallJoinedTime, setVideoCallJoinedTime] = useState(0);
 
   // Review submission state
   const [reviewingMeeting, setReviewingMeeting] = useState(null);
@@ -48,8 +140,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   // Marketplace state
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState({});
-  const [checkingOut, setCheckingOut] = useState(false);
-  const [orderHistory, setOrderHistory] = useState([]);
 
   const fetchMySlots = async (expertId) => {
     if (!expertId) return;
@@ -70,17 +160,44 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
       // 0. Check if logged in user is an expert
       const { data: myExpert } = await supabase
         .from('experts')
-        .select('id')
+        .select('id, meeting_duration_minutes, buffer_time_minutes')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (myExpert) {
         setIsCurrentExpert(true);
         setCurrentExpertId(myExpert.id);
+        if (myExpert.meeting_duration_minutes) setMeetingDuration(myExpert.meeting_duration_minutes);
+        if (myExpert.buffer_time_minutes) setBufferTime(myExpert.buffer_time_minutes);
         fetchMySlots(myExpert.id);
       }
 
-      // 1. Fetch experts
+      // 1a. Fetch reviews per expert count
+      const { data: allRevs } = await supabase.from('reviews').select('expert_id');
+      const revCounts = {};
+      if (allRevs) {
+        allRevs.forEach(r => {
+          if (r.expert_id) revCounts[r.expert_id] = (revCounts[r.expert_id] || 0) + 1;
+        });
+      }
+
+      // 1b. Fetch all consultation slots for calendar view
+      const { data: allSlots } = await supabase
+        .from('consultation_slots')
+        .select('*')
+        .order('slot_date', { ascending: true })
+        .order('start_time', { ascending: true });
+
+      const slotsGrouped = {};
+      if (allSlots) {
+        allSlots.forEach(s => {
+          if (!slotsGrouped[s.expert_id]) slotsGrouped[s.expert_id] = [];
+          slotsGrouped[s.expert_id].push(s);
+        });
+      }
+      setAllExpertSlotsMap(slotsGrouped);
+
+      // 1c. Fetch experts
       const { data: expertsData } = await supabase
         .from('experts')
         .select(`
@@ -100,7 +217,8 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
           role: exp.profiles?.role || 'Expert',
           bio: exp.profiles?.bio || '',
-          rating: exp.rating || 0.0
+          rating: exp.rating ? Number(exp.rating).toFixed(1) : '5.0',
+          reviewCount: revCounts[exp.id] || 0
         })));
       }
 
@@ -218,14 +336,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         .order('created_at', { ascending: false });
       if (productsData) setProducts(productsData);
 
-      // 6. Fetch order history
-      const { data: ordersData } = await supabase
-        .from('orders')
-        .select('*, order_items(*, products(product_name, image_path))')
-        .eq('buyer_id', user.id)
-        .order('created_at', { ascending: false });
-      if (ordersData) setOrderHistory(ordersData);
-
     } catch (err) {
       console.error('Error fetching connect data:', err);
     }
@@ -251,28 +361,122 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
     setAvailableSlots(slots || []);
   };
 
-  const handleCreateSlot = async () => {
-    if (!currentExpertId || !newSlotDate || !newSlotStart || !newSlotEnd) {
-      alert('Please select slot date and start/end time');
+  const handleToggleDay = (dayStr) => {
+    if (selectedDays.includes(dayStr)) {
+      setSelectedDays(selectedDays.filter(d => d !== dayStr));
+      setExpandedDays(expandedDays.filter(d => d !== dayStr));
+    } else {
+      setSelectedDays([...selectedDays, dayStr]);
+      if (expandedDays.length === 0) {
+        setExpandedDays([dayStr]);
+      }
+    }
+  };
+
+  const handleToggleExpandDay = (dayStr) => {
+    if (expandedDays.includes(dayStr)) {
+      setExpandedDays(expandedDays.filter(d => d !== dayStr));
+    } else {
+      setExpandedDays([...expandedDays, dayStr]);
+    }
+  };
+
+  const handleRemoveTimeSlot = (dayStr, indexToRemove) => {
+    setTimesByDay(prev => ({
+      ...prev,
+      [dayStr]: (prev[dayStr] || []).filter((_, idx) => idx !== indexToRemove)
+    }));
+  };
+
+  const handleAddTimeSlotToDay = (dayStr) => {
+    const timeToAdd = slotPickerTime[dayStr] || '09:00';
+    const rateToAdd = parseFloat(slotPickerRate[dayStr]) || 500;
+    const currentSlots = timesByDay[dayStr] || [];
+    if (currentSlots.some(s => (typeof s === 'string' ? s : s.time) === timeToAdd)) {
+      if (onShowToast) onShowToast(`⚠️ ${formatTime12h(timeToAdd)} is already added for ${dayStr}`);
       return;
     }
-    try {
-      const { error } = await supabase
-        .from('consultation_slots')
-        .insert({
-          expert_id: currentExpertId,
-          slot_date: newSlotDate,
-          start_time: newSlotStart,
-          end_time: newSlotEnd,
-          rate: parseFloat(newSlotRate) || 500,
-          is_booked: false
-        });
-      if (error) throw error;
-      if (onShowToast) onShowToast('✅ Availability slot created!');
-      setNewSlotDate('');
-      fetchMySlots(currentExpertId);
-    } catch (err) {
-      alert(`Error creating slot: ${err.message}`);
+    const updated = [...currentSlots, { time: timeToAdd, rate: rateToAdd }].sort((a, b) => {
+      const tA = typeof a === 'string' ? a : a.time;
+      const tB = typeof b === 'string' ? b : b.time;
+      return tA.localeCompare(tB);
+    });
+    setTimesByDay(prev => ({
+      ...prev,
+      [dayStr]: updated
+    }));
+  };
+
+  const handleSaveAvailability = async () => {
+    if (!currentExpertId) {
+      alert('Expert profile not found. Make sure your account has an expert role.');
+      return;
+    }
+    const slotsToInsert = [];
+    const today = new Date();
+
+    for (let week = 0; week < 8; week++) {
+      for (const day of selectedDays) {
+        const date = getNextDateForWeekday(today, day, week);
+        const daySlots = timesByDay[day] || [];
+        for (const slotObj of daySlots) {
+          const timeStr = typeof slotObj === 'string' ? slotObj : slotObj.time;
+          const rateVal = typeof slotObj === 'object' && slotObj.rate !== undefined ? slotObj.rate : 500;
+          const endTimeStr = addOneHour(timeStr);
+          slotsToInsert.push({
+            expert_id: currentExpertId,
+            slot_date: formatDateYYYYMMDD(date),
+            start_time: timeStr,
+            end_time: endTimeStr,
+            rate: parseFloat(rateVal) || 500,
+            is_booked: false
+          });
+        }
+      }
+    }
+
+    if (slotsToInsert.length === 0) {
+      if (onShowToast) onShowToast('⚠️ Please select days and add time slots before saving availability.');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('consultation_slots')
+      .upsert(slotsToInsert, { onConflict: 'expert_id,slot_date,start_time', ignoreDuplicates: true });
+
+    if (error) {
+      alert(`Error saving availability: ${error.message}`);
+      return;
+    }
+
+    await supabase
+      .from('experts')
+      .update({
+        meeting_duration_minutes: meetingDuration,
+        buffer_time_minutes: bufferTime
+      })
+      .eq('id', currentExpertId);
+
+    if (onShowToast) onShowToast('✅ Availability saved!');
+    fetchMySlots(currentExpertId);
+    fetchData();
+  };
+
+  const handlePrevMonth = () => {
+    if (calMonth === 0) {
+      setCalMonth(11);
+      setCalYear(calYear - 1);
+    } else {
+      setCalMonth(calMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calMonth === 11) {
+      setCalMonth(0);
+      setCalYear(calYear + 1);
+    } else {
+      setCalMonth(calMonth + 1);
     }
   };
 
@@ -380,7 +584,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   const handleStartCall = (roomId) => {
     setCurrentCallRoom(roomId);
     setInVideoCall(true);
-    setVideoCallJoinedTime(Date.now());
   };
 
   const handleJoinByLobby = (e) => {
@@ -603,92 +806,579 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         
         {/* ================= BOOK CONSULTATION ================= */}
         {activeSubTab === 'book' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Available Verified Experts</h3>
             
-            {expertsList.map((exp) => (
-              <div 
-                key={exp.id} 
-                className="card fade-in" 
-                style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
-              >
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <img src={exp.avatar} alt={exp.name} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '15px' }}>{exp.name}</span>
-                      <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
+            {expertsList.map((exp) => {
+              const expertSlots = allExpertSlotsMap[exp.id] || [];
+              const unbookedSlots = expertSlots.filter(s => !s.is_booked);
+              const minRate = unbookedSlots.length > 0
+                ? Math.min(...unbookedSlots.map(s => Number(s.rate) || 500))
+                : (expertSlots.length > 0 ? Math.min(...expertSlots.map(s => Number(s.rate) || 500)) : 500);
+
+              return (
+                <div 
+                  key={exp.id} 
+                  className="card fade-in" 
+                  style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+                >
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <img src={exp.avatar} alt={exp.name} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontWeight: '600', fontSize: '15px' }}>{exp.name}</span>
+                        <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
+                      </div>
+                      <span className="badge-role" style={{ display: 'inline-block', marginTop: '2px' }}>{exp.role}</span>
                     </div>
-                    <span className="badge-role" style={{ display: 'inline-block', marginTop: '2px' }}>{exp.role}</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--primary-green)' }}>From ₹{minRate}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>per session</div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--primary-green)' }}>₹500</div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>per session</div>
-                  </div>
-                </div>
 
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                  {exp.bio || 'Verified agricultural expert specialized in seed selection, crop diagnostics, and soil management.'}
-                </p>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                    {exp.bio || 'Verified agricultural expert specialized in seed selection, crop diagnostics, and soil management.'}
+                  </p>
 
-                <div style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#FFA726' }}>star</span>
-                    <strong>4.9</strong> (15+ reviews)
+                  <div style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#FFA726' }}>star</span>
+                      <strong>{exp.rating}</strong> ({exp.reviewCount} reviews)
+                    </div>
+                    
+                    <Button 
+                      onClick={() => handleBookClick(exp)} 
+                      variant="primary" 
+                      style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
+                    >
+                      Book Consultation
+                    </Button>
                   </div>
-                  
-                  <Button 
-                    onClick={() => handleBookClick(exp)} 
-                    variant="primary" 
-                    style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
-                  >
-                    Book Consultation
-                  </Button>
+
+                  {/* Calendar Grid Date Picker matching user_catchup page.png */}
+                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '14px', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                      <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '18px' }}>calendar_month</span>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Select a Date</span>
+                    </div>
+
+                    {/* Month Header Navigation */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <button 
+                        onClick={handlePrevMonth}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+                      >
+                        <span className="material-symbols-outlined">chevron_left</span>
+                      </button>
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        {new Date(calYear, calMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                      </div>
+                      <button 
+                        onClick={handleNextMonth}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+                      >
+                        <span className="material-symbols-outlined">chevron_right</span>
+                      </button>
+                    </div>
+
+                    {/* Weekday Labels */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '500', marginBottom: '8px' }}>
+                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                        <div key={d}>{d}</div>
+                      ))}
+                    </div>
+
+                    {/* Grid of Dates */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+                      {getDaysInMonthGrid(calYear, calMonth).map((cell, idx) => {
+                        if (cell.isPadding) {
+                          return <div key={`pad-${idx}`} style={{ height: '48px' }} />;
+                        }
+
+                        const dateSlots = expertSlots.filter(s => s.slot_date === cell.dateStr);
+                        const unbookedOnDate = dateSlots.filter(s => !s.is_booked);
+                        const hasAvailableSlots = unbookedOnDate.length > 0;
+                        const minDateRate = hasAvailableSlots 
+                          ? Math.min(...unbookedOnDate.map(s => Number(s.rate) || 500))
+                          : null;
+
+                        return (
+                          <div
+                            key={cell.dateStr}
+                            onClick={() => {
+                              if (hasAvailableSlots) {
+                                handleBookClick(exp);
+                                setBookingDate(cell.dateStr);
+                                setAvailableSlots(dateSlots);
+                              }
+                            }}
+                            style={{
+                              height: '48px',
+                              borderRadius: '12px',
+                              border: hasAvailableSlots ? '1.5px solid var(--primary-green)' : '1px solid var(--border-color)',
+                              backgroundColor: hasAvailableSlots ? 'rgba(136, 217, 130, 0.06)' : '#181818',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: '4px 2px',
+                              cursor: hasAvailableSlots ? 'pointer' : 'default',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <span style={{ fontSize: '13px', fontWeight: '600', color: hasAvailableSlots ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                              {cell.dayNum}
+                            </span>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: hasAvailableSlots ? 'var(--primary-green)' : 'var(--text-muted)', marginTop: '2px' }}>
+                              {hasAvailableSlots ? `₹${minDateRate}` : '--'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '12px' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>info</span>
+                      <span>You can select any available date to book a session.</span>
+                    </div>
+                  </div>
+
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         {/* ================= EXPERT MANAGE AVAILABILITY ================= */}
         {activeSubTab === 'availability' && isCurrentExpert && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Manage Expert Availability Slots</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '32px' }}>
             
-            <div className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <h4 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--primary-green)' }}>Create New Slot</h4>
-              <InputField label="Slot Date" type="date" value={newSlotDate} onChange={(e) => setNewSlotDate(e.target.value)} required />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <InputField label="Start Time" type="time" value={newSlotStart} onChange={(e) => setNewSlotStart(e.target.value)} required />
-                <InputField label="End Time" type="time" value={newSlotEnd} onChange={(e) => setNewSlotEnd(e.target.value)} required />
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-primary)' }}>Manage Availability</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Set the days and time slots when you are available for meetings
+                </p>
               </div>
-              <InputField label="Rate (₹)" type="number" value={newSlotRate} onChange={(e) => setNewSlotRate(e.target.value)} required />
-              <Button onClick={handleCreateSlot} variant="primary" style={{ marginTop: '8px', borderRadius: '12px' }}>
-                Add Available Slot
-              </Button>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '12px',
+                backgroundColor: 'rgba(136, 217, 130, 0.12)',
+                border: '1px solid rgba(136, 217, 130, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--primary-green)'
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>edit_calendar</span>
+              </div>
             </div>
 
-            <h4 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-secondary)' }}>My Active Slots ({mySlots.length})</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {mySlots.map(s => (
-                <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px' }}>
-                  <div>
-                    <div style={{ fontWeight: '700', fontSize: '13px' }}>{s.slot_date} ({s.start_time.substring(0,5)} - {s.end_time.substring(0,5)})</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Rate: ₹{s.rate}</div>
-                  </div>
-                  <span style={{
-                    fontSize: '11px',
-                    fontWeight: 'bold',
-                    padding: '4px 8px',
-                    borderRadius: '8px',
-                    backgroundColor: s.is_booked ? 'rgba(255, 90, 90, 0.15)' : 'rgba(136, 217, 130, 0.15)',
-                    color: s.is_booked ? 'var(--error)' : 'var(--primary-green)'
-                  }}>
-                    {s.is_booked ? 'Booked' : 'Available'}
-                  </span>
-                </div>
-              ))}
+            {/* Section 1: Select Available Days */}
+            <div className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>
+                1. Select Available Days
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-8px' }}>
+                Choose the days you are available for meetings
+              </div>
+
+              {/* Day Chips */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginTop: '4px' }}>
+                {DAYS_OF_WEEK.map(d => {
+                  const isSelected = selectedDays.includes(d.short);
+                  return (
+                    <button
+                      key={d.short}
+                      type="button"
+                      onClick={() => handleToggleDay(d.short)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '10px 4px',
+                        borderRadius: '12px',
+                        border: isSelected ? '1.5px solid var(--primary-green)' : '1px solid var(--border-color)',
+                        backgroundColor: isSelected ? 'rgba(136, 217, 130, 0.12)' : '#1E1E1E',
+                        color: isSelected ? 'var(--primary-green)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        outline: 'none'
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '18px', marginBottom: '4px', color: isSelected ? 'var(--primary-green)' : 'var(--text-secondary)' }}>
+                        event
+                      </span>
+                      <span style={{ fontSize: '12px', fontWeight: '600' }}>{d.short}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Info Box */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 12px',
+                borderRadius: '10px',
+                backgroundColor: 'rgba(136, 217, 130, 0.08)',
+                border: '1px solid rgba(136, 217, 130, 0.2)',
+                marginTop: '4px'
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: 'var(--primary-green)' }}>info</span>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                  Only selected days will be shown to users when booking a meeting with you.
+                </span>
+              </div>
             </div>
+
+            {/* Section 2: Set Time Slots */}
+            <div className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>
+                2. Set Time Slots
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-8px' }}>
+                Add the time slots for each selected day
+              </div>
+
+              {selectedDays.length === 0 ? (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                  No days selected. Please select available days above.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {DAYS_OF_WEEK.filter(d => selectedDays.includes(d.short)).map(d => {
+                    const isExpanded = expandedDays.includes(d.short);
+                    const daySlots = timesByDay[d.short] || [];
+
+                    return (
+                      <div
+                        key={d.short}
+                        style={{
+                          borderRadius: '12px',
+                          border: '1px solid var(--border-color)',
+                          backgroundColor: '#181818',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {/* Day Accordion Header */}
+                        <div
+                          onClick={() => handleToggleExpandDay(d.short)}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 14px',
+                            cursor: 'pointer',
+                            backgroundColor: 'rgba(255,255,255,0.02)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: 'var(--primary-green)', fontSize: '12px' }}>●</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>
+                              {d.full}
+                            </span>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              ({daySlots.length} slot{daySlots.length === 1 ? '' : 's'})
+                            </span>
+                          </div>
+                          <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>
+                            {isExpanded ? 'expand_less' : 'expand_more'}
+                          </span>
+                        </div>
+
+                        {/* Day Accordion Content */}
+                        {isExpanded && (
+                          <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {/* Slots Chips */}
+                            {daySlots.length > 0 ? (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {daySlots.map((slotObj, idx) => {
+                                  const timeStr = typeof slotObj === 'string' ? slotObj : slotObj.time;
+                                  const rateVal = typeof slotObj === 'object' && slotObj.rate !== undefined ? slotObj.rate : 500;
+                                  return (
+                                    <div
+                                      key={idx}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '6px 12px',
+                                        borderRadius: '10px',
+                                        backgroundColor: '#252525',
+                                        border: '1px solid var(--border-color)',
+                                        fontSize: '12px',
+                                        color: 'var(--text-primary)'
+                                      }}
+                                    >
+                                      <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--primary-green)' }}>schedule</span>
+                                      <span>{formatTime12h(timeStr)}</span>
+                                      <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>₹{rateVal}</span>
+                                      <span
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRemoveTimeSlot(d.short, idx);
+                                        }}
+                                        style={{
+                                          cursor: 'pointer',
+                                          marginLeft: '4px',
+                                          color: 'var(--text-muted)',
+                                          fontSize: '14px',
+                                          fontWeight: 'bold'
+                                        }}
+                                      >
+                                        ✕
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                No time slots added for {d.full} yet.
+                              </div>
+                            )}
+
+                            {/* Add Time Slot Controls */}
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '10px',
+                              borderRadius: '10px',
+                              backgroundColor: '#222',
+                              border: '1px border-dashed var(--border-color)'
+                            }}>
+                              <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Start Time (1 hr duration)</label>
+                                <input
+                                  type="time"
+                                  value={slotPickerTime[d.short] || '09:00'}
+                                  onChange={(e) => setSlotPickerTime({ ...slotPickerTime, [d.short]: e.target.value })}
+                                  style={{
+                                    width: '100%',
+                                    backgroundColor: '#181818',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-primary)',
+                                    padding: '6px 8px',
+                                    borderRadius: '8px',
+                                    fontSize: '12px'
+                                  }}
+                                />
+                              </div>
+
+                              <div style={{ width: '90px' }}>
+                                <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Rate (₹)</label>
+                                <input
+                                  type="number"
+                                  value={slotPickerRate[d.short] || 500}
+                                  onChange={(e) => setSlotPickerRate({ ...slotPickerRate, [d.short]: e.target.value })}
+                                  style={{
+                                    width: '100%',
+                                    backgroundColor: '#181818',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-primary)',
+                                    padding: '6px 8px',
+                                    borderRadius: '8px',
+                                    fontSize: '12px'
+                                  }}
+                                />
+                              </div>
+
+                              <Button
+                                type="button"
+                                onClick={() => handleAddTimeSlotToDay(d.short)}
+                                variant="secondary"
+                                style={{ padding: '8px 12px', fontSize: '11px', borderRadius: '8px', alignSelf: 'flex-end' }}
+                              >
+                                + Add
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Timezone Footer */}
+              <div style={{
+                display: 'flex',
+                justify: 'space-between',
+                alignItems: 'center',
+                padding: '10px 12px',
+                borderRadius: '10px',
+                backgroundColor: 'rgba(136, 217, 130, 0.08)',
+                border: '1px solid rgba(136, 217, 130, 0.2)',
+                marginTop: '4px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--primary-green)' }}>schedule</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Time is shown in your local timezone (Asia/Kolkata)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { if (onShowToast) onShowToast('🌐 Timezone locked to Asia/Kolkata'); }}
+                  style={{
+                    backgroundColor: 'rgba(136, 217, 130, 0.15)',
+                    border: 'none',
+                    color: 'var(--primary-green)',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Change Timezone
+                </button>
+              </div>
+            </div>
+
+            {/* Section 3: Meeting Settings */}
+            <div className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>
+                3. Meeting Settings
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-10px' }}>
+                Configure your meeting preferences
+              </div>
+
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                padding: '12px',
+                borderRadius: '12px',
+                backgroundColor: '#181818',
+                border: '1px solid var(--border-color)'
+              }}>
+                {/* Meeting Duration Row */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'rgba(136, 217, 130, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary-green)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>timer</span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: '600' }}>Meeting Duration</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Set default duration for each meeting</div>
+                    </div>
+                  </div>
+                  <select
+                    value={meetingDuration}
+                    onChange={(e) => setMeetingDuration(Number(e.target.value))}
+                    style={{
+                      backgroundColor: '#252525',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--primary-green)',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value={15}>15 mins</option>
+                    <option value={30}>30 mins</option>
+                    <option value={45}>45 mins</option>
+                    <option value={60}>60 mins</option>
+                  </select>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-color)' }} />
+
+                {/* Buffer Time Row */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'rgba(136, 217, 130, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary-green)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>currency_rupee</span>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: '600' }}>Buffer Time</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Add gap between meetings</div>
+                    </div>
+                  </div>
+                  <select
+                    value={bufferTime}
+                    onChange={(e) => setBufferTime(Number(e.target.value))}
+                    style={{
+                      backgroundColor: '#252525',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--primary-green)',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value={0}>0 mins</option>
+                    <option value={5}>5 mins</option>
+                    <option value={10}>10 mins</option>
+                    <option value={15}>15 mins</option>
+                    <option value={30}>30 mins</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <Button
+              type="button"
+              onClick={handleSaveAvailability}
+              variant="primary"
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '16px',
+                fontSize: '15px',
+                fontWeight: '700',
+                backgroundColor: 'var(--primary-green)',
+                color: '#121212',
+                marginTop: '8px'
+              }}
+            >
+              Save Availability
+            </Button>
+
+            {/* Active generated slots summary */}
+            <div style={{ marginTop: '12px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Generated Calendar Slots ({mySlots.length})
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                {mySlots.map(s => (
+                  <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px' }}>
+                    <div>
+                      <div style={{ fontWeight: '700', fontSize: '12px' }}>{s.slot_date} ({formatTime12h(s.start_time)} - {formatTime12h(s.end_time)})</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Rate: ₹{s.rate}</div>
+                    </div>
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      backgroundColor: s.is_booked ? 'rgba(255, 90, 90, 0.15)' : 'rgba(136, 217, 130, 0.15)',
+                      color: s.is_booked ? 'var(--error)' : 'var(--primary-green)'
+                    }}>
+                      {s.is_booked ? 'Booked' : 'Available'}
+                    </span>
+                  </div>
+                ))}
+                {mySlots.length === 0 && (
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>
+                    No slots generated yet. Select days and click Save Availability above.
+                  </div>
+                )}
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -709,7 +1399,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
                   </div>
                   
                   <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.12)', color: 'var(--primary-green)', padding: '4px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>
-                    {appt.date} • {appt.time}
+                    {appt.date} • {formatTime12h(appt.time)}
                   </div>
                 </div>
 
@@ -846,11 +1536,6 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
 
         {/* ================= MARKETPLACE ================= */}
         {activeSubTab === 'marketplace' && (() => {
-          const cartItems = Object.entries(cart)
-            .filter(([, qty]) => qty > 0)
-            .map(([pid, qty]) => ({ product: products.find(p => p.id === pid), qty }))
-            .filter(i => i.product);
-
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '32px' }}>
               <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)' }}>
@@ -902,7 +1587,9 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
               <img src={selectedExpert.avatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
               <div>
                 <div style={{ fontWeight: '600', fontSize: '14px' }}>{selectedExpert.name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Consultation fee: ₹500</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {bookingDate ? `Selected Date: ${bookingDate}` : 'Select a slot below'}
+                </div>
               </div>
             </div>
 
@@ -936,7 +1623,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
                         {slot.slot_date}
                       </div>
                       <div style={{ fontSize: '10px', color: slot.is_booked ? 'var(--text-muted)' : 'var(--primary-green)', fontWeight: '600' }}>
-                        {slot.start_time.substring(0,5)} - {slot.end_time.substring(0,5)}
+                        {formatTime12h(slot.start_time)} - {formatTime12h(slot.end_time)} (₹{slot.rate})
                       </div>
                       {slot.is_booked && (
                         <span style={{ fontSize: '9px', color: 'var(--error)', fontWeight: 'bold' }}>Booked (Unavailable)</span>
