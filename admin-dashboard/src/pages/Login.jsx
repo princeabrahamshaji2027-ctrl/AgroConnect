@@ -3,8 +3,8 @@ import { supabase } from '../supabase';
 import logoImg from '../assets/logo.png';
 
 export default function Login({ authError: externalError }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('prince@agroconnect.com');
+  const [password, setPassword] = useState('Prince@1234');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 

@@ -6,8 +6,8 @@ import './pages.css';
 import { supabase } from '../supabase';
 
 export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('user1@agroconnect.com');
+  const [password, setPassword] = useState('user1@1234');
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
