@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
+import PasswordRequirements from '../components/PasswordRequirements';
+import {
+  validatePassword,
+  validateUsername,
+  validateEmail,
+  validateName,
+  validatePhone,
+  validateRequiredText
+} from '../utils/validation';
 import './pages.css';
 
 import { supabase } from '../supabase';
@@ -62,22 +71,67 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name || !username || !email || !phone || !password || !confirmPassword || !country || !state || !district || !city) {
-      setError('Please fill in all fields, including location details');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
     setError('');
 
+    // 1. Validate Full Name
+    const nameVal = validateName(name, 'Full Name');
+    if (!nameVal.isValid) {
+      setError(nameVal.error);
+      return;
+    }
+
+    // 2. Validate Username
+    const usernameVal = validateUsername(username);
+    if (!usernameVal.isValid) {
+      setError(usernameVal.error);
+      return;
+    }
+
+    // 3. Validate Email
+    const emailVal = validateEmail(email);
+    if (!emailVal.isValid) {
+      setError(emailVal.error);
+      return;
+    }
+
+    // 4. Validate Phone
+    const phoneVal = validatePhone(phone, true);
+    if (!phoneVal.isValid) {
+      setError(phoneVal.error);
+      return;
+    }
+
+    // 5. Validate Password Policy
+    const pwdVal = validatePassword(password, emailVal.value, usernameVal.value);
+    if (!pwdVal.isValid) {
+      setError(pwdVal.errors[0]);
+      return;
+    }
+
+    // 6. Confirm Password Match
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    // 7. Validate Location Fields
+    const countryVal = validateRequiredText(country, 'Country');
+    const stateVal = validateRequiredText(state, 'State');
+    const districtVal = validateRequiredText(district, 'District');
+    const cityVal = validateRequiredText(city, 'City / Village');
+
+    if (!countryVal.isValid || !stateVal.isValid || !districtVal.isValid || !cityVal.isValid) {
+      setError('Please fill in all required location details.');
+      return;
+    }
+
     const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
+      email: emailVal.value,
       password,
       options: {
         data: {
-          full_name: name,
+          full_name: nameVal.value,
+          username: usernameVal.value,
           role: 'Farmer'
         }
       }
@@ -93,8 +147,9 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
       await supabase
         .from('profiles')
         .update({
-          phone,
-          location: `${city}, ${state}`
+          full_name: nameVal.value,
+          phone: phoneVal.value,
+          location: `${cityVal.value}, ${stateVal.value}`
         })
         .eq('id', data.user.id);
 
@@ -106,7 +161,7 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
           farm_size: 0.0,
           crop_type: '',
           soil_type: '',
-          location: `${city}, ${state}`
+          location: `${cityVal.value}, ${stateVal.value}`
         });
 
       onRegisterSuccess();
@@ -184,6 +239,13 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
           onChange={(e) => setConfirmPassword(e.target.value)}
           icon="lock_reset"
           required
+        />
+
+        <PasswordRequirements
+          password={password}
+          email={email}
+          username={username}
+          confirmPassword={confirmPassword}
         />
 
         {/* Location Section */}

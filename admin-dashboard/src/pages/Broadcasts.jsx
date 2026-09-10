@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import { validateRequiredText, validateImageFile } from '../utils/validation';
 
 export default function Broadcasts() {
   const [broadcasts, setBroadcasts] = useState([]);
@@ -57,17 +58,33 @@ export default function Broadcasts() {
     return () => clearTimeout(timer);
   }, [userSearch, targetType]);
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const imgVal = await validateImageFile(file, 5);
+    if (!imgVal.isValid) {
+      alert(imgVal.error);
+      e.target.value = '';
+      return;
+    }
+
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
   };
 
   const handleSubmitBroadcast = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !message.trim()) {
-      alert('Please fill out Title and Message');
+
+    const titleVal = validateRequiredText(title, 'Broadcast Title', 2, 150);
+    if (!titleVal.isValid) {
+      alert(titleVal.error);
+      return;
+    }
+
+    const messageVal = validateRequiredText(message, 'Message Content', 5, 3000);
+    if (!messageVal.isValid) {
+      alert(messageVal.error);
       return;
     }
     if (targetType === 'user' && !targetUserId) {

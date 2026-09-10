@@ -12,18 +12,21 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username || !password) {
-      setError('Please fill in all fields');
+    const cleanUser = username.trim();
+    const cleanPwd = password;
+
+    if (!cleanUser || !cleanPwd) {
+      setError('Please fill in both email/username and password.');
       return;
     }
     setError('');
 
     // Check if user is using simple username or email
-    const emailStr = username.includes('@') ? username : `${username}@agroconnect.com`;
+    const emailStr = cleanUser.includes('@') ? cleanUser : `${cleanUser}@agroconnect.com`;
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email: emailStr,
-      password: password
+      password: cleanPwd
     });
 
     if (authError) {

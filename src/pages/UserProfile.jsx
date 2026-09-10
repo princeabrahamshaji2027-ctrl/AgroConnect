@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import InputField from '../components/InputField';
 import Dialog from '../components/Dialog';
 import ComingSoon from '../components/ComingSoon';
+import { validatePdfFile, validateRequiredText } from '../utils/validation';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -205,11 +206,15 @@ export default function UserProfile({
     }
   };
 
-  const handleCvFileChange = (e) => {
+  const handleCvFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('CV file too large. Max 10 MB.');
+    const pdfVal = await validatePdfFile(file, 5);
+    if (!pdfVal.isValid) {
+      alert(pdfVal.error);
+      setCvFile(null);
+      setCvFileName('');
+      if (cvInputRef.current) cvInputRef.current.value = '';
       return;
     }
     setCvFile(file);
@@ -470,7 +475,7 @@ export default function UserProfile({
       <input
         ref={cvInputRef}
         type="file"
-        accept=".pdf,.doc,.docx,image/*"
+        accept="application/pdf"
         style={{ display: 'none' }}
         onChange={handleCvFileChange}
       />
@@ -498,7 +503,7 @@ export default function UserProfile({
         {kycStep === 2 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', margin: '12px 0' }}>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-              Upload your CV or Resume (PDF, DOC, or image). Max 10 MB. This will be securely stored and only visible to administrators.
+              Upload your CV or Resume (PDF format only, max 5 MB). This will be securely stored and only visible to administrators.
             </p>
             <div
               onClick={handleCvPick}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
+import { validateRequiredText, validateImageFile } from '../utils/validation';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -123,14 +124,18 @@ export default function CreatePost({ onPublish, onCancel }) {
   };
 
   // ─── Web file input fallback ─────────────────────────────────────────────────
-  const handleWebImageChange = (e) => {
+  const handleWebImageChange = async (e) => {
     setPermissionError(null);
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > MAX_IMAGE_BYTES) {
-      setPermissionError('Image is too large (max 10 MB). Please choose a smaller file.');
+
+    const imgVal = await validateImageFile(file, 10);
+    if (!imgVal.isValid) {
+      setPermissionError(imgVal.error);
+      if (imageInputRef.current) imageInputRef.current.value = '';
       return;
     }
+
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
   };
@@ -175,8 +180,14 @@ export default function CreatePost({ onPublish, onCancel }) {
   // ─── Publish handler ─────────────────────────────────────────────────────────
   const handlePublish = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) {
-      alert('Please fill out Title and Caption fields');
+    const titleVal = validateRequiredText(title, 'Post Title', 2, 150);
+    if (!titleVal.isValid) {
+      alert(titleVal.error);
+      return;
+    }
+    const contentVal = validateRequiredText(content, 'Caption / Description', 5, 3000);
+    if (!contentVal.isValid) {
+      alert(contentVal.error);
       return;
     }
 

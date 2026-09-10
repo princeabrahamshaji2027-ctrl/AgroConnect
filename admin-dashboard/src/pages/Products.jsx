@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import { validateRequiredText, validateNumeric } from '../utils/validation';
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -91,14 +92,33 @@ export default function Products() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const nameVal = validateRequiredText(form.product_name, 'Product Name', 2, 120);
+    if (!nameVal.isValid) {
+      alert(nameVal.error);
+      return;
+    }
+
+    const priceVal = validateNumeric(form.price, { min: 0.01, fieldName: 'Price' });
+    if (!priceVal.isValid) {
+      alert(priceVal.error);
+      return;
+    }
+
+    const stockVal = validateNumeric(form.stock, { min: 0, allowDecimal: false, fieldName: 'Stock Quantity' });
+    if (!stockVal.isValid) {
+      alert(stockVal.error);
+      return;
+    }
+
     try {
       const payload = {
         seller_id: form.seller_id,
-        product_name: form.product_name,
-        description: form.description,
-        price: parseFloat(form.price),
-        stock: parseInt(form.stock),
-        image_path: form.image_path,
+        product_name: nameVal.value,
+        description: form.description ? form.description.trim() : '',
+        price: priceVal.value,
+        stock: stockVal.value,
+        image_path: form.image_path ? form.image_path.trim() : '',
         category: form.category
       };
 

@@ -10,8 +10,11 @@ export default function Login({ authError: externalError }) {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      setError('Please enter both email and password.');
+    const cleanEmail = email.trim();
+    const cleanPwd = password;
+
+    if (!cleanEmail || !cleanPwd) {
+      setError('Please enter both email/username and password.');
       return;
     }
     setError('');
@@ -19,10 +22,10 @@ export default function Login({ authError: externalError }) {
 
     try {
       // Format email if needed
-      const emailStr = email.includes('@') ? email : `${email}@agroconnect.com`;
+      const emailStr = cleanEmail.includes('@') ? cleanEmail : `${cleanEmail}@agroconnect.com`;
       const { error: authErr } = await supabase.auth.signInWithPassword({
         email: emailStr,
-        password: password,
+        password: cleanPwd,
       });
 
       if (authErr) throw authErr;

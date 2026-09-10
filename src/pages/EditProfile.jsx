@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
+import { validateImageFile, validateName, validatePhone } from '../utils/validation';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -45,8 +46,11 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
   const handleAvatarFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image file must be under 5MB');
+
+    const imgVal = await validateImageFile(file, 5);
+    if (!imgVal.isValid) {
+      alert(imgVal.error);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
@@ -85,6 +89,19 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
+
+    const nameVal = validateName(name, 'Full Name');
+    if (!nameVal.isValid) {
+      alert(nameVal.error);
+      return;
+    }
+
+    const phoneVal = validatePhone(phone, false);
+    if (!phoneVal.isValid) {
+      alert(phoneVal.error);
+      return;
+    }
+
     const { data: { user: authUser } } = await supabase.auth.getUser();
     const targetUserId = userId === 'user1' ? authUser?.id : userId;
     if (!targetUserId) return;
@@ -92,10 +109,10 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
     const { error } = await supabase
       .from('profiles')
       .update({
-        full_name: name,
-        bio,
-        location,
-        phone,
+        full_name: nameVal.value,
+        bio: bio.trim(),
+        location: location.trim(),
+        phone: phoneVal.value,
         profile_image_path: avatar
       })
       .eq('id', targetUserId);
@@ -108,11 +125,11 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
     if (onSave) {
       onSave({
         id: targetUserId,
-        name,
+        name: nameVal.value,
         username,
-        bio,
-        location,
-        phone,
+        bio: bio.trim(),
+        location: location.trim(),
+        phone: phoneVal.value,
         avatar
       });
     }

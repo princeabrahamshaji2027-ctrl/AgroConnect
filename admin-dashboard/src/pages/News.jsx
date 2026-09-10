@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import { validateRequiredText } from '../utils/validation';
 
 export default function News() {
   const [news, setNews] = useState([]);
@@ -31,13 +32,25 @@ export default function News() {
 
   const handlePublish = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) return;
+
+    const titleVal = validateRequiredText(title, 'Announcement Title', 2, 150);
+    if (!titleVal.isValid) {
+      alert(titleVal.error);
+      return;
+    }
+
+    const contentVal = validateRequiredText(content, 'Announcement Text', 5, 5000);
+    if (!contentVal.isValid) {
+      alert(contentVal.error);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('news').insert({
-        title: title.trim(),
-        content: content.trim(),
+        title: titleVal.value,
+        content: contentVal.value,
         created_by: user?.id
       });
       if (error) throw error;

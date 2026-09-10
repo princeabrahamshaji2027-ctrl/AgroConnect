@@ -4,6 +4,7 @@ import { PostCard } from '../components/Card';
 import BottomSheet from '../components/BottomSheet';
 import { Button } from '../components/Button';
 import InputField from '../components/InputField';
+import { validateRequiredText } from '../utils/validation';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -319,7 +320,8 @@ export default function Feed({
   // Comment Actions
   const handleAddCommentSubmit = async (e) => {
     e.preventDefault();
-    if (!newComment.trim() || !selectedPost) return;
+    const commentVal = validateRequiredText(newComment, 'Comment', 1, 1000);
+    if (!commentVal.isValid || !selectedPost) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { Button } from '../components/Button';
+import PasswordRequirements from '../components/PasswordRequirements';
+import { validatePassword } from '../utils/validation';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -24,8 +26,10 @@ export default function PrivacySecurity({ onGoBack }) {
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setMessage(null);
-    if (!newPassword || newPassword.length < 6) {
-      setMessage({ type: 'error', text: 'New password must be at least 6 characters.' });
+
+    const pwdVal = validatePassword(newPassword);
+    if (!pwdVal.isValid) {
+      setMessage({ type: 'error', text: pwdVal.errors[0] });
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -77,6 +81,11 @@ export default function PrivacySecurity({ onGoBack }) {
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Confirm new password"
               style={{ padding: '14px 16px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'white', fontSize: '14px', outline: 'none' }}
+            />
+
+            <PasswordRequirements
+              password={newPassword}
+              confirmPassword={confirmPassword}
             />
             
             {message && (
