@@ -19,6 +19,7 @@ export default function UserProfile({
   onCancelView,
   onProfileClick,
   onPeaAIClick,
+  onLogout,
   onShowToast
 }) {
   const [user, setUser] = useState(null);
@@ -425,13 +426,25 @@ export default function UserProfile({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', padding: '0 16px' }}>
             {isOwnProfile ? (
-              <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
-                <Button variant="primary" onClick={onEditProfileClick} style={{ flex: 1, padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
-                  Edit Profile
-                </Button>
-                <Button variant="secondary" style={{ flex: 1, padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
-                  Share Profile
-                </Button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+                <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+                  <Button variant="primary" onClick={onEditProfileClick} style={{ flex: 1, padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
+                    Edit Profile
+                  </Button>
+                  <Button variant="secondary" onClick={onSettingsClick} style={{ flex: 1, padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
+                    Settings
+                  </Button>
+                </div>
+                {onLogout && (
+                  <Button
+                    variant="secondary"
+                    onClick={onLogout}
+                    icon="logout"
+                    style={{ width: '100%', padding: '10px 16px', borderRadius: '14px', fontSize: '13px', borderColor: 'var(--error)', color: 'var(--error)' }}
+                  >
+                    Log Out
+                  </Button>
+                )}
               </div>
             ) : (
               <Button

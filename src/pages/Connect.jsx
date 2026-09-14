@@ -3,6 +3,7 @@ import Header from '../components/Header';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
 import Dialog from '../components/Dialog';
+import BottomSheet from '../components/BottomSheet';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -76,7 +77,35 @@ function getDaysInMonthGrid(year, monthIndex) {
   return cells;
 }
 
-export default function Connect({ onPeaAIClick, onShowToast }) {
+function groupMeetingsByDate(meetingList) {
+  const grouped = {};
+  meetingList.forEach(m => {
+    const d = m.date || 'Upcoming';
+    if (!grouped[d]) grouped[d] = [];
+    grouped[d].push(m);
+  });
+  Object.keys(grouped).forEach(d => {
+    grouped[d].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  });
+  return grouped;
+}
+
+function getCountdownText(dateStr, timeStr) {
+  if (!dateStr || !timeStr) return { isReady: true, text: 'Join Meeting' };
+  const timeClean = timeStr.length === 5 ? `${timeStr}:00` : timeStr;
+  const startMs = new Date(`${dateStr}T${timeClean}`).getTime();
+  const diffMs = startMs - Date.now();
+  if (diffMs <= 0) {
+    return { isReady: true, text: 'Join Meeting' };
+  }
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
+  const timeFormatted = `${hours > 0 ? `${hours}h ` : ''}${mins}m ${secs}s`;
+  return { isReady: false, text: `Starts in ${timeFormatted}` };
+}
+
+export default function Connect({ onPeaAIClick, onShowToast, initialBooking, clearInitialBooking }) {
   const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews' | 'marketplace' | 'availability'
   
   // Book Consultation States
@@ -87,10 +116,39 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
 
-  // Expert Slot Management States
+  // Expert Slot Management & Identity States
   const [isCurrentExpert, setIsCurrentExpert] = useState(false);
   const [currentExpertId, setCurrentExpertId] = useState(null);
+  const [currentExpertProfile, setCurrentExpertProfile] = useState(null);
   const [mySlots, setMySlots] = useState([]);
+
+  // Expert Menu & Leave Expert Mode states
+  const [isMenuSheetOpen, setIsMenuSheetOpen] = useState(false);
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [leaveReason, setLeaveReason] = useState('');
+  const [leavingExpertMode, setLeavingExpertMode] = useState(false);
+
+  // Meeting Detail Sheet & Cancellation states
+  const [selectedMeetingDetail, setSelectedMeetingDetail] = useState(null);
+  const [isCancelSheetOpen, setIsCancelSheetOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [offeredSlots, setOfferedSlots] = useState([]);
+  const [offerDateInput, setOfferDateInput] = useState('');
+  const [offerTimeInput, setOfferTimeInput] = useState('10:00');
+  const [cancellingMeeting, setCancellingMeeting] = useState(false);
+
+  // Expert Edit Profile Modal state
+  const [isExpertProfileEditOpen, setIsExpertProfileEditOpen] = useState(false);
+  const [expertEditBio, setExpertEditBio] = useState('');
+  const [expertEditSpecialization, setExpertEditSpecialization] = useState('');
+
+  // Live Countdown Tick state
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Rebuilt Manage Availability States
   const [selectedDays, setSelectedDays] = useState(['Mon', 'Tue', 'Wed']);
@@ -141,6 +199,18 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState({});
 
+  useEffect(() => {
+    if (initialBooking && initialBooking.expertId && expertsList.length > 0) {
+      const exp = expertsList.find(e => e.id === initialBooking.expertId);
+      if (exp) {
+        setSelectedExpert(exp);
+        setBookingDate(initialBooking.date || '');
+        setBookingTime(initialBooking.time || '');
+        if (clearInitialBooking) clearInitialBooking();
+      }
+    }
+  }, [initialBooking, expertsList]);
+
   const fetchMySlots = async (expertId) => {
     if (!expertId) return;
     const { data } = await supabase
@@ -160,16 +230,40 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
       // 0. Check if logged in user is an expert
       const { data: myExpert } = await supabase
         .from('experts')
-        .select('id, meeting_duration_minutes, buffer_time_minutes')
+        .select('id, meeting_duration_minutes, buffer_time_minutes, is_active, specialization')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (myExpert) {
+      let activeExpertId = null;
+      if (myExpert && myExpert.is_active !== false) {
         setIsCurrentExpert(true);
         setCurrentExpertId(myExpert.id);
+        activeExpertId = myExpert.id;
         if (myExpert.meeting_duration_minutes) setMeetingDuration(myExpert.meeting_duration_minutes);
         if (myExpert.buffer_time_minutes) setBufferTime(myExpert.buffer_time_minutes);
         fetchMySlots(myExpert.id);
+
+        const { data: userProf } = await supabase
+          .from('profiles')
+          .select('full_name, profile_image_path, role, bio')
+          .eq('id', user.id)
+          .single();
+
+        if (userProf) {
+          setCurrentExpertProfile({
+            name: userProf.full_name || 'Expert',
+            avatar: userProf.profile_image_path || '/profile-placeholder.png',
+            role: userProf.role || 'Agronomist',
+            bio: userProf.bio || myExpert.specialization || 'Verified Expert',
+            specialization: myExpert.specialization || ''
+          });
+          setExpertEditBio(userProf.bio || '');
+          setExpertEditSpecialization(myExpert.specialization || '');
+        }
+      } else {
+        setIsCurrentExpert(false);
+        setCurrentExpertId(null);
+        setCurrentExpertProfile(null);
       }
 
       // 1a. Fetch reviews per expert count
@@ -203,6 +297,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         .select(`
           id,
           rating,
+          is_active,
           profiles:user_id (
             full_name,
             profile_image_path,
@@ -211,7 +306,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
           )
         `);
       if (expertsData) {
-        setExpertsList(expertsData.map(exp => ({
+        setExpertsList(expertsData.filter(exp => exp.is_active !== false).map(exp => ({
           id: exp.id,
           name: exp.profiles?.full_name || 'Expert',
           avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
@@ -222,46 +317,94 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
         })));
       }
 
-      // Get farmer profile
-      const { data: farmerProfile } = await supabase
-        .from('farmer_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (farmerProfile) {
-        // 2. Fetch upcoming bookings
-        const { data: bookingsData } = await supabase
+      if (activeExpertId) {
+        // If expert, fetch expert's upcoming bookings
+        const { data: expBookings } = await supabase
           .from('consultation_bookings')
           .select(`
             *,
-            experts:expert_id (
+            farmer_profiles:farmer_id (
               id,
+              user_id,
               profiles:user_id (
+                id,
                 full_name,
                 profile_image_path
               )
             )
           `)
-          .eq('farmer_id', farmerProfile.id)
+          .eq('expert_id', activeExpertId)
           .eq('status', 'Booked')
-          .order('meeting_date', { ascending: true });
+          .order('meeting_date', { ascending: true })
+          .order('meeting_time', { ascending: true });
 
-        if (bookingsData) {
-          setAppointments(bookingsData.map(appt => ({
-            id: appt.id,
-            expertId: appt.experts?.id,
-            expertName: appt.experts?.profiles?.full_name || 'Expert',
-            expertAvatar: appt.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
-            topic: appt.issue_description || '',
-            date: appt.meeting_date,
-            time: appt.meeting_time,
-            roomId: `AGRI-${appt.id.slice(0, 8).toUpperCase()}`,
+        if (expBookings) {
+          setAppointments(expBookings.map(b => ({
+            id: b.id,
+            farmerId: b.farmer_profiles?.id,
+            farmerUserId: b.farmer_profiles?.profiles?.id,
+            farmerName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
+            farmerAvatar: b.farmer_profiles?.profiles?.profile_image_path || '/profile-placeholder.png',
+            expertName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
+            expertAvatar: b.farmer_profiles?.profiles?.profile_image_path || '/profile-placeholder.png',
+            topic: b.issue_description || '',
+            date: b.meeting_date,
+            time: b.meeting_time,
+            roomId: `AGRI-${b.id.slice(0, 8).toUpperCase()}`,
+            slotId: b.slot_id,
             status: 'upcoming'
           })));
         }
+      } else {
+        // Get farmer profile
+        const { data: farmerProfile } = await supabase
+          .from('farmer_profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-        // 3. Fetch past bookings
+        if (farmerProfile) {
+          // 2. Fetch upcoming bookings
+          const { data: bookingsData } = await supabase
+            .from('consultation_bookings')
+            .select(`
+              *,
+              experts:expert_id (
+                id,
+                profiles:user_id (
+                  full_name,
+                  profile_image_path
+                )
+              )
+            `)
+            .eq('farmer_id', farmerProfile.id)
+            .eq('status', 'Booked')
+            .order('meeting_date', { ascending: true });
+
+          if (bookingsData) {
+            setAppointments(bookingsData.map(appt => ({
+              id: appt.id,
+              expertId: appt.experts?.id,
+              expertName: appt.experts?.profiles?.full_name || 'Expert',
+              expertAvatar: appt.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
+              topic: appt.issue_description || '',
+              date: appt.meeting_date,
+              time: appt.meeting_time,
+              roomId: `AGRI-${appt.id.slice(0, 8).toUpperCase()}`,
+              status: 'upcoming'
+            })));
+          }
+        }
+      }
+
+      // 3. Fetch past bookings for history
+      const { data: farmerProfileForHist } = await supabase
+        .from('farmer_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (farmerProfileForHist) {
         const { data: histData } = await supabase
           .from('consultation_bookings')
           .select(`
@@ -274,7 +417,7 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
               )
             )
           `)
-          .eq('farmer_id', farmerProfile.id)
+          .eq('farmer_id', farmerProfileForHist.id)
           .neq('status', 'Booked')
           .order('meeting_date', { ascending: false });
 
@@ -648,6 +791,217 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
     setActiveSubTab('reviews');
   };
 
+  const handleAddOfferedSlot = () => {
+    if (!offerDateInput || !offerTimeInput) {
+      if (onShowToast) onShowToast('⚠️ Please select both date and time for reschedule option');
+      return;
+    }
+    if (offeredSlots.some(s => s.date === offerDateInput && s.time === offerTimeInput)) {
+      if (onShowToast) onShowToast('⚠️ This date/time option is already added');
+      return;
+    }
+    setOfferedSlots([...offeredSlots, { date: offerDateInput, time: offerTimeInput }]);
+  };
+
+  const handleRemoveOfferedSlot = (index) => {
+    setOfferedSlots(offeredSlots.filter((_, idx) => idx !== index));
+  };
+
+  const handleServerValidatedJoin = async (meeting) => {
+    try {
+      const { data: latestBooking, error } = await supabase
+        .from('consultation_bookings')
+        .select('meeting_date, meeting_time, status')
+        .eq('id', meeting.id)
+        .single();
+
+      if (error || !latestBooking) {
+        alert("Could not verify meeting status. Please try again.");
+        return;
+      }
+
+      if (latestBooking.status !== 'Booked') {
+        alert("This meeting is no longer scheduled.");
+        fetchData();
+        return;
+      }
+
+      const timeClean = latestBooking.meeting_time.length === 5 ? `${latestBooking.meeting_time}:00` : latestBooking.meeting_time;
+      const startMs = new Date(`${latestBooking.meeting_date}T${timeClean}`).getTime();
+
+      if (Date.now() < startMs) {
+        alert("The meeting start time has not been reached yet.");
+        return;
+      }
+
+      setSelectedMeetingDetail(null);
+      handleStartCall(meeting.roomId);
+    } catch (err) {
+      console.error(err);
+      alert("Error joining meeting room.");
+    }
+  };
+
+  const handleConfirmCancelMeeting = async () => {
+    if (!cancelReason.trim()) {
+      alert("Please provide a mandatory cancellation reason.");
+      return;
+    }
+    if (offeredSlots.length === 0) {
+      alert("Please offer at least 1 alternative date/time slot.");
+      return;
+    }
+    if (!selectedMeetingDetail) return;
+
+    setCancellingMeeting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const appt = selectedMeetingDetail;
+
+      const { error: updateErr } = await supabase
+        .from('consultation_bookings')
+        .update({
+          status: 'Cancelled',
+          cancellation_reason: cancelReason.trim(),
+          offered_reschedule_slots: offeredSlots
+        })
+        .eq('id', appt.id);
+
+      if (updateErr) throw updateErr;
+
+      if (appt.slotId) {
+        await supabase
+          .from('consultation_slots')
+          .update({ is_booked: false })
+          .eq('id', appt.slotId);
+      }
+
+      const farmerUserId = appt.farmerUserId;
+      if (user && farmerUserId) {
+        let { data: conv } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`and(user_one.eq.${user.id},user_two.eq.${farmerUserId}),and(user_one.eq.${farmerUserId},user_two.eq.${user.id})`)
+          .maybeSingle();
+
+        if (!conv) {
+          const { data: newConv } = await supabase
+            .from('conversations')
+            .insert({ user_one: user.id, user_two: farmerUserId })
+            .select('id')
+            .single();
+          conv = newConv;
+        }
+
+        if (conv) {
+          await supabase
+            .from('messages')
+            .insert({
+              conversation_id: conv.id,
+              sender_id: user.id,
+              content: `Meeting Cancelled: ${cancelReason.trim()}`,
+              message_type: 'cancellation_reschedule',
+              metadata: {
+                booking_id: appt.id,
+                expert_id: currentExpertId,
+                expert_name: currentExpertProfile?.name || 'Expert',
+                cancellation_reason: cancelReason.trim(),
+                offered_slots: offeredSlots
+              }
+            });
+
+          await supabase
+            .from('conversations')
+            .update({ last_message_at: new Date().toISOString() })
+            .eq('id', conv.id);
+        }
+      }
+
+      if (onShowToast) {
+        onShowToast("📅 Meeting cancelled & reschedule options sent via Chat!");
+      }
+
+      setIsCancelSheetOpen(false);
+      setSelectedMeetingDetail(null);
+      setCancelReason('');
+      setOfferedSlots([]);
+      fetchData();
+
+    } catch (err) {
+      alert(`Cancellation failed: ${err.message}`);
+    } finally {
+      setCancellingMeeting(false);
+    }
+  };
+
+  const handleConfirmLeaveExpertMode = async () => {
+    if (!leaveReason.trim()) {
+      alert("Please provide a mandatory reason for leaving expert mode.");
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !currentExpertId) return;
+
+    setLeavingExpertMode(true);
+    try {
+      await supabase
+        .from('experts')
+        .update({ is_active: false })
+        .eq('id', currentExpertId);
+
+      await supabase
+        .from('profiles')
+        .update({ role: 'Farmer' })
+        .eq('id', user.id);
+
+      setIsCurrentExpert(false);
+      setCurrentExpertId(null);
+      setCurrentExpertProfile(null);
+      setIsLeaveModalOpen(false);
+      setLeaveReason('');
+      setActiveSubTab('book');
+
+      if (onShowToast) {
+        onShowToast("Reverted account to normal user.");
+      }
+      fetchData();
+
+    } catch (err) {
+      alert(`Failed to leave expert mode: ${err.message}`);
+    } finally {
+      setLeavingExpertMode(false);
+    }
+  };
+
+  const handleSaveExpertProfileEdit = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !currentExpertId) return;
+
+    try {
+      await supabase
+        .from('profiles')
+        .update({ bio: expertEditBio.trim() })
+        .eq('id', user.id);
+
+      await supabase
+        .from('experts')
+        .update({ specialization: expertEditSpecialization.trim() })
+        .eq('id', currentExpertId);
+
+      setCurrentExpertProfile(prev => ({
+        ...prev,
+        bio: expertEditBio.trim(),
+        specialization: expertEditSpecialization.trim()
+      }));
+
+      setIsExpertProfileEditOpen(false);
+      if (onShowToast) onShowToast("Expert profile updated!");
+      fetchData();
+    } catch (err) {
+      alert(`Update failed: ${err.message}`);
+    }
+  };
+
   if (inVideoCall) {
     return (
       <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', backgroundColor: '#090909', position: 'relative', zIndex: 1000 }}>
@@ -734,7 +1088,20 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Header title="Catch Up" onPeaAIClick={onPeaAIClick} />
+      <Header 
+        title={isCurrentExpert ? "Expert Catch Up" : "Catch Up"} 
+        onPeaAIClick={onPeaAIClick}
+        leftAction={isCurrentExpert ? (
+          <button 
+            type="button"
+            onClick={() => setIsMenuSheetOpen(true)}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+            aria-label="Expert Menu"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>menu</span>
+          </button>
+        ) : null}
+      />
       
       {/* Sub tabs nav */}
       <div style={{ 
@@ -1384,43 +1751,157 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
 
         {/* ================= UPCOMING APPOINTMENTS ================= */}
         {activeSubTab === 'upcoming' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Upcoming Appointments</h3>
-            
-            {appointments.map((appt) => (
-              <div key={appt.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <img src={appt.expertAvatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
-                    <div>
-                      <div style={{ fontWeight: '600', fontSize: '14px' }}>{appt.expertName}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Consultation Session</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+              {isCurrentExpert ? 'Expert Catch Up — Scheduled Meetings' : 'Upcoming Appointments'}
+            </h3>
+
+            {/* Zero availability prompt for Expert */}
+            {isCurrentExpert && mySlots.length === 0 && (
+              <div className="card fade-in" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+                padding: '24px 16px',
+                gap: '12px',
+                backgroundColor: 'rgba(136, 217, 130, 0.08)',
+                border: '1.5px dashed var(--primary-green)',
+                borderRadius: '16px'
+              }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(136, 217, 130, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--primary-green)'
+                }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>event_available</span>
+                </div>
+                <div>
+                  <h4 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>Mark your availability</h4>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px', maxWidth: '320px', lineHeight: '1.4' }}>
+                    You haven't set up any consultation slots yet. Set your available days and times so farmers can book meetings with you.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setActiveSubTab('availability')}
+                  variant="primary"
+                  icon="edit_calendar"
+                  style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '13px' }}
+                >
+                  Set Up Availability
+                </Button>
+              </div>
+            )}
+
+            {isCurrentExpert ? (
+              /* Expert Meeting Cards grouped by Date, then ordered by Time */
+              (() => {
+                const grouped = groupMeetingsByDate(appointments);
+                const dateKeys = Object.keys(grouped);
+
+                if (dateKeys.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--border-color)', display: 'block', marginBottom: '12px' }}>event_busy</span>
+                      <p style={{ fontSize: '14px', fontWeight: '600' }}>No scheduled meetings</p>
+                      <p style={{ fontSize: '12px', marginTop: '4px' }}>Upcoming consultations with farmers will appear here.</p>
+                    </div>
+                  );
+                }
+
+                return dateKeys.map(dateStr => (
+                  <div key={dateStr} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+                      <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '18px' }}>calendar_month</span>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>{dateStr}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>({grouped[dateStr].length} meeting{grouped[dateStr].length === 1 ? '' : 's'})</span>
+                    </div>
+
+                    {grouped[dateStr].map(appt => (
+                      <div
+                        key={appt.id}
+                        className="card fade-in"
+                        onClick={() => setSelectedMeetingDetail(appt)}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                          cursor: 'pointer',
+                          border: '1px solid var(--border-color)',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                            <img src={appt.farmerAvatar} alt={appt.farmerName} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--primary-green)' }} />
+                            <div>
+                              <div style={{ fontWeight: '700', fontSize: '14px', color: 'var(--text-primary)' }}>{appt.farmerName}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Farmer Consultation</div>
+                            </div>
+                          </div>
+
+                          <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.12)', color: 'var(--primary-green)', padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '700' }}>
+                            {formatTime12h(appt.time)}
+                          </div>
+                        </div>
+
+                        {appt.topic && (
+                          <div style={{ backgroundColor: '#252525', padding: '10px 12px', borderRadius: '10px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>Issue:</strong> {appt.topic}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '8px', fontSize: '12px', color: 'var(--primary-green)' }}>
+                          <span>Tap for details, join link & cancellation</span>
+                          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>chevron_right</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })()
+            ) : (
+              /* Farmer view of upcoming appointments */
+              appointments.map((appt) => (
+                <div key={appt.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <img src={appt.expertAvatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{appt.expertName}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Consultation Session</div>
+                      </div>
+                    </div>
+                    
+                    <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.12)', color: 'var(--primary-green)', padding: '4px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>
+                      {appt.date} • {formatTime12h(appt.time)}
                     </div>
                   </div>
-                  
-                  <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.12)', color: 'var(--primary-green)', padding: '4px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>
-                    {appt.date} • {formatTime12h(appt.time)}
+
+                  <div style={{ backgroundColor: '#252525', padding: '10px 12px', borderRadius: '10px', fontSize: '12px' }}>
+                    <strong>Topic:</strong> {appt.topic}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end' }}>
+                    <Button 
+                      onClick={() => handleStartCall(appt.roomId)} 
+                      variant="primary" 
+                      icon="video_call"
+                      style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
+                    >
+                      Join Meeting
+                    </Button>
                   </div>
                 </div>
+              ))
+            )}
 
-                <div style={{ backgroundColor: '#252525', padding: '10px 12px', borderRadius: '10px', fontSize: '12px' }}>
-                  <strong>Topic:</strong> {appt.topic}
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end' }}>
-                  <Button 
-                    onClick={() => handleStartCall(appt.roomId)} 
-                    variant="primary" 
-                    icon="video_call"
-                    style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
-                  >
-                    Join Meeting
-                  </Button>
-                </div>
-              </div>
-            ))}
-
-            {appointments.length === 0 && (
+            {!isCurrentExpert && appointments.length === 0 && (
               <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
                 No upcoming consultations scheduled.
               </div>
@@ -1712,6 +2193,274 @@ export default function Connect({ onPeaAIClick, onShowToast }) {
             </div>
           </div>
         )}
+      </Dialog>
+
+      {/* ── Expert Identity Top-Left Menu Bottom Sheet ───────────── */}
+      <BottomSheet isOpen={isMenuSheetOpen} onClose={() => setIsMenuSheetOpen(false)}>
+        {currentExpertProfile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Identity Header */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '8px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
+              <img
+                src={currentExpertProfile.avatar}
+                alt={currentExpertProfile.name}
+                style={{ width: '72px', height: '72px', borderRadius: '50%', objectFit: 'cover', border: '2.5px solid var(--primary-green)' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                <h3 style={{ fontSize: '17px', fontWeight: '700', color: 'var(--text-primary)' }}>{currentExpertProfile.name}</h3>
+                <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '18px' }}>verified</span>
+              </div>
+              <span className="badge-role">{currentExpertProfile.role}</span>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', maxWidth: '280px', lineHeight: '1.4' }}>
+                {currentExpertProfile.bio}
+              </p>
+            </div>
+
+            {/* Menu Item Rows matching existing list style */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                onClick={() => { setIsMenuSheetOpen(false); setActiveSubTab('availability'); }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>edit_calendar</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600' }}>Customize Availability</span>
+                </div>
+                <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
+              </div>
+
+              <div
+                onClick={() => { setIsMenuSheetOpen(false); setActiveSubTab('history'); }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>history</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600' }}>Meeting History</span>
+                </div>
+                <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
+              </div>
+
+              <div
+                onClick={() => { setIsMenuSheetOpen(false); setIsExpertProfileEditOpen(true); }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>badge</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600' }}>Expert Profile</span>
+                </div>
+                <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
+              </div>
+
+              <div
+                onClick={() => { setIsMenuSheetOpen(false); setIsLeaveModalOpen(true); }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: 'rgba(231, 76, 60, 0.1)', cursor: 'pointer', border: '1px solid rgba(231, 76, 60, 0.3)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="material-symbols-outlined" style={{ color: 'var(--error)' }}>logout</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--error)' }}>Leave Expert Mode</span>
+                </div>
+                <span className="material-symbols-outlined" style={{ color: 'var(--error)' }}>chevron_right</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* ── Meeting Detail Bottom Sheet ─────────────────────────── */}
+      <BottomSheet isOpen={!!selectedMeetingDetail} onClose={() => setSelectedMeetingDetail(null)}>
+        {selectedMeetingDetail && (() => {
+          const countdown = getCountdownText(selectedMeetingDetail.date, selectedMeetingDetail.time);
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
+                <img
+                  src={selectedMeetingDetail.farmerAvatar}
+                  alt={selectedMeetingDetail.farmerName}
+                  style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--primary-green)' }}
+                />
+                <div>
+                  <h4 style={{ fontSize: '16px', fontWeight: '700' }}>{selectedMeetingDetail.farmerName}</h4>
+                  <div style={{ fontSize: '12px', color: 'var(--primary-green)', fontWeight: '600' }}>
+                    {selectedMeetingDetail.date} • {formatTime12h(selectedMeetingDetail.time)}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#1E1E1E', padding: '12px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px', fontWeight: '600' }}>
+                  Consultation Issue Description
+                </label>
+                <p style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: '1.4' }}>
+                  {selectedMeetingDetail.topic || 'No description provided.'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                <Button
+                  onClick={() => setIsCancelSheetOpen(true)}
+                  variant="secondary"
+                  style={{ flex: 1, borderColor: 'var(--error)', color: 'var(--error)', borderRadius: '12px', fontSize: '13px' }}
+                >
+                  Cancel Meeting
+                </Button>
+
+                <Button
+                  onClick={() => handleServerValidatedJoin(selectedMeetingDetail)}
+                  variant="primary"
+                  icon="videocam"
+                  disabled={!countdown.isReady}
+                  style={{
+                    flex: 1,
+                    borderRadius: '12px',
+                    fontSize: '13px',
+                    opacity: countdown.isReady ? 1 : 0.6,
+                    cursor: countdown.isReady ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  {countdown.text}
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+      </BottomSheet>
+
+      {/* ── Cancellation & Reschedule Bottom Sheet ───────────── */}
+      <BottomSheet isOpen={isCancelSheetOpen} onClose={() => setIsCancelSheetOpen(false)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--error)' }}>
+            Cancel Meeting & Offer Reschedule Options
+          </h3>
+
+          <div className="form-group">
+            <label className="form-label">Mandatory Cancellation Reason *</label>
+            <div className="input-container" style={{ padding: '8px 16px' }}>
+              <textarea
+                className="input-field"
+                rows="3"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Explain why this meeting needs to be cancelled..."
+                style={{ resize: 'none', height: '70px' }}
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="form-label" style={{ marginBottom: '6px', display: 'block' }}>
+              Offer Alternative Date & Time Options *
+            </label>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <input
+                type="date"
+                value={offerDateInput}
+                onChange={(e) => setOfferDateInput(e.target.value)}
+                style={{ flex: 1, backgroundColor: '#181818', border: '1px solid var(--border-color)', color: 'white', padding: '8px', borderRadius: '8px', fontSize: '12px' }}
+              />
+              <input
+                type="time"
+                value={offerTimeInput}
+                onChange={(e) => setOfferTimeInput(e.target.value)}
+                style={{ width: '100px', backgroundColor: '#181818', border: '1px solid var(--border-color)', color: 'white', padding: '8px', borderRadius: '8px', fontSize: '12px' }}
+              />
+              <Button type="button" onClick={handleAddOfferedSlot} variant="secondary" style={{ padding: '8px 12px', fontSize: '11px' }}>
+                + Add
+              </Button>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {offeredSlots.map((slot, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(136, 217, 130, 0.12)', border: '1px solid var(--primary-green)', padding: '4px 8px', borderRadius: '8px', fontSize: '11px', color: 'var(--primary-green)' }}>
+                  <span>{slot.date} @ {formatTime12h(slot.time)}</span>
+                  <span onClick={() => handleRemoveOfferedSlot(idx)} style={{ cursor: 'pointer', fontWeight: 'bold' }}>✕</span>
+                </div>
+              ))}
+              {offeredSlots.length === 0 && (
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>At least 1 alternative option required.</span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+            <Button variant="secondary" onClick={() => setIsCancelSheetOpen(false)} style={{ flex: 1 }}>
+              Back
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmCancelMeeting}
+              variant="primary"
+              disabled={cancellingMeeting || !cancelReason.trim() || offeredSlots.length === 0}
+              style={{ flex: 1, backgroundColor: 'var(--error)', color: 'white' }}
+            >
+              {cancellingMeeting ? 'Cancelling...' : 'Confirm Cancellation'}
+            </Button>
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* ── Leave Expert Mode Confirmation Dialog ───────────────── */}
+      <Dialog
+        isOpen={isLeaveModalOpen}
+        title="Leave Expert Mode"
+        confirmText={leavingExpertMode ? "Leaving..." : "Leave Expert Mode"}
+        onConfirm={handleConfirmLeaveExpertMode}
+        onCancel={() => setIsLeaveModalOpen(false)}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '12px 0' }}>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+            Are you sure you want to revert your account to a standard user? Your expert verification tick will be removed, but your meeting history will be preserved.
+          </p>
+
+          <div className="form-group">
+            <label className="form-label">Mandatory Reason for Leaving *</label>
+            <div className="input-container" style={{ padding: '8px 16px' }}>
+              <textarea
+                className="input-field"
+                rows="3"
+                value={leaveReason}
+                onChange={(e) => setLeaveReason(e.target.value)}
+                placeholder="State your reason for leaving expert status..."
+                style={{ resize: 'none', height: '70px' }}
+                required
+              />
+            </div>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* ── Expert Profile Edit Dialog ───────────────────────────── */}
+      <Dialog
+        isOpen={isExpertProfileEditOpen}
+        title="Edit Expert Profile"
+        confirmText="Save Profile"
+        onConfirm={handleSaveExpertProfileEdit}
+        onCancel={() => setIsExpertProfileEditOpen(false)}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '12px 0' }}>
+          <InputField
+            label="Specialization"
+            value={expertEditSpecialization}
+            onChange={(e) => setExpertEditSpecialization(e.target.value)}
+            placeholder="e.g. Soil Pathology & Rice Crop Health"
+            icon="badge"
+          />
+
+          <div className="form-group">
+            <label className="form-label">Bio / Tagline</label>
+            <div className="input-container" style={{ padding: '8px 16px' }}>
+              <textarea
+                className="input-field"
+                rows="3"
+                value={expertEditBio}
+                onChange={(e) => setExpertEditBio(e.target.value)}
+                placeholder="Brief description of your expertise..."
+                style={{ resize: 'none', height: '70px' }}
+              />
+            </div>
+          </div>
+        </div>
       </Dialog>
     </div>
   );

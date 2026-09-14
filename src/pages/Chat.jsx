@@ -18,7 +18,18 @@ const formatTimeAgo = (dateStr) => {
   return `${days}d ago`;
 };
 
-export default function Chat() {
+const formatTime12h = (timeStr) => {
+  if (!timeStr) return '';
+  const parts = timeStr.split(':');
+  let h = parseInt(parts[0], 10);
+  const m = parts[1] || '00';
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+};
+
+export default function Chat({ onNavigateToBooking }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
@@ -120,7 +131,7 @@ export default function Chat() {
   const fetchMessages = async (convId) => {
     const { data, error } = await supabase
       .from('messages')
-      .select('id, content, sender_id, created_at, is_read')
+      .select('id, content, sender_id, created_at, is_read, message_type, metadata')
       .eq('conversation_id', convId)
       .order('created_at', { ascending: true });
 
@@ -245,17 +256,102 @@ export default function Chat() {
 
           <div className="page-container fade-in" style={{ paddingBottom: '76px', display: 'flex', flexDirection: 'column' }}>
             <div className="chat-messages-area">
-              {messages.map(m => (
-                <div
-                  key={m.id}
-                  className={`chat-bubble ${m.sender_id === currentUserId ? 'sent' : 'received'}`}
-                >
-                  <div>{m.content}</div>
-                  <span style={{ fontSize: '10px', opacity: 0.6, alignSelf: 'flex-end', display: 'block', marginTop: '4px', textAlign: 'right' }}>
-                    {formatTimeAgo(m.created_at)}
-                  </span>
-                </div>
-              ))}
+              {messages.map(m => {
+                const isCancellation = m.message_type === 'cancellation_reschedule' || (m.metadata && m.metadata.offered_slots);
+
+                if (isCancellation) {
+                  const meta = m.metadata || {};
+                  const offered = meta.offered_slots || [];
+                  return (
+                    <div
+                      key={m.id}
+                      className={`chat-bubble ${m.sender_id === currentUserId ? 'sent' : 'received'}`}
+                      style={{
+                        width: '88%',
+                        maxWidth: '320px',
+                        backgroundColor: '#1E1E1E',
+                        border: '1.5px solid var(--error)',
+                        borderRadius: '16px',
+                        padding: '14px',
+                        color: 'var(--text-primary)',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error)', fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>event_busy</span>
+                        <span>Meeting Cancelled by {meta.expert_name || 'Expert'}</span>
+                      </div>
+
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', backgroundColor: '#262626', padding: '8px 10px', borderRadius: '8px', marginBottom: '10px', lineHeight: '1.4' }}>
+                        <strong style={{ color: 'var(--text-primary)' }}>Reason:</strong> {meta.cancellation_reason || m.content}
+                      </div>
+
+                      {offered.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary-green)', marginBottom: '8px' }}>
+                            📅 Select an offered date/time to reschedule:
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {offered.map((slot, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  if (onNavigateToBooking) {
+                                    onNavigateToBooking({
+                                      expertId: meta.expert_id,
+                                      date: slot.date,
+                                      time: slot.time
+                                    });
+                                  }
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justify: 'space-between',
+                                  padding: '8px 12px',
+                                  borderRadius: '10px',
+                                  backgroundColor: 'rgba(136, 217, 130, 0.12)',
+                                  border: '1px solid var(--primary-green)',
+                                  color: 'var(--primary-green)',
+                                  fontSize: '12px',
+                                  fontWeight: '700',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                  textAlign: 'left'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>schedule</span>
+                                  <span>{slot.date} • {formatTime12h(slot.time)}</span>
+                                </div>
+                                <span style={{ fontSize: '11px', textDecoration: 'underline' }}>Book Slot →</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <span style={{ fontSize: '10px', opacity: 0.6, alignSelf: 'flex-end', display: 'block', marginTop: '8px', textAlign: 'right' }}>
+                        {formatTimeAgo(m.created_at)}
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={m.id}
+                    className={`chat-bubble ${m.sender_id === currentUserId ? 'sent' : 'received'}`}
+                  >
+                    <div>{m.content}</div>
+                    <span style={{ fontSize: '10px', opacity: 0.6, alignSelf: 'flex-end', display: 'block', marginTop: '4px', textAlign: 'right' }}>
+                      {formatTimeAgo(m.created_at)}
+                    </span>
+                  </div>
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 

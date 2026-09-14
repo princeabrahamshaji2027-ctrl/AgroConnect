@@ -6,13 +6,15 @@ export default function Header({
   showLogo = false,
   showBack = false,
   onBackClick,
+  leftAction,
   rightActions,
   onPeaAIClick
 }) {
   return (
     <header className="glass-header" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', width: '100%', paddingLeft: '16px', paddingRight: '16px' }}>
-      {/* Left section: Back button + Logo/Title */}
+      {/* Left section: Left action + Back button + Logo/Title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifySelf: 'start' }}>
+        {leftAction}
         {showBack && (
           <button 
             onClick={onBackClick}

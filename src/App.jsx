@@ -24,6 +24,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('feed'); // 'feed' | 'search' | 'connect' | 'chat' | 'profile'
   const [subScreen, setSubScreen] = useState(null); // null | 'editProfile' | 'createPost' | 'notifications' | 'settings' | 'peaAI'
   const [viewingProfileId, setViewingProfileId] = useState(null); // null or user ID
+  const [connectInitialBooking, setConnectInitialBooking] = useState(null);
 
   // Toast Notifications States
   const [toastMessage, setToastMessage] = useState(null);
@@ -154,8 +155,16 @@ export default function App() {
         .from('profiles')
         .select('role')
         .eq('id', session.user.id)
-        .single();
-      const role = profile?.role?.toLowerCase() || 'farmer';
+        .maybeSingle();
+      let role = profile?.role?.toLowerCase();
+      if (!role) {
+        const { data: expertRow } = await supabase
+          .from('experts')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+        role = expertRow ? 'expert' : 'farmer';
+      }
       localStorage.setItem('access_token', session.access_token);
       localStorage.setItem('user_role', role);
       if (role === 'admin') {
@@ -189,10 +198,15 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Sign out exception:', err);
+    }
     localStorage.removeItem('access_token');
     localStorage.removeItem('user_role');
     setScreen('login');
+    setActiveTab('feed');
     setSubScreen(null);
     setViewingProfileId(null);
     showToastNotification('🔌 Logged out safely');
@@ -273,6 +287,7 @@ export default function App() {
           onProfileClick={(id) => setViewingProfileId(id)}
           onCancelView={() => setViewingProfileId(null)}
           onPeaAIClick={() => setSubScreen('peaAI')}
+          onLogout={handleLogout}
           onShowToast={showToastNotification}
         />
       );
@@ -305,10 +320,19 @@ export default function App() {
           <Connect 
             onPeaAIClick={() => setSubScreen('peaAI')}
             onShowToast={showToastNotification}
+            initialBooking={connectInitialBooking}
+            clearInitialBooking={() => setConnectInitialBooking(null)}
           />
         );
       case 'chat':
-        return <Chat />;
+        return (
+          <Chat 
+            onNavigateToBooking={(bookingData) => {
+              setConnectInitialBooking(bookingData);
+              setActiveTab('connect');
+            }}
+          />
+        );
       case 'profile':
         return (
           <UserProfile 
@@ -317,6 +341,7 @@ export default function App() {
             onSettingsClick={() => setSubScreen('settings')}
             onProfileClick={(id) => setViewingProfileId(id)}
             onPeaAIClick={() => setSubScreen('peaAI')}
+            onLogout={handleLogout}
             onShowToast={showToastNotification}
           />
         );
