@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
 import './pages.css';
@@ -6,9 +6,17 @@ import './pages.css';
 import { supabase } from '../supabase';
 
 export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin }) {
-  const [username, setUsername] = useState('user1@agroconnect.com');
-  const [password, setPassword] = useState('user1@1234');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  const getErrorMessage = (err) => {
+    if (!err) return '';
+    if (typeof err === 'string') return err;
+    if (err.message && typeof err.message === 'string') return err.message;
+    if (err.error_description && typeof err.error_description === 'string') return err.error_description;
+    return 'Login failed. Please check your credentials and try again.';
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,28 +29,43 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
     }
     setError('');
 
-    // Check if user is using simple username or email
-    const emailStr = cleanUser.includes('@') ? cleanUser : `${cleanUser}@agroconnect.com`;
+    try {
+      // Check if user is using simple username or email
+      const emailStr = cleanUser.includes('@') ? cleanUser : `${cleanUser}@agroconnect.com`;
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: emailStr,
-      password: cleanPwd
-    });
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: emailStr,
+        password: cleanPwd
+      });
 
-    if (authError) {
-      setError(authError.message);
-      return;
-    }
+      if (authError) {
+        setError(getErrorMessage(authError));
+        return;
+      }
 
-    if (data?.user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single();
+      if (data?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .maybeSingle();
 
-      const role = profile?.role?.toLowerCase() || 'farmer';
-      onLoginSuccess(role);
+        let role = profile?.role?.toLowerCase();
+
+        if (!role) {
+          const { data: expertRow } = await supabase
+            .from('experts')
+            .select('id')
+            .eq('user_id', data.user.id)
+            .maybeSingle();
+          role = expertRow ? 'expert' : 'farmer';
+        }
+
+        onLoginSuccess(role);
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(getErrorMessage(err));
     }
   };
 

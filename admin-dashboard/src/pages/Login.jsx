@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import logoImg from '../assets/logo.png';
 
@@ -7,6 +7,10 @@ export default function Login({ authError: externalError }) {
   const [password, setPassword] = useState('Prince@1234');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    handleLogin({ preventDefault: () => {} });
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
