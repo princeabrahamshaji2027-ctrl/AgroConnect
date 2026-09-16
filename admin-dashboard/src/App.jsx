@@ -13,6 +13,7 @@ import Comments from './pages/Comments';
 import Reports from './pages/Reports';
 import Appointments from './pages/Appointments';
 import Meetings from './pages/Meetings';
+import Reviews from './pages/Reviews';
 import Broadcasts from './pages/Broadcasts';
 
 function App() {
@@ -132,6 +133,8 @@ function App() {
         return <Appointments />;
       case 'meetings':
         return <Meetings />;
+      case 'reviews':
+        return <Reviews />;
       case 'broadcasts':
         return <Broadcasts />;
       default:

@@ -4,6 +4,7 @@ import InputField from '../components/InputField';
 import { Button } from '../components/Button';
 import Dialog from '../components/Dialog';
 import BottomSheet from '../components/BottomSheet';
+import ExpertMenuSheet from '../components/ExpertMenuSheet';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -239,6 +240,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         setIsCurrentExpert(true);
         setCurrentExpertId(myExpert.id);
         activeExpertId = myExpert.id;
+        setActiveSubTab(prev => (prev === 'book' ? 'upcoming' : prev));
         if (myExpert.meeting_duration_minutes) setMeetingDuration(myExpert.meeting_duration_minutes);
         if (myExpert.buffer_time_minutes) setBufferTime(myExpert.buffer_time_minutes);
         fetchMySlots(myExpert.id);
@@ -488,10 +490,10 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     fetchData();
   }, []);
 
-  const handleBookClick = async (expert) => {
+  const handleBookClick = async (expert, targetDate = null) => {
     setSelectedExpert(expert);
     setSelectedSlot(null);
-    setBookingDate('');
+    setBookingDate(targetDate || '');
     setBookingTime('');
 
     const { data: slots } = await supabase
@@ -501,7 +503,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       .order('slot_date', { ascending: true })
       .order('start_time', { ascending: true });
 
-    setAvailableSlots(slots || []);
+    const allSlots = slots || [];
+    if (targetDate) {
+      setAvailableSlots(allSlots.filter(s => s.slot_date === targetDate));
+    } else {
+      setAvailableSlots(allSlots);
+    }
   };
 
   const handleToggleDay = (dayStr) => {
@@ -1109,7 +1116,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         overflowX: 'auto', 
         gap: '6px', 
         padding: '12px 16px', 
-        marginTop: 'var(--header-height)', 
+        marginTop: 'calc(var(--header-height) + var(--safe-top))', 
         borderBottom: '1px solid var(--border-color)', 
         backgroundColor: 'rgba(18, 18, 18, 0.7)',
         backdropFilter: 'blur(10px)',
@@ -1129,13 +1136,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         >
           Upcoming ({appointments.length})
         </button>
-        <button 
-          onClick={() => setActiveSubTab('history')}
-          className={`chip ${activeSubTab === 'history' ? 'active' : ''}`}
-          style={{ flexShrink: 0, fontSize: '12px' }}
-        >
-          History
-        </button>
+        {!isCurrentExpert && (
+          <button 
+            onClick={() => setActiveSubTab('history')}
+            className={`chip ${activeSubTab === 'history' ? 'active' : ''}`}
+            style={{ flexShrink: 0, fontSize: '12px' }}
+          >
+            History
+          </button>
+        )}
         <button 
           onClick={() => setActiveSubTab('lobby')}
           className={`chip ${activeSubTab === 'lobby' ? 'active' : ''}`}
@@ -1275,9 +1284,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                             key={cell.dateStr}
                             onClick={() => {
                               if (hasAvailableSlots) {
-                                handleBookClick(exp);
-                                setBookingDate(cell.dateStr);
-                                setAvailableSlots(dateSlots);
+                                handleBookClick(exp, cell.dateStr);
                               }
                             }}
                             style={{
@@ -1809,7 +1816,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
                       <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--border-color)', display: 'block', marginBottom: '12px' }}>event_busy</span>
                       <p style={{ fontSize: '14px', fontWeight: '600' }}>No scheduled meetings</p>
-                      <p style={{ fontSize: '12px', marginTop: '4px' }}>Upcoming consultations with farmers will appear here.</p>
+                      <p style={{ fontSize: '12px', marginTop: '4px', marginBottom: '16px' }}>Upcoming consultations with farmers will appear here.</p>
+                      <Button
+                        onClick={() => setActiveSubTab('availability')}
+                        variant="primary"
+                        icon="edit_calendar"
+                        style={{ padding: '10px 20px', borderRadius: '12px', fontSize: '13px', margin: '0 auto' }}
+                      >
+                        Set Your Availability
+                      </Button>
                     </div>
                   );
                 }
@@ -2114,22 +2129,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 </div>
               </div>
             ) : (
-              <>
-                <InputField
-                  label="Select Date"
-                  type="date"
-                  value={bookingDate}
-                  onChange={(e) => setBookingDate(e.target.value)}
-                  required
-                />
-                <InputField
-                  label="Select Time Slot"
-                  type="time"
-                  value={bookingTime}
-                  onChange={(e) => setBookingTime(e.target.value)}
-                  required
-                />
-              </>
+              <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--text-secondary)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '36px', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>event_busy</span>
+                <p style={{ fontSize: '13px', fontWeight: '600' }}>No available time slots published</p>
+                <p style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-muted)' }}>This expert has not published any open slots for booking yet. Please check back later.</p>
+              </div>
             )}
 
             <div className="form-group">
@@ -2195,76 +2199,16 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         )}
       </Dialog>
 
-      {/* ── Expert Identity Top-Left Menu Bottom Sheet ───────────── */}
-      <BottomSheet isOpen={isMenuSheetOpen} onClose={() => setIsMenuSheetOpen(false)}>
-        {currentExpertProfile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Identity Header */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '8px', paddingBottom: '16px', borderBottom: '1px solid var(--border-color)' }}>
-              <img
-                src={currentExpertProfile.avatar}
-                alt={currentExpertProfile.name}
-                style={{ width: '72px', height: '72px', borderRadius: '50%', objectFit: 'cover', border: '2.5px solid var(--primary-green)' }}
-              />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
-                <h3 style={{ fontSize: '17px', fontWeight: '700', color: 'var(--text-primary)' }}>{currentExpertProfile.name}</h3>
-                <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '18px' }}>verified</span>
-              </div>
-              <span className="badge-role">{currentExpertProfile.role}</span>
-              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', maxWidth: '280px', lineHeight: '1.4' }}>
-                {currentExpertProfile.bio}
-              </p>
-            </div>
-
-            {/* Menu Item Rows matching existing list style */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div
-                onClick={() => { setIsMenuSheetOpen(false); setActiveSubTab('availability'); }}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>edit_calendar</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600' }}>Customize Availability</span>
-                </div>
-                <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
-              </div>
-
-              <div
-                onClick={() => { setIsMenuSheetOpen(false); setActiveSubTab('history'); }}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>history</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600' }}>Meeting History</span>
-                </div>
-                <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
-              </div>
-
-              <div
-                onClick={() => { setIsMenuSheetOpen(false); setIsExpertProfileEditOpen(true); }}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>badge</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600' }}>Expert Profile</span>
-                </div>
-                <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
-              </div>
-
-              <div
-                onClick={() => { setIsMenuSheetOpen(false); setIsLeaveModalOpen(true); }}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: 'rgba(231, 76, 60, 0.1)', cursor: 'pointer', border: '1px solid rgba(231, 76, 60, 0.3)' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className="material-symbols-outlined" style={{ color: 'var(--error)' }}>logout</span>
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--error)' }}>Leave Expert Mode</span>
-                </div>
-                <span className="material-symbols-outlined" style={{ color: 'var(--error)' }}>chevron_right</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </BottomSheet>
+      {/* Expert Identity Top-Left Menu Bottom Sheet */}
+      <ExpertMenuSheet
+        isOpen={isMenuSheetOpen}
+        onClose={() => setIsMenuSheetOpen(false)}
+        expertProfile={currentExpertProfile}
+        onCustomizeAvailability={() => setActiveSubTab('availability')}
+        onMeetingHistory={() => setActiveSubTab('history')}
+        onExpertProfile={() => setIsExpertProfileEditOpen(true)}
+        onLeaveExpertMode={() => setIsLeaveModalOpen(true)}
+      />
 
       {/* ── Meeting Detail Bottom Sheet ─────────────────────────── */}
       <BottomSheet isOpen={!!selectedMeetingDetail} onClose={() => setSelectedMeetingDetail(null)}>

@@ -31,7 +31,8 @@ export default function Sidebar({ activeTab, onTabChange, onLogout, isOpen = tru
       title: "Consultations",
       items: [
         { id: "appointments", label: "Appointments", icon: "event" },
-        { id: "meetings", label: "Meetings", icon: "groups" }
+        { id: "meetings", label: "Meetings", icon: "groups" },
+        { id: "reviews", label: "Reviews", icon: "star" }
       ]
     },
     {
