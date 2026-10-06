@@ -96,7 +96,7 @@ function getCountdownText(dateStr, timeStr) {
   const timeClean = timeStr.length === 5 ? `${timeStr}:00` : timeStr;
   const startMs = new Date(`${dateStr}T${timeClean}`).getTime();
   const diffMs = startMs - Date.now();
-  if (diffMs <= 0) {
+  if (diffMs <= 5 * 60 * 1000) {
     return { isReady: true, text: 'Join Meeting' };
   }
   const hours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -104,6 +104,136 @@ function getCountdownText(dateStr, timeStr) {
   const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
   const timeFormatted = `${hours > 0 ? `${hours}h ` : ''}${mins}m ${secs}s`;
   return { isReady: false, text: `Starts in ${timeFormatted}` };
+}
+
+const COMMON_TIME_SLOTS = [
+  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
+  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
+];
+
+function InlineTimePicker({ value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div style={{ position: 'relative', flex: 1 }}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          backgroundColor: '#181818',
+          border: '1px solid var(--border-color)',
+          color: 'var(--text-primary)',
+          padding: '8px 10px',
+          borderRadius: '8px',
+          fontSize: '12px',
+          cursor: 'pointer'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--primary-green)' }}>schedule</span>
+          <span>{formatTime12h(value || '09:00')}</span>
+        </div>
+        <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--text-secondary)' }}>
+          {isOpen ? 'expand_less' : 'expand_more'}
+        </span>
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          zIndex: 999,
+          marginTop: '4px',
+          backgroundColor: '#1E1E1E',
+          border: '1px solid var(--border-color)',
+          borderRadius: '12px',
+          padding: '8px',
+          maxHeight: '160px',
+          overflowY: 'auto',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '6px',
+          boxShadow: '0 8px 16px rgba(0,0,0,0.6)'
+        }}>
+          {COMMON_TIME_SLOTS.map(t => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => {
+                onChange(t);
+                setIsOpen(false);
+              }}
+              style={{
+                padding: '6px 8px',
+                borderRadius: '6px',
+                border: value === t ? '1px solid var(--primary-green)' : '1px solid var(--border-color)',
+                backgroundColor: value === t ? 'rgba(136, 217, 130, 0.15)' : '#252525',
+                color: value === t ? 'var(--primary-green)' : 'var(--text-primary)',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              {formatTime12h(t)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InlineCalendarPicker({ year, month, onPrevMonth, onNextMonth, onSelectDate, selectedDate }) {
+  const cells = getDaysInMonthGrid(year, month);
+  return (
+    <div style={{ backgroundColor: '#181818', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px', marginTop: '6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <button type="button" onClick={onPrevMonth} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <span className="material-symbols-outlined">chevron_left</span>
+        </button>
+        <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+          {new Date(year, month).toLocaleString('default', { month: 'long', year: 'numeric' })}
+        </span>
+        <button type="button" onClick={onNextMonth} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <span className="material-symbols-outlined">chevron_right</span>
+        </button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+        {cells.map((cell, idx) => {
+          if (cell.isPadding) return <div key={`pad-${idx}`} style={{ height: '32px' }} />;
+          const isSelected = selectedDate === cell.dateStr;
+          return (
+            <button
+              key={cell.dateStr}
+              type="button"
+              onClick={() => onSelectDate(cell.dateStr)}
+              style={{
+                height: '32px',
+                borderRadius: '8px',
+                border: isSelected ? '1.5px solid var(--primary-green)' : '1px solid var(--border-color)',
+                backgroundColor: isSelected ? 'rgba(136, 217, 130, 0.2)' : '#222',
+                color: isSelected ? 'var(--primary-green)' : 'var(--text-primary)',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              {cell.dayNum}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function Connect({ onPeaAIClick, onShowToast, initialBooking, clearInitialBooking }) {
@@ -143,6 +273,14 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [expertEditBio, setExpertEditBio] = useState('');
   const [expertEditSpecialization, setExpertEditSpecialization] = useState('');
 
+  // Expandable calendar grid for expert cards
+  const [expandedExpertId, setExpandedExpertId] = useState(null);
+
+  // Cancellation picker state
+  const [showCancelCalendar, setShowCancelCalendar] = useState(false);
+  const [cancelCalYear, setCancelCalYear] = useState(new Date().getFullYear());
+  const [cancelCalMonth, setCancelCalMonth] = useState(new Date().getMonth());
+
   // Live Countdown Tick state
   const [nowTick, setNowTick] = useState(Date.now());
 
@@ -150,6 +288,144 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     const timer = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Periodic check for Reminders (24h, Day-of, 30m, 10m expert) and 5-min Expert Auto-Cancel
+  useEffect(() => {
+    const checkRemindersAndNoShows = async () => {
+      if (!appointments || appointments.length === 0) return;
+      const now = Date.now();
+
+      for (const appt of appointments) {
+        if (!appt.date || !appt.time) continue;
+        const timeClean = appt.time.length === 5 ? `${appt.time}:00` : appt.time;
+        const startMs = new Date(`${appt.date}T${timeClean}`).getTime();
+        if (isNaN(startMs)) continue;
+
+        // Fetch fresh status and flags for this booking
+        const { data: freshBooking } = await supabase
+          .from('consultation_bookings')
+          .select('*, consultation_slots(rate)')
+          .eq('id', appt.id)
+          .maybeSingle();
+
+        if (!freshBooking || freshBooking.status !== 'Booked') continue;
+
+        const diffMs = startMs - now;
+        const farmerUserId = freshBooking.farmer_id ? appt.farmerUserId : null;
+        const expertUserId = appt.expertUserId;
+
+        // 1. Reminders (24h before)
+        if (diffMs > 0 && diffMs <= 24 * 60 * 60 * 1000 && !freshBooking.notified_24h) {
+          const msg = `Reminder: Consultation on ${appt.date} at ${formatTime12h(appt.time)} is tomorrow`;
+          if (farmerUserId) {
+            await supabase.from('notifications').insert({ user_id: farmerUserId, type: 'meeting_reminder_24h', message: msg, related_id: appt.id });
+          }
+          if (expertUserId) {
+            await supabase.from('notifications').insert({ user_id: expertUserId, type: 'meeting_reminder_24h', message: msg, related_id: appt.id });
+          }
+          await supabase.from('consultation_bookings').update({ notified_24h: true }).eq('id', appt.id);
+        }
+
+        // 2. Day-of Reminder
+        const isToday = formatDateYYYYMMDD(new Date()) === appt.date;
+        if (isToday && !freshBooking.notified_dayof) {
+          const msg = `Reminder: You have a consultation scheduled today at ${formatTime12h(appt.time)}`;
+          if (farmerUserId) {
+            await supabase.from('notifications').insert({ user_id: farmerUserId, type: 'meeting_reminder_dayof', message: msg, related_id: appt.id });
+          }
+          if (expertUserId) {
+            await supabase.from('notifications').insert({ user_id: expertUserId, type: 'meeting_reminder_dayof', message: msg, related_id: appt.id });
+          }
+          await supabase.from('consultation_bookings').update({ notified_dayof: true }).eq('id', appt.id);
+        }
+
+        // 3. 30-min Reminder
+        if (diffMs > 0 && diffMs <= 30 * 60 * 1000 && !freshBooking.notified_30min) {
+          const msg = `Reminder: Consultation starts in 30 minutes (${formatTime12h(appt.time)})`;
+          if (farmerUserId) {
+            await supabase.from('notifications').insert({ user_id: farmerUserId, type: 'meeting_reminder_30min', message: msg, related_id: appt.id });
+          }
+          if (expertUserId) {
+            await supabase.from('notifications').insert({ user_id: expertUserId, type: 'meeting_reminder_30min', message: msg, related_id: appt.id });
+          }
+          await supabase.from('consultation_bookings').update({ notified_30min: true }).eq('id', appt.id);
+        }
+
+        // 4. 10-min Expert Reminder
+        if (isCurrentExpert && diffMs > 0 && diffMs <= 10 * 60 * 1000 && !freshBooking.notified_expert_10min) {
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
+          if (currentUser) {
+            await supabase.from('notifications').insert({
+              user_id: currentUser.id,
+              type: 'meeting_reminder_expert_10min',
+              message: `Upcoming consultation starts in 10 minutes. Please prepare to join.`,
+              related_id: appt.id
+            });
+          }
+          await supabase.from('consultation_bookings').update({ notified_expert_10min: true }).eq('id', appt.id);
+        }
+
+        // 5. Expert 5-min No-Show Auto-Cancellation
+        if (now >= startMs + 5 * 60 * 1000 && freshBooking.status === 'Booked' && !freshBooking.expert_joined_at) {
+          const slotRate = freshBooking.consultation_slots?.rate || 500;
+          await supabase.from('consultation_bookings').update({
+            status: 'Cancelled',
+            cancellation_reason: 'Expert did not join within 5 minutes of the scheduled start time (auto-cancelled)',
+            refund_status: 'Refunded',
+            refund_amount: slotRate
+          }).eq('id', appt.id);
+
+          if (freshBooking.slot_id) {
+            await supabase.from('consultation_slots').update({ is_booked: false }).eq('id', freshBooking.slot_id);
+          }
+
+          if (farmerUserId) {
+            await supabase.from('notifications').insert({
+              user_id: farmerUserId,
+              type: 'meeting_auto_cancelled',
+              message: `Meeting on ${appt.date} was auto-cancelled because expert did not join within 5 minutes. Full refund of ₹${slotRate} initiated.`,
+              related_id: appt.id
+            });
+          }
+
+          if (expertUserId) {
+            await supabase.from('notifications').insert({
+              user_id: expertUserId,
+              type: 'no_show_flagged',
+              message: `You missed your scheduled consultation on ${appt.date} at ${formatTime12h(appt.time)}. The session was auto-cancelled.`,
+              related_id: appt.id
+            });
+          }
+
+          // Increment expert no_show_count
+          if (freshBooking.expert_id) {
+            const { data: expRow } = await supabase.from('experts').select('no_show_count').eq('id', freshBooking.expert_id).single();
+            const currentCount = expRow?.no_show_count || 0;
+            await supabase.from('experts').update({ no_show_count: currentCount + 1 }).eq('id', freshBooking.expert_id);
+          }
+
+          // Notify all admins
+          const { data: adminProfiles } = await supabase.from('profiles').select('id').eq('role', 'Admin');
+          if (adminProfiles) {
+            for (const admin of adminProfiles) {
+              await supabase.from('notifications').insert({
+                user_id: admin.id,
+                type: 'expert_no_show_admin_alert',
+                message: `Expert No-Show Alert: Meeting ${appt.id.slice(0, 8)} on ${appt.date} was auto-cancelled.`,
+                related_id: appt.id
+              });
+            }
+          }
+          fetchData();
+        }
+      }
+    };
+
+    checkRemindersAndNoShows();
+    const reminderTimer = setInterval(checkRemindersAndNoShows, 60000);
+    return () => clearInterval(reminderTimer);
+  }, [appointments, isCurrentExpert]);
+
 
   // Rebuilt Manage Availability States
   const [selectedDays, setSelectedDays] = useState(['Mon', 'Tue', 'Wed']);
@@ -187,7 +463,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   // Video call simulation states
   const [inVideoCall, setInVideoCall] = useState(false);
   const [currentCallRoom, setCurrentCallRoom] = useState('');
-  const [meetingIdInput, setMeetingIdInput] = useState('');
   const [micMuted, setMicMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
 
@@ -293,7 +568,14 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       }
       setAllExpertSlotsMap(slotsGrouped);
 
-      // 1c. Fetch experts
+      // 1c. Fetch experts with 7-day availability check and self-booking exclusion
+      const todayStr = formatDateYYYYMMDD(new Date());
+      const weekAheadStr = formatDateYYYYMMDD(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
+      const hasUpcomingAvailability = (expertId) =>
+        (slotsGrouped[expertId] || []).some(s =>
+          !s.is_booked && s.slot_date >= todayStr && s.slot_date <= weekAheadStr
+        );
+
       const { data: expertsData } = await supabase
         .from('experts')
         .select(`
@@ -308,15 +590,19 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           )
         `);
       if (expertsData) {
-        setExpertsList(expertsData.filter(exp => exp.is_active !== false).map(exp => ({
-          id: exp.id,
-          name: exp.profiles?.full_name || 'Expert',
-          avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
-          role: exp.profiles?.role || 'Expert',
-          bio: exp.profiles?.bio || '',
-          rating: exp.rating ? Number(exp.rating).toFixed(1) : '5.0',
-          reviewCount: revCounts[exp.id] || 0
-        })));
+        setExpertsList(
+          expertsData
+            .filter(exp => exp.is_active !== false && exp.id !== activeExpertId && hasUpcomingAvailability(exp.id))
+            .map(exp => ({
+              id: exp.id,
+              name: exp.profiles?.full_name || 'Expert',
+              avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
+              role: exp.profiles?.role || 'Expert',
+              bio: exp.profiles?.bio || '',
+              rating: exp.rating ? Number(exp.rating).toFixed(1) : '5.0',
+              reviewCount: revCounts[exp.id] || 0
+            }))
+        );
       }
 
       if (activeExpertId) {
@@ -344,7 +630,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           setAppointments(expBookings.map(b => ({
             id: b.id,
             farmerId: b.farmer_profiles?.id,
-            farmerUserId: b.farmer_profiles?.profiles?.id,
+            farmerUserId: b.farmer_profiles?.user_id || b.farmer_profiles?.profiles?.id,
             farmerName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
             farmerAvatar: b.farmer_profiles?.profiles?.profile_image_path || '/profile-placeholder.png',
             expertName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
@@ -366,14 +652,16 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           .maybeSingle();
 
         if (farmerProfile) {
-          // 2. Fetch upcoming bookings
+          // 2. Fetch upcoming bookings for farmer
           const { data: bookingsData } = await supabase
             .from('consultation_bookings')
             .select(`
               *,
               experts:expert_id (
                 id,
+                user_id,
                 profiles:user_id (
+                  id,
                   full_name,
                   profile_image_path
                 )
@@ -387,6 +675,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             setAppointments(bookingsData.map(appt => ({
               id: appt.id,
               expertId: appt.experts?.id,
+              expertUserId: appt.experts?.user_id,
               expertName: appt.experts?.profiles?.full_name || 'Expert',
               expertAvatar: appt.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
               topic: appt.issue_description || '',
@@ -413,6 +702,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             *,
             experts:expert_id (
               id,
+              user_id,
               profiles:user_id (
                 full_name,
                 profile_image_path
@@ -429,7 +719,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         const reviewedBookingIds = new Set(reviewsData?.map(r => r.booking_id) || []);
 
         if (histData) {
-          setHistory(histData.map(h => ({
+          const seen = new Set();
+          const dedupedHistory = histData.filter(h => {
+            if (seen.has(h.id)) return false;
+            seen.add(h.id);
+            return true;
+          }).map(h => ({
             id: h.id,
             expertId: h.experts?.id,
             expertName: h.experts?.profiles?.full_name || 'Expert',
@@ -437,8 +732,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             topic: h.issue_description || '',
             date: h.meeting_date,
             duration: '30 mins',
+            status: h.status,
+            cancellationReason: h.cancellation_reason,
             reviewed: reviewedBookingIds.has(h.id)
-          })));
+          }));
+          setHistory(dedupedHistory);
         }
       }
 
@@ -736,12 +1034,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     setInVideoCall(true);
   };
 
-  const handleJoinByLobby = (e) => {
-    e.preventDefault();
-    if (!meetingIdInput.trim()) return;
-    handleStartCall(meetingIdInput.trim());
-    setMeetingIdInput('');
-  };
+
 
   const handleLeaveCall = async () => {
     setInVideoCall(false);
@@ -836,9 +1129,16 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       const timeClean = latestBooking.meeting_time.length === 5 ? `${latestBooking.meeting_time}:00` : latestBooking.meeting_time;
       const startMs = new Date(`${latestBooking.meeting_date}T${timeClean}`).getTime();
 
-      if (Date.now() < startMs) {
+      if (Date.now() < startMs - 5 * 60 * 1000) {
         alert("The meeting start time has not been reached yet.");
         return;
+      }
+
+      if (isCurrentExpert) {
+        await supabase
+          .from('consultation_bookings')
+          .update({ expert_joined_at: new Date().toISOString() })
+          .eq('id', meeting.id);
       }
 
       setSelectedMeetingDetail(null);
@@ -850,6 +1150,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   };
 
   const handleConfirmCancelMeeting = async () => {
+    if (!isCurrentExpert) {
+      return handleFarmerConfirmCancelMeeting();
+    }
     if (!cancelReason.trim()) {
       alert("Please provide a mandatory cancellation reason.");
       return;
@@ -884,6 +1187,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       }
 
       const farmerUserId = appt.farmerUserId;
+      if (farmerUserId) {
+        await supabase.from('notifications').insert({
+          user_id: farmerUserId,
+          type: 'meeting_cancelled_by_expert',
+          message: `Consultation on ${appt.date} was cancelled by the expert. Reason: ${cancelReason.trim()}`,
+          related_id: appt.id
+        });
+      }
+
       if (user && farmerUserId) {
         let { data: conv } = await supabase
           .from('conversations')
@@ -932,6 +1244,118 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       setSelectedMeetingDetail(null);
       setCancelReason('');
       setOfferedSlots([]);
+      fetchData();
+
+    } catch (err) {
+      alert(`Cancellation failed: ${err.message}`);
+    } finally {
+      setCancellingMeeting(false);
+    }
+  };
+
+  const handleFarmerConfirmCancelMeeting = async () => {
+    if (!cancelReason.trim()) {
+      alert("Please provide a mandatory cancellation reason.");
+      return;
+    }
+    if (!selectedMeetingDetail) return;
+
+    setCancellingMeeting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const appt = selectedMeetingDetail;
+
+      let refundAmount = 250;
+      if (appt.slotId) {
+        const { data: slotRow } = await supabase.from('consultation_slots').select('rate').eq('id', appt.slotId).maybeSingle();
+        if (slotRow && slotRow.rate) refundAmount = Number(slotRow.rate) * 0.5;
+      }
+
+      const { error: updateErr } = await supabase
+        .from('consultation_bookings')
+        .update({
+          status: 'Cancelled',
+          cancellation_reason: cancelReason.trim(),
+          refund_status: 'Refunded',
+          refund_amount: refundAmount
+        })
+        .eq('id', appt.id);
+
+      if (updateErr) throw updateErr;
+
+      if (appt.slotId) {
+        await supabase
+          .from('consultation_slots')
+          .update({ is_booked: false })
+          .eq('id', appt.slotId);
+      }
+
+      const expertUserId = appt.expertUserId;
+      if (expertUserId) {
+        await supabase.from('notifications').insert({
+          user_id: expertUserId,
+          type: 'meeting_cancelled_by_farmer',
+          message: `Meeting on ${appt.date} at ${formatTime12h(appt.time)} was cancelled by farmer. Reason: ${cancelReason.trim()}`,
+          related_id: appt.id
+        });
+      }
+
+      const { data: adminProfiles } = await supabase.from('profiles').select('id').eq('role', 'Admin');
+      if (adminProfiles) {
+        for (const admin of adminProfiles) {
+          await supabase.from('notifications').insert({
+            user_id: admin.id,
+            type: 'farmer_cancellation_admin_alert',
+            message: `Farmer Cancellation Alert: Meeting ${appt.id.slice(0, 8)} on ${appt.date} was cancelled by farmer.`,
+            related_id: appt.id
+          });
+        }
+      }
+
+      if (user && expertUserId) {
+        let { data: conv } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`and(user_one.eq.${user.id},user_two.eq.${expertUserId}),and(user_one.eq.${expertUserId},user_two.eq.${user.id})`)
+          .maybeSingle();
+
+        if (!conv) {
+          const { data: newConv } = await supabase
+            .from('conversations')
+            .insert({ user_one: user.id, user_two: expertUserId })
+            .select('id')
+            .single();
+          conv = newConv;
+        }
+
+        if (conv) {
+          await supabase
+            .from('messages')
+            .insert({
+              conversation_id: conv.id,
+              sender_id: user.id,
+              content: `Meeting Cancelled: ${cancelReason.trim()}`,
+              message_type: 'cancellation_reschedule',
+              metadata: {
+                booking_id: appt.id,
+                cancellation_reason: cancelReason.trim()
+              }
+            });
+
+          await supabase
+            .from('conversations')
+            .update({ last_message_at: new Date().toISOString() })
+            .eq('id', conv.id);
+        }
+      }
+
+      if (onShowToast) {
+        onShowToast(`📅 Meeting cancelled. Partial refund of ₹${refundAmount} applied.`);
+      }
+
+      setIsCancelSheetOpen(false);
+      setSelectedMeetingDetail(null);
+      setCancelReason('');
       fetchData();
 
     } catch (err) {
@@ -1146,13 +1570,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           </button>
         )}
         <button 
-          onClick={() => setActiveSubTab('lobby')}
-          className={`chip ${activeSubTab === 'lobby' ? 'active' : ''}`}
-          style={{ flexShrink: 0, fontSize: '12px' }}
-        >
-          Join Lobby
-        </button>
-        <button 
           onClick={() => setActiveSubTab('reviews')}
           className={`chip ${activeSubTab === 'reviews' ? 'active' : ''}`}
           style={{ flexShrink: 0, fontSize: '12px' }}
@@ -1223,100 +1640,114 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                       <strong>{exp.rating}</strong> ({exp.reviewCount} reviews)
                     </div>
                     
-                    <Button 
-                      onClick={() => handleBookClick(exp)} 
-                      variant="primary" 
-                      style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
-                    >
-                      Book Consultation
-                    </Button>
+                    {expandedExpertId !== exp.id && (
+                      <Button 
+                        onClick={() => setExpandedExpertId(exp.id)} 
+                        variant="primary" 
+                        style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
+                      >
+                        Book Consultation
+                      </Button>
+                    )}
                   </div>
 
                   {/* Calendar Grid Date Picker matching user_catchup page.png */}
-                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '14px', marginTop: '4px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                      <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '18px' }}>calendar_month</span>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Select a Date</span>
-                    </div>
-
-                    {/* Month Header Navigation */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <button 
-                        onClick={handlePrevMonth}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-                      >
-                        <span className="material-symbols-outlined">chevron_left</span>
-                      </button>
-                      <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                        {new Date(calYear, calMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                  {expandedExpertId === exp.id && (
+                    <div className="fade-in" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '14px', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '18px' }}>calendar_month</span>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Select a Date</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedExpertId(null)}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '2px' }}
+                        >
+                          <span>Close</span>
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>close</span>
+                        </button>
                       </div>
-                      <button 
-                        onClick={handleNextMonth}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-                      >
-                        <span className="material-symbols-outlined">chevron_right</span>
-                      </button>
+
+                      {/* Month Header Navigation */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <button 
+                          onClick={handlePrevMonth}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+                        >
+                          <span className="material-symbols-outlined">chevron_left</span>
+                        </button>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                          {new Date(calYear, calMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                        </div>
+                        <button 
+                          onClick={handleNextMonth}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
+                        >
+                          <span className="material-symbols-outlined">chevron_right</span>
+                        </button>
+                      </div>
+
+                      {/* Weekday Labels */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '500', marginBottom: '8px' }}>
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                          <div key={d}>{d}</div>
+                        ))}
+                      </div>
+
+                      {/* Grid of Dates */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+                        {getDaysInMonthGrid(calYear, calMonth).map((cell, idx) => {
+                          if (cell.isPadding) {
+                            return <div key={`pad-${idx}`} style={{ height: '48px' }} />;
+                          }
+
+                          const dateSlots = expertSlots.filter(s => s.slot_date === cell.dateStr);
+                          const unbookedOnDate = dateSlots.filter(s => !s.is_booked);
+                          const hasAvailableSlots = unbookedOnDate.length > 0;
+                          const minDateRate = hasAvailableSlots 
+                            ? Math.min(...unbookedOnDate.map(s => Number(s.rate) || 500))
+                            : null;
+
+                          return (
+                            <div
+                              key={cell.dateStr}
+                              onClick={() => {
+                                if (hasAvailableSlots) {
+                                  handleBookClick(exp, cell.dateStr);
+                                }
+                              }}
+                              style={{
+                                height: '48px',
+                                borderRadius: '12px',
+                                border: hasAvailableSlots ? '1.5px solid var(--primary-green)' : '1px solid var(--border-color)',
+                                backgroundColor: hasAvailableSlots ? 'rgba(136, 217, 130, 0.06)' : '#181818',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '4px 2px',
+                                cursor: hasAvailableSlots ? 'pointer' : 'default',
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              <span style={{ fontSize: '13px', fontWeight: '600', color: hasAvailableSlots ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                {cell.dayNum}
+                              </span>
+                              <span style={{ fontSize: '10px', fontWeight: '700', color: hasAvailableSlots ? 'var(--primary-green)' : 'var(--text-muted)', marginTop: '2px' }}>
+                                {hasAvailableSlots ? `₹${minDateRate}` : '--'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '12px' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>info</span>
+                        <span>You can select any available date to book a session.</span>
+                      </div>
                     </div>
-
-                    {/* Weekday Labels */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '500', marginBottom: '8px' }}>
-                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                        <div key={d}>{d}</div>
-                      ))}
-                    </div>
-
-                    {/* Grid of Dates */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
-                      {getDaysInMonthGrid(calYear, calMonth).map((cell, idx) => {
-                        if (cell.isPadding) {
-                          return <div key={`pad-${idx}`} style={{ height: '48px' }} />;
-                        }
-
-                        const dateSlots = expertSlots.filter(s => s.slot_date === cell.dateStr);
-                        const unbookedOnDate = dateSlots.filter(s => !s.is_booked);
-                        const hasAvailableSlots = unbookedOnDate.length > 0;
-                        const minDateRate = hasAvailableSlots 
-                          ? Math.min(...unbookedOnDate.map(s => Number(s.rate) || 500))
-                          : null;
-
-                        return (
-                          <div
-                            key={cell.dateStr}
-                            onClick={() => {
-                              if (hasAvailableSlots) {
-                                handleBookClick(exp, cell.dateStr);
-                              }
-                            }}
-                            style={{
-                              height: '48px',
-                              borderRadius: '12px',
-                              border: hasAvailableSlots ? '1.5px solid var(--primary-green)' : '1px solid var(--border-color)',
-                              backgroundColor: hasAvailableSlots ? 'rgba(136, 217, 130, 0.06)' : '#181818',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              padding: '4px 2px',
-                              cursor: hasAvailableSlots ? 'pointer' : 'default',
-                              transition: 'all 0.2s ease'
-                            }}
-                          >
-                            <span style={{ fontSize: '13px', fontWeight: '600', color: hasAvailableSlots ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                              {cell.dayNum}
-                            </span>
-                            <span style={{ fontSize: '10px', fontWeight: '700', color: hasAvailableSlots ? 'var(--primary-green)' : 'var(--text-muted)', marginTop: '2px' }}>
-                              {hasAvailableSlots ? `₹${minDateRate}` : '--'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '12px' }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>info</span>
-                      <span>You can select any available date to book a session.</span>
-                    </div>
-                  </div>
+                  )}
 
                 </div>
               );
@@ -1530,19 +1961,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                             }}>
                               <div style={{ flex: 1 }}>
                                 <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Start Time (1 hr duration)</label>
-                                <input
-                                  type="time"
+                                <InlineTimePicker
                                   value={slotPickerTime[d.short] || '09:00'}
-                                  onChange={(e) => setSlotPickerTime({ ...slotPickerTime, [d.short]: e.target.value })}
-                                  style={{
-                                    width: '100%',
-                                    backgroundColor: '#181818',
-                                    border: '1px solid var(--border-color)',
-                                    color: 'var(--text-primary)',
-                                    padding: '6px 8px',
-                                    borderRadius: '8px',
-                                    fontSize: '12px'
-                                  }}
+                                  onChange={(val) => setSlotPickerTime({ ...slotPickerTime, [d.short]: val })}
                                 />
                               </div>
 
@@ -1882,38 +2303,57 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               })()
             ) : (
               /* Farmer view of upcoming appointments */
-              appointments.map((appt) => (
-                <div key={appt.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                      <img src={appt.expertAvatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
-                      <div>
-                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{appt.expertName}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Consultation Session</div>
+              appointments.map((appt) => {
+                const countdown = getCountdownText(appt.date, appt.time);
+                return (
+                  <div
+                    key={appt.id}
+                    className="card fade-in"
+                    onClick={() => setSelectedMeetingDetail(appt)}
+                    style={{ display: 'flex', flexDirection: 'column', gap: '14px', cursor: 'pointer', border: '1px solid var(--border-color)' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <img src={appt.expertAvatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                        <div>
+                          <div style={{ fontWeight: '600', fontSize: '14px' }}>{appt.expertName}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Consultation Session</div>
+                        </div>
+                      </div>
+                      
+                      <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.12)', color: 'var(--primary-green)', padding: '4px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>
+                        {appt.date} • {formatTime12h(appt.time)}
                       </div>
                     </div>
-                    
-                    <div style={{ backgroundColor: 'rgba(136, 217, 130, 0.12)', color: 'var(--primary-green)', padding: '4px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>
-                      {appt.date} • {formatTime12h(appt.time)}
+
+                    <div style={{ backgroundColor: '#252525', padding: '10px 12px', borderRadius: '10px', fontSize: '12px' }}>
+                      <strong>Topic:</strong> {appt.topic}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--primary-green)' }}>Tap for details & cancellation</span>
+                      <Button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleServerValidatedJoin(appt);
+                        }} 
+                        variant="primary" 
+                        icon="video_call"
+                        disabled={!countdown.isReady}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          opacity: countdown.isReady ? 1 : 0.6,
+                          cursor: countdown.isReady ? 'pointer' : 'not-allowed'
+                        }}
+                      >
+                        {countdown.text}
+                      </Button>
                     </div>
                   </div>
-
-                  <div style={{ backgroundColor: '#252525', padding: '10px 12px', borderRadius: '10px', fontSize: '12px' }}>
-                    <strong>Topic:</strong> {appt.topic}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end' }}>
-                    <Button 
-                      onClick={() => handleStartCall(appt.roomId)} 
-                      variant="primary" 
-                      icon="video_call"
-                      style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
-                    >
-                      Join Meeting
-                    </Button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
 
             {!isCurrentExpert && appointments.length === 0 && (
@@ -1939,18 +2379,31 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{hist.date}</div>
                     </div>
                   </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Completed ({hist.duration})</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    color: hist.status === 'Cancelled' ? 'var(--error)' : 'var(--text-secondary)'
+                  }}>
+                    {hist.status === 'Cancelled' ? 'Cancelled' : `Completed (${hist.duration})`}
+                  </span>
                 </div>
 
                 <p style={{ fontSize: '12px', color: '#dddddd' }}><strong>Consultation:</strong> {hist.topic}</p>
+                {hist.status === 'Cancelled' && hist.cancellationReason && (
+                  <p style={{ fontSize: '11px', color: 'var(--error)', backgroundColor: 'rgba(255, 90, 90, 0.1)', padding: '6px 10px', borderRadius: '8px' }}>
+                    <strong>Reason:</strong> {hist.cancellationReason}
+                  </p>
+                )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--primary-green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
-                    Session Verified
+                  <span style={{ fontSize: '11px', color: hist.status === 'Cancelled' ? 'var(--text-muted)' : 'var(--primary-green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+                      {hist.status === 'Cancelled' ? 'cancel' : 'check_circle'}
+                    </span>
+                    {hist.status === 'Cancelled' ? 'Session Cancelled' : 'Session Verified'}
                   </span>
                   
-                  {!hist.reviewed ? (
+                  {hist.status !== 'Cancelled' && !hist.reviewed ? (
                     <Button 
                       onClick={() => handleOpenReviewDialog(hist)}
                       variant="secondary" 
@@ -1959,7 +2412,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                       Leave Review
                     </Button>
                   ) : (
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Review Submitted</span>
+                    hist.status !== 'Cancelled' && <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Review Submitted</span>
                   )}
                 </div>
               </div>
@@ -1967,30 +2420,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           </div>
         )}
 
-        {/* ================= JOIN LOBBY ================= */}
-        {activeSubTab === 'lobby' && (
-          <div className="card fade-in" style={{ padding: '24px 16px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '8px' }}>Join Consultation Lobby</h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4', marginBottom: '20px' }}>
-              If you have a customized consultation meeting ID provided by an administrator or expert, enter it below to join the video session lobby.
-            </p>
 
-            <form onSubmit={handleJoinByLobby} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <InputField
-                label="Enter Meeting ID"
-                placeholder="e.g. AGRI-ANITA-430"
-                value={meetingIdInput}
-                onChange={(e) => setMeetingIdInput(e.target.value)}
-                icon="key"
-                required
-              />
-
-              <Button type="submit" variant="primary" icon="videocam">
-                Join Simulation Room
-              </Button>
-            </form>
-          </div>
-        )}
 
         {/* ================= REVIEWS ================= */}
         {activeSubTab === 'reviews' && (
@@ -2214,16 +2644,24 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       <BottomSheet isOpen={!!selectedMeetingDetail} onClose={() => setSelectedMeetingDetail(null)}>
         {selectedMeetingDetail && (() => {
           const countdown = getCountdownText(selectedMeetingDetail.date, selectedMeetingDetail.time);
+          const otherName = isCurrentExpert ? selectedMeetingDetail.farmerName : selectedMeetingDetail.expertName;
+          const otherAvatar = isCurrentExpert ? selectedMeetingDetail.farmerAvatar : selectedMeetingDetail.expertAvatar;
+          
+          const timeClean = selectedMeetingDetail.time.length === 5 ? `${selectedMeetingDetail.time}:00` : selectedMeetingDetail.time;
+          const startMs = new Date(`${selectedMeetingDetail.date}T${timeClean}`).getTime();
+          const hoursUntilStart = (startMs - Date.now()) / 3600000;
+          const isCancelledBlocked = hoursUntilStart < 14;
+
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
                 <img
-                  src={selectedMeetingDetail.farmerAvatar}
-                  alt={selectedMeetingDetail.farmerName}
+                  src={otherAvatar || '/profile-placeholder.png'}
+                  alt={otherName}
                   style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--primary-green)' }}
                 />
                 <div>
-                  <h4 style={{ fontSize: '16px', fontWeight: '700' }}>{selectedMeetingDetail.farmerName}</h4>
+                  <h4 style={{ fontSize: '16px', fontWeight: '700' }}>{otherName}</h4>
                   <div style={{ fontSize: '12px', color: 'var(--primary-green)', fontWeight: '600' }}>
                     {selectedMeetingDetail.date} • {formatTime12h(selectedMeetingDetail.time)}
                   </div>
@@ -2239,14 +2677,22 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 </p>
               </div>
 
+              {isCancelledBlocked && (
+                <div style={{ fontSize: '11px', color: '#FFA726', backgroundColor: 'rgba(255, 167, 38, 0.1)', padding: '8px 12px', borderRadius: '10px' }}>
+                  ⚠️ Cancellation is only available up to 14 hours before the session.
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-                <Button
-                  onClick={() => setIsCancelSheetOpen(true)}
-                  variant="secondary"
-                  style={{ flex: 1, borderColor: 'var(--error)', color: 'var(--error)', borderRadius: '12px', fontSize: '13px' }}
-                >
-                  Cancel Meeting
-                </Button>
+                {!isCancelledBlocked && (
+                  <Button
+                    onClick={() => setIsCancelSheetOpen(true)}
+                    variant="secondary"
+                    style={{ flex: 1, borderColor: 'var(--error)', color: 'var(--error)', borderRadius: '12px', fontSize: '13px' }}
+                  >
+                    Cancel Meeting
+                  </Button>
+                )}
 
                 <Button
                   onClick={() => handleServerValidatedJoin(selectedMeetingDetail)}
@@ -2273,7 +2719,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       <BottomSheet isOpen={isCancelSheetOpen} onClose={() => setIsCancelSheetOpen(false)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--error)' }}>
-            Cancel Meeting & Offer Reschedule Options
+            {isCurrentExpert ? 'Cancel Meeting & Offer Reschedule Options' : 'Cancel Meeting'}
           </h3>
 
           <div className="form-group">
@@ -2291,41 +2737,79 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             </div>
           </div>
 
-          <div>
-            <label className="form-label" style={{ marginBottom: '6px', display: 'block' }}>
-              Offer Alternative Date & Time Options *
-            </label>
+          {isCurrentExpert && (
+            <div>
+              <label className="form-label" style={{ marginBottom: '6px', display: 'block' }}>
+                Offer Alternative Date & Time Options *
+              </label>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-              <input
-                type="date"
-                value={offerDateInput}
-                onChange={(e) => setOfferDateInput(e.target.value)}
-                style={{ flex: 1, backgroundColor: '#181818', border: '1px solid var(--border-color)', color: 'white', padding: '8px', borderRadius: '8px', fontSize: '12px' }}
-              />
-              <input
-                type="time"
-                value={offerTimeInput}
-                onChange={(e) => setOfferTimeInput(e.target.value)}
-                style={{ width: '100px', backgroundColor: '#181818', border: '1px solid var(--border-color)', color: 'white', padding: '8px', borderRadius: '8px', fontSize: '12px' }}
-              />
-              <Button type="button" onClick={handleAddOfferedSlot} variant="secondary" style={{ padding: '8px 12px', fontSize: '11px' }}>
-                + Add
-              </Button>
-            </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelCalendar(!showCancelCalendar)}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: '#181818',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justify: 'space-between',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <span>{offerDateInput ? `Date: ${offerDateInput}` : 'Select Date'}</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--primary-green)' }}>calendar_month</span>
+                  </button>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {offeredSlots.map((slot, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(136, 217, 130, 0.12)', border: '1px solid var(--primary-green)', padding: '4px 8px', borderRadius: '8px', fontSize: '11px', color: 'var(--primary-green)' }}>
-                  <span>{slot.date} @ {formatTime12h(slot.time)}</span>
-                  <span onClick={() => handleRemoveOfferedSlot(idx)} style={{ cursor: 'pointer', fontWeight: 'bold' }}>✕</span>
+                  <InlineTimePicker
+                    value={offerTimeInput}
+                    onChange={(val) => setOfferTimeInput(val)}
+                  />
+
+                  <Button type="button" onClick={handleAddOfferedSlot} variant="secondary" style={{ padding: '8px 12px', fontSize: '11px' }}>
+                    + Add
+                  </Button>
                 </div>
-              ))}
-              {offeredSlots.length === 0 && (
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>At least 1 alternative option required.</span>
-              )}
+
+                {showCancelCalendar && (
+                  <InlineCalendarPicker
+                    year={cancelCalYear}
+                    month={cancelCalMonth}
+                    onPrevMonth={() => {
+                      if (cancelCalMonth === 0) { setCancelCalMonth(11); setCancelCalYear(cancelCalYear - 1); }
+                      else setCancelCalMonth(cancelCalMonth - 1);
+                    }}
+                    onNextMonth={() => {
+                      if (cancelCalMonth === 11) { setCancelCalMonth(0); setCancelCalYear(cancelCalYear + 1); }
+                      else setCancelCalMonth(cancelCalMonth + 1);
+                    }}
+                    onSelectDate={(dateStr) => {
+                      setOfferDateInput(dateStr);
+                      setShowCancelCalendar(false);
+                    }}
+                    selectedDate={offerDateInput}
+                  />
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {offeredSlots.map((slot, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(136, 217, 130, 0.12)', border: '1px solid var(--primary-green)', padding: '4px 8px', borderRadius: '8px', fontSize: '11px', color: 'var(--primary-green)' }}>
+                    <span>{slot.date} @ {formatTime12h(slot.time)}</span>
+                    <span onClick={() => handleRemoveOfferedSlot(idx)} style={{ cursor: 'pointer', fontWeight: 'bold' }}>✕</span>
+                  </div>
+                ))}
+                {offeredSlots.length === 0 && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>At least 1 alternative option required.</span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
             <Button variant="secondary" onClick={() => setIsCancelSheetOpen(false)} style={{ flex: 1 }}>
@@ -2335,7 +2819,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               type="button"
               onClick={handleConfirmCancelMeeting}
               variant="primary"
-              disabled={cancellingMeeting || !cancelReason.trim() || offeredSlots.length === 0}
+              disabled={cancellingMeeting || !cancelReason.trim() || (isCurrentExpert && offeredSlots.length === 0)}
               style={{ flex: 1, backgroundColor: 'var(--error)', color: 'white' }}
             >
               {cancellingMeeting ? 'Cancelling...' : 'Confirm Cancellation'}

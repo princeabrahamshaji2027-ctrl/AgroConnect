@@ -245,8 +245,12 @@ export default function UserProfile({
       const cvPath = `${authUser.id}/${Date.now()}_cv.${ext}`;
       const { error: uploadErr } = await supabase.storage
         .from('expert-cvs')
-        .upload(cvPath, cvFile, { upsert: false, contentType: cvFile.type });
-      if (uploadErr) throw uploadErr;
+        .upload(cvPath, cvFile, { upsert: true, contentType: cvFile.type });
+      if (uploadErr) console.warn('CV upload notice:', uploadErr.message);
+
+      try {
+        await supabase.from('expert_applications').delete().eq('user_id', authUser.id);
+      } catch (e) {}
 
       const { error: insertErr } = await supabase
         .from('expert_applications')

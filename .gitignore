@@ -26,3 +26,8 @@ dist-ssr
 *.sw?
 jdk17/
 scratch/
+__pycache__/
+*.pyc
+native_screen.png
+test_init.png
+page_source.xml
