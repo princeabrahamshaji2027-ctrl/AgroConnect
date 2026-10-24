@@ -42,7 +42,12 @@ export default function PostDetailModal({ postId, onClose, onUserClick, onRefres
   const handleDeleteComment = async (commentId) => {
     if (!window.confirm('Delete this comment?')) return;
     try {
-      await supabase.from('comments').delete().eq('id', commentId);
+      const { data: deleted, error } = await supabase.from('comments').delete().eq('id', commentId).select('id');
+      // RLS filters denied rows without an error, so confirm a row was really deleted
+      // before writing the audit entry.
+      if (error) throw error;
+      if (!deleted?.length) throw new Error('Nothing was deleted (row missing or permission denied).');
+
       await supabase.from('admin_audit_log').insert({
         admin_id: (await supabase.auth.getUser()).data.user?.id,
         action: 'delete_comment',
@@ -59,7 +64,12 @@ export default function PostDetailModal({ postId, onClose, onUserClick, onRefres
   const handleDeletePost = async () => {
     if (!window.confirm('Are you sure you want to delete this post?')) return;
     try {
-      await supabase.from('posts').delete().eq('id', postId);
+      const { data: deleted, error } = await supabase.from('posts').delete().eq('id', postId).select('id');
+      // RLS filters denied rows without an error, so confirm a row was really deleted
+      // before writing the audit entry.
+      if (error) throw error;
+      if (!deleted?.length) throw new Error('Nothing was deleted (row missing or permission denied).');
+
       await supabase.from('admin_audit_log').insert({
         admin_id: (await supabase.auth.getUser()).data.user?.id,
         action: 'delete_post',

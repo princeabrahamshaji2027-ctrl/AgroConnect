@@ -6,12 +6,18 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
   const [likesCount, setLikesCount] = useState(post.likes);
   const [isBookmarked, setIsBookmarked] = useState(post.bookmarked);
 
-  const handleLike = (e) => {
+  const handleLike = async (e) => {
     e.stopPropagation();
+    const prevLiked = isLiked;
+    const prevCount = likesCount;
     const newLiked = !isLiked;
     setIsLiked(newLiked);
     setLikesCount(newLiked ? likesCount + 1 : likesCount - 1);
-    if (onLike) onLike(post.id, newLiked);
+    // onLike resolves to false when the write failed; roll back the optimistic update.
+    if (onLike && (await onLike(post.id, newLiked)) === false) {
+      setIsLiked(prevLiked);
+      setLikesCount(prevCount);
+    }
   };
 
   const handleBookmark = (e) => {

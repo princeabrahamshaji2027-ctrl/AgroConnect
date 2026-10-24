@@ -35,12 +35,16 @@ export default function Posts() {
     e.stopPropagation();
     if (!window.confirm('Are you sure you want to delete this post?')) return;
     try {
-      const { error } = await supabase
+      const { data: deleted, error } = await supabase
         .from('posts')
         .delete()
-        .eq('id', postId);
+        .eq('id', postId)
+        .select('id');
 
+      // RLS filters denied rows without an error, so confirm a row was really deleted
+      // before writing the audit entry.
       if (error) throw error;
+      if (!deleted?.length) throw new Error('Nothing was deleted (row missing or permission denied).');
 
       await supabase.from('admin_audit_log').insert({
         admin_id: (await supabase.auth.getUser()).data.user?.id,

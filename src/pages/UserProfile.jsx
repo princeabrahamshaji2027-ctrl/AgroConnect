@@ -246,12 +246,11 @@ export default function UserProfile({
       const { error: uploadErr } = await supabase.storage
         .from('expert-cvs')
         .upload(cvPath, cvFile, { upsert: true, contentType: cvFile.type });
-      if (uploadErr) console.warn('CV upload notice:', uploadErr.message);
+      // Without the file the admin has nothing to review, so stop here instead of saving a dangling path.
+      if (uploadErr) throw new Error(`CV upload failed: ${uploadErr.message}`);
 
-      try {
-        await supabase.from('expert_applications').delete().eq('user_id', authUser.id);
-      } catch (e) {}
-
+      // Earlier (e.g. Rejected) applications are kept as history; the one_pending_application_per_user
+      // index rejects a second Pending row.
       const { error: insertErr } = await supabase
         .from('expert_applications')
         .insert({
@@ -261,7 +260,10 @@ export default function UserProfile({
           cv_file_path: cvPath,
           status: 'Pending'
         });
-      if (insertErr) throw insertErr;
+      if (insertErr) {
+        if (insertErr.code === '23505') throw new Error('You already have an expert application pending review.');
+        throw insertErr;
+      }
 
       setExpertAppStatus('Pending');
       setIsKycOpen(false);

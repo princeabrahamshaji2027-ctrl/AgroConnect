@@ -6,8 +6,8 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function pingSupabase() {
+  const timestamp = new Date().toISOString();
   try {
-    const timestamp = new Date().toISOString();
     const { data, error } = await supabase.from('profiles').select('id').limit(1);
     if (error) {
       console.error(`[${timestamp}] ❌ Supabase ping error:`, error.message);

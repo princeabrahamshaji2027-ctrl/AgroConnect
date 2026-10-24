@@ -11,7 +11,7 @@ if (!SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
@@ -19,23 +19,29 @@ const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 const DEMO_USERS = [
   {
     email: 'prince@agroconnect.com',
-    password: 'Prince@1234',
+    password: process.env.DEMO_ADMIN_PASSWORD,
     fullName: 'Prince Abraham',
     role: 'Admin',
   },
   {
     email: 'user1@agroconnect.com',
-    password: 'user1@1234',
+    password: process.env.DEMO_USER1_PASSWORD,
     fullName: 'Ravi Kumar',
     role: 'Farmer',
   },
   {
     email: 'user2@agroconnect.com',
-    password: 'user2@1234',
+    password: process.env.DEMO_USER2_PASSWORD,
     fullName: 'Amita Singh',
     role: 'Farmer',
   },
 ];
+
+const missing = DEMO_USERS.filter(u => !u.password).map(u => u.email);
+if (missing.length) {
+  console.error(`ERROR: Set DEMO_ADMIN_PASSWORD, DEMO_USER1_PASSWORD and DEMO_USER2_PASSWORD env vars (missing for: ${missing.join(', ')}).`);
+  process.exit(1);
+}
 
 async function seed() {
   for (const u of DEMO_USERS) {

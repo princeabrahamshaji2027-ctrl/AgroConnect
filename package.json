@@ -11,7 +11,9 @@
     "seed": "node seed/index.js",
     "seed:cleanup": "node seed/cleanup.js",
     "seed:fixtures": "node seed/test-fixtures.js",
-    "seed:fixtures:reset": "node seed/test-fixtures.js --reset"
+    "seed:fixtures:reset": "node seed/test-fixtures.js --reset",
+    "test": "node src/utils/validation.test.js && node --test tests/*.test.js",
+    "test:rls": "node tests/rls-anon-probe.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

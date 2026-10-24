@@ -1,0 +1,88 @@
+// Regression guards for defects found in the 2026-10-24 audit (see AUDIT_ISSUES.md).
+// Run with: npm test
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const root = new URL('..', import.meta.url).pathname;
+const read = (p) => readFileSync(join(root, p), 'utf8');
+
+test('AUD-001: admin login does not pre-fill or auto-submit credentials', () => {
+  const src = read('admin-dashboard/src/pages/Login.jsx');
+  assert.match(src, /const \[email, setEmail\] = useState\(''\)/);
+  assert.match(src, /const \[password, setPassword\] = useState\(''\)/);
+  assert.doesNotMatch(src, /useEffect\(\s*\(\)\s*=>\s*\{\s*handleLogin/);
+});
+
+test('AUD-001: user app login does not pre-fill credentials', () => {
+  const src = read('src/pages/Login.jsx');
+  assert.match(src, /const \[username, setUsername\] = useState\(''\)/);
+  assert.match(src, /const \[password, setPassword\] = useState\(''\)/);
+});
+
+test('AUD-002: seed-demo-users.js reads passwords from the environment', () => {
+  const src = read('seed-demo-users.js');
+  assert.doesNotMatch(src, /password:\s*'[^']+'/);
+  assert.match(src, /process\.env\.DEMO_ADMIN_PASSWORD/);
+});
+
+test('AUD-002: no built admin bundle contains the admin email as a default value', () => {
+  const dir = join(root, 'admin-dashboard/dist/assets');
+  if (!existsSync(dir)) return; // bundle not built in this checkout
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.js'))) {
+    // minified form is e.g. (0,_.useState)(`prince@agroconnect.com`)
+    assert.doesNotMatch(readFileSync(join(dir, f), 'utf8'), /useState\)?\(\s*["'`]prince@agroconnect\.com["'`]/, f);
+  }
+});
+
+test('AUD-004: comment ownership uses the author id, not mock display names', () => {
+  const src = read('src/pages/Feed.jsx');
+  assert.doesNotMatch(src, /Ramesh Kumar/);
+  assert.match(src, /isCommentOwner = !!currentUserId && c\.userId === currentUserId/);
+  assert.match(src, /isReplyOwner = !!currentUserId && reply\.userId === currentUserId/);
+  // both comment queries must select user_id so ownership can be computed
+  assert.equal((src.match(/\n\s+id,\n\s+user_id,\n\s+comment,/g) || []).length, 2);
+});
+
+test('AUD-005: feed tolerates profiles with a null full_name', () => {
+  const src = read('src/pages/Feed.jsx');
+  assert.doesNotMatch(src, /p\.full_name\.toLowerCase\(\)/);
+});
+
+test('AUD-006: like writes are checked and the post card rolls back on failure', () => {
+  const feed = read('src/pages/Feed.jsx');
+  assert.match(feed, /Like failed/);
+  const card = read('src/components/Card.jsx');
+  assert.match(card, /await onLike\(post\.id, newLiked\)\) === false/);
+});
+
+test('AUD-007: expert application aborts on CV upload failure and keeps history', () => {
+  const src = read('src/pages/UserProfile.jsx');
+  assert.doesNotMatch(src, /CV upload notice/);
+  assert.doesNotMatch(src, /from\('expert_applications'\)\.delete\(\)/);
+  assert.match(src, /CV upload failed/);
+});
+
+test('AUD-009: admin dashboard shows no fabricated statistics', () => {
+  const src = read('admin-dashboard/src/pages/Dashboard.jsx');
+  for (const fake of ['* 0.65', '~65% Monthly Active', '>45%<', '>100 GB<', '>32<', '>Up to date<']) {
+    assert.ok(!src.includes(fake), `found fabricated value ${fake}`);
+  }
+});
+
+test('AUD-010: admin deletes are verified before an audit entry is written', () => {
+  for (const p of [
+    'admin-dashboard/src/pages/Posts.jsx',
+    'admin-dashboard/src/pages/Comments.jsx',
+    'admin-dashboard/src/components/PostDetailModal.jsx',
+  ]) {
+    const src = read(p);
+    assert.match(src, /if \(!deleted\?\.length\) throw new Error/, p);
+  }
+});
+
+test('AUD-011: keep-alive declares timestamp outside try so the catch block can log it', () => {
+  const src = read('keep-alive.js');
+  assert.ok(src.indexOf('const timestamp') < src.indexOf('try {'));
+});

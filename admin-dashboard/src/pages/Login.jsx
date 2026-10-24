@@ -1,16 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import logoImg from '../assets/logo.png';
 
 export default function Login({ authError: externalError }) {
-  const [email, setEmail] = useState('prince@agroconnect.com');
-  const [password, setPassword] = useState('Prince@1234');
+  // Never pre-fill or auto-submit credentials: they would ship in the public JS bundle.
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    handleLogin({ preventDefault: () => {} });
-  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();

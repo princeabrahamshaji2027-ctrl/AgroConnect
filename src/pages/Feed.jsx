@@ -124,7 +124,7 @@ export default function Feed({
         setUsersDb(data.map(p => ({
           id: p.id,
           name: p.full_name,
-          username: p.full_name.toLowerCase().replace(/\s+/g, ''),
+          username: (p.full_name || '').toLowerCase().replace(/\s+/g, ''),
           avatar: p.profile_image_path || '/profile-placeholder.png',
           role: p.role
         })));
@@ -179,21 +179,26 @@ export default function Feed({
 
   const handleLike = async (id, isLiked) => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) return false;
 
-    if (isLiked) {
-      await supabase
-        .from('likes')
-        .insert({ post_id: id, user_id: user.id });
-    } else {
-      await supabase
-        .from('likes')
-        .delete()
-        .eq('post_id', id)
-        .eq('user_id', user.id);
+    const { error } = isLiked
+      ? await supabase
+          .from('likes')
+          .insert({ post_id: id, user_id: user.id })
+      : await supabase
+          .from('likes')
+          .delete()
+          .eq('post_id', id)
+          .eq('user_id', user.id);
+
+    // Don't let the local count drift from the database (e.g. a duplicate like on double tap).
+    if (error) {
+      if (onShowToast) onShowToast(`Like failed: ${error.message}`);
+      return false;
     }
 
     setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: isLiked, likes: isLiked ? p.likes + 1 : p.likes - 1 } : p));
+    return true;
   };
 
   const handleBookmark = (id, isBookmarked) => {
@@ -209,6 +214,7 @@ export default function Feed({
       .from('comments')
       .select(`
         id,
+        user_id,
         comment,
         created_at,
         profiles:user_id (
@@ -222,6 +228,8 @@ export default function Feed({
 
     const formattedComments = (commentsData || []).map(c => ({
       id: c.id,
+      userId: c.user_id,
+      userRole: c.profiles?.role,
       userName: c.profiles?.full_name || 'Anonymous',
       userAvatar: c.profiles?.profile_image_path || '/profile-placeholder.png',
       content: c.comment,
@@ -335,6 +343,7 @@ export default function Feed({
       })
       .select(`
         id,
+        user_id,
         comment,
         created_at,
         profiles:user_id (
@@ -352,6 +361,8 @@ export default function Feed({
 
     const addedItem = {
       id: insertedComment.id,
+      userId: insertedComment.user_id,
+      userRole: insertedComment.profiles?.role,
       userName: insertedComment.profiles?.full_name || 'You',
       userAvatar: insertedComment.profiles?.profile_image_path || '/profile-placeholder.png',
       content: insertedComment.comment,
@@ -401,13 +412,15 @@ export default function Feed({
   const handleDeleteComment = async (commentId, parentId = null) => {
     if (!window.confirm('Delete comment permanently?')) return;
 
-    const { error } = await supabase
+    // RLS silently filters rows it denies, so check that a row was actually removed.
+    const { data: deletedRows, error } = await supabase
       .from('comments')
       .delete()
-      .eq('id', commentId);
+      .eq('id', commentId)
+      .select('id');
 
-    if (error) {
-      if (onShowToast) onShowToast(`Failed to delete comment: ${error.message}`);
+    if (error || !deletedRows?.length) {
+      if (onShowToast) onShowToast(`Failed to delete comment: ${error?.message || 'permission denied'}`);
       return;
     }
 
@@ -423,13 +436,14 @@ export default function Feed({
   const handleEditCommentSave = async (commentId, parentId = null) => {
     if (!editCommentText.trim()) return;
 
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('comments')
       .update({ comment: editCommentText })
-      .eq('id', commentId);
+      .eq('id', commentId)
+      .select('id');
 
-    if (error) {
-      if (onShowToast) onShowToast(`Failed to save comment: ${error.message}`);
+    if (error || !updatedRows?.length) {
+      if (onShowToast) onShowToast(`Failed to save comment: ${error?.message || 'permission denied'}`);
       return;
     }
 
@@ -562,9 +576,9 @@ export default function Feed({
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px', paddingRight: '4px' }}>
               {selectedPost.comments && selectedPost.comments.length > 0 ? (
                 selectedPost.comments.map(c => {
-                  const isCommentOwner = c.userName === 'You' || c.userName === 'Ramesh Kumar';
+                  const isCommentOwner = !!currentUserId && c.userId === currentUserId;
                   const commentReplies = c.replies || [];
-                  const isVerifiedExpert = usersDb.find(u => u.name === c.userName)?.role === 'Agronomist';
+                  const isVerifiedExpert = c.userRole === 'Expert' || c.userRole === 'Agronomist';
                   
                   return (
                     <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -668,8 +682,8 @@ export default function Feed({
                           </button>
 
                           {expandedReplies[c.id] && commentReplies.map(reply => {
-                            const isReplyOwner = reply.userName === 'You' || reply.userName === 'Ramesh Kumar';
-                            const isReplyExpert = usersDb.find(u => u.name === reply.userName)?.role === 'Agronomist';
+                            const isReplyOwner = !!currentUserId && reply.userId === currentUserId;
+                            const isReplyExpert = reply.userRole === 'Expert' || reply.userRole === 'Agronomist';
                             
                             return (
                               <div key={reply.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }} className="fade-in">

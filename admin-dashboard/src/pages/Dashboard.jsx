@@ -13,6 +13,7 @@ export default function Dashboard({ onTabChange }) {
   });
 
   const [loading, setLoading] = useState(true);
+  const [dbReachable, setDbReachable] = useState(null); // null = checking
   const [recentPosts, setRecentPosts] = useState([]);
   const [recentApps, setRecentApps] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
@@ -23,23 +24,29 @@ export default function Dashboard({ onTabChange }) {
       setLoading(true);
 
       // Fetch Stats Counts
+      const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const results = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('posts').select('*', { count: 'exact', head: true }),
+        supabase.from('expert_applications').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
+        supabase.from('orders').select('*', { count: 'exact', head: true }),
+        supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
+        supabase.from('posts').select('user_id').gte('created_at', since30d),
+      ]);
       const [
         { count: usersCount },
         { count: postsCount },
         { count: expertAppsCount },
         { count: ordersCount },
         { count: reportsCount },
-      ] = await Promise.all([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }),
-        supabase.from('posts').select('*', { count: 'exact', head: true }),
-        supabase.from('expert_applications').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
-        supabase.from('orders').select('*', { count: 'exact', head: true }),
-        supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
-      ]);
+        { data: recentPosters },
+      ] = results;
+      setDbReachable(results.every(r => !r.error));
 
       setStats({
         totalUsers: usersCount || 0,
-        activeUsers: Math.round((usersCount || 0) * 0.65), // simulated active proportion
+        // Distinct users who posted in the last 30 days (no login-activity table exists).
+        activeUsers: new Set((recentPosters || []).map(p => p.user_id)).size,
         totalPosts: postsCount || 0,
         expertApps: expertAppsCount || 0,
         totalOrders: ordersCount || 0,
@@ -80,6 +87,7 @@ export default function Dashboard({ onTabChange }) {
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      setDbReachable(false);
     } finally {
       setLoading(false);
     }
@@ -187,7 +195,7 @@ export default function Dashboard({ onTabChange }) {
           <div className="font-headline-xl text-on-surface">{stats.activeUsers}</div>
           <div className="flex items-center gap-1 font-label-sm text-primary-container">
             <span className="material-symbols-outlined text-[14px]">arrow_upward</span>
-            <span>~65% Monthly Active</span>
+            <span>Posted in last 30 days</span>
           </div>
         </div>
 
@@ -414,37 +422,37 @@ export default function Dashboard({ onTabChange }) {
             <div className="flex justify-between items-center">
               <span className="font-label-sm text-on-surface-variant">Server Status</span>
               <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span>
-                <span className="font-label-sm text-primary-container">Online</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${dbReachable === false ? 'bg-error' : 'bg-primary-container animate-pulse'}`}></span>
+                <span className={`font-label-sm ${dbReachable === false ? 'text-error' : 'text-primary-container'}`}>{dbReachable === null ? 'Checking…' : dbReachable ? 'Online' : 'Unreachable'}</span>
               </div>
             </div>
             <div className="w-full h-px bg-outline-variant/30"></div>
             <div className="flex justify-between items-center">
               <span className="font-label-sm text-on-surface-variant">Database</span>
               <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
-                <span className="font-label-sm text-primary-container">Connected</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${dbReachable === false ? 'bg-error' : 'bg-primary-container'}`}></span>
+                <span className={`font-label-sm ${dbReachable === false ? 'text-error' : 'text-primary-container'}`}>{dbReachable === null ? 'Checking…' : dbReachable ? 'Connected' : 'Query errors'}</span>
               </div>
             </div>
             <div className="w-full h-px bg-outline-variant/30"></div>
             <div className="flex justify-between items-center">
               <span className="font-label-sm text-on-surface-variant">Storage Used</span>
-              <span className="font-label-sm text-on-surface">45%</span>
+              <span className="font-label-sm text-on-surface-variant">Not tracked</span>
             </div>
             <div className="w-full h-px bg-outline-variant/30"></div>
             <div className="flex justify-between items-center">
               <span className="font-label-sm text-on-surface-variant">Total Storage</span>
-              <span className="font-label-sm text-on-surface">100 GB</span>
+              <span className="font-label-sm text-on-surface-variant">Not tracked</span>
             </div>
             <div className="w-full h-px bg-outline-variant/30"></div>
             <div className="flex justify-between items-center">
               <span className="font-label-sm text-on-surface-variant">Backup Status</span>
-              <span className="font-label-sm text-on-surface">Up to date</span>
+              <span className="font-label-sm text-on-surface-variant">Not tracked</span>
             </div>
             <div className="w-full h-px bg-outline-variant/30"></div>
             <div className="flex justify-between items-center">
               <span className="font-label-sm text-on-surface-variant">Active Sessions</span>
-              <span className="font-label-sm text-on-surface">32</span>
+              <span className="font-label-sm text-on-surface-variant">Not tracked</span>
             </div>
           </div>
         </div>
