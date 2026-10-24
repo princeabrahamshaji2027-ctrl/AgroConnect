@@ -91,3 +91,38 @@ No secrets are reproduced here. Where a credential is involved, only the file is
 | AUD-037 | Medium | Seeds | `seed/generators/users.js` hard-coded the shared password for all generated demo users. | Fixed (reads `DEMO_SEED_PASSWORD`). Old value is in git history: rotate/delete those accounts if they exist in production. |
 | AUD-038 | High | Release process | 05 and the new `Connect.jsx` must ship together. The new client calls RPCs that production doesn't have yet, and after 05, already-installed old APKs can no longer book or cancel. | Documented release order in `REMEDIATION_STATUS.md`. Consider a forced-update broadcast (the app already supports `action_type = 'forced'`). |
 | AUD-039 | Info | Business rule | When an **expert** cancels, the farmer gets no refund (copied from the existing code). Probably unintended. | Product decision; not changed. |
+
+---
+
+## Third pass (2026-10-24) — confirmed against the live database (read-only, Supabase connector)
+
+| ID | Sev | Finding (live evidence) | Status |
+|---|---|---|---|
+| AUD-003b | **Critical — CONFIRMED** | `handle_new_user()` copies `raw_user_meta_data->>'role'` into `profiles.role`: a public `signUp({ options: { data: { role: 'Admin' } } })` creates an administrator. Not yet exploited (no account has role metadata `Admin`). | Fix ready (01), tested on real schema |
+| AUD-003 | **Critical — CONFIRMED by schema** | `profiles_update` allows any column of the own row; no trigger guards `role`/`is_banned`. | Fix ready (01) |
+| AUD-040 | High | `experts_insert` allows a user to insert their own `experts` row → expert without approval. No client code needs it. | Fix ready (01) |
+| AUD-041 | Medium | Counter trigger functions are SECURITY INVOKER → RLS drops updates to other users' rows (`follower_count`, `like_count`, `comment_count`, expert `rating` drift). Also meant my earlier 01 draft would have broken post creation. | Fix ready (01) |
+| AUD-042 | High | Repo ↔ live drift: 20260807 and 20260918 never applied; 20260814 not applied and **dangerous** (would break every policy); `admin_update_booking_status` cannot run (varchar→enum assignment + missing `updated_at`) → admin Cancel/Complete broken. | Fix ready (04) |
+| AUD-043 | High | Storage policy `expert-cvs-select` lets **any signed-in user read every expert's CV**; CV/video uploads allowed at any path. | Fix ready (07) |
+| AUD-044 | Medium | `supabase_realtime` publication is empty → chat, notification toasts, broadcast pop-ups, live feed, admin refresh never fire. | Fix ready (08) |
+| AUD-045 | High | `notifications.type` is an enum; the browser inserts types like `meeting_reminder_24h` → rejected. Production holds only `announcement` notifications: **no booking/reminder/cancellation notification was ever delivered**. Also `notifications_insert` only checks `NOT is_banned()` → anyone can notify anyone. | Fix ready (05, client already refactored) |
+| AUD-046 | Medium | `consultation_bookings_update/delete` let either participant change any column (status, expert, date) or delete the booking. `slots_all_expert` means the farmer's `is_booked = true` update silently affects 0 rows (1 live booking has a "free" slot). | Fix ready (05) |
+| AUD-047 | Medium (latent) | Marketplace RLS: buyers may insert/update `payments` (e.g. mark own payment `Paid`) and update their own `orders` (total/status). Marketplace UI is not live. | Open — fix before enabling the marketplace |
+| AUD-048 | Low | Advisor: leaked-password protection disabled; 14 SECURITY DEFINER RPCs executable by `anon`; 21 functions with mutable search_path. | 03 fixes the SQL items; leaked-password setting is a dashboard action |
+| AUD-049 | Low | My own `00_readonly_verification.sql` §12 failed on the live schema (column missing). | Fixed (column-agnostic) |
+| AUD-034 | Low | Google button showed "GOOGLE" ligature text. | **Fixed**: icon removed (no official asset in repo; Google sign-in unimplemented) |
+| AUD-035 | Medium | Icons/text font loaded from Google Fonts at runtime → ligature words offline. | **Fixed**: Inter + Material Symbols bundled from npm; verified on emulator in airplane mode |
+| AUD-050 | Low | Notifications screen treated `related_id` of booking notifications as a user id (tap opened a broken profile). | **Fixed** |
+| AUD-015 | High | Re-confirmed live: `expert1` Expert role + Approved app, **no `experts` row**, 0 slots; user2/user3 drifted to Expert. | Repair ready (06), tested on real schema; needs staging |
+| AUD-001/002 | Critical | Passwords: **still not rotated** (no Auth-admin tool). Sessions live: prince@ 10, user1@ 8, user2@ 1. | Owner action |
+
+### Production status after the approved apply (2026-10-24)
+| ID | Status |
+|---|---|
+| AUD-003b, AUD-003, AUD-040, AUD-041 | **FIXED IN PRODUCTION** (01), verified live |
+| AUD-008 | **FIXED IN PRODUCTION** (02), verified over HTTP |
+| AUD-012, AUD-048 (SQL parts) | **FIXED IN PRODUCTION** (03 + 03b); leaked-password protection still off |
+| AUD-043 | **FIXED IN PRODUCTION** (07), verified live |
+| AUD-044 | **APPLIED IN PRODUCTION** (08); delivery to signed-in clients not yet tested |
+| AUD-042, AUD-013/014/045/046 | Held: 04 and 05 wait for the coordinated app release |
+| AUD-001/002 | Open: passwords not rotated (owner) |

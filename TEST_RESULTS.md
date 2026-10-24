@@ -140,3 +140,64 @@ app defect.
 
 ### F. Builds
 User app build PASS. Admin build PASS. Android `assembleDebug` + unit test PASS. oxlint 0 errors.
+
+---
+
+## Third pass (2026-10-24) — Supabase connector available
+
+### A. Live production checks (read-only SELECTs via the connector, project `mgreapakfchcxcrauheq`)
+| Check | Result |
+|---|---|
+| Project identity / staging exists | 1 project only = production (matches `src/supabase.js`). No staging. |
+| `00_readonly_verification.sql` sections 2, 5, 6, 8, 9, 11, 12 + policies/triggers/functions | Ran. RLS on all 32 tables; 13 definer functions without search_path; 1 Expert without experts row; 0 double bookings; 2 non-definer counter writers; pg_cron available, not installed; refund columns absent. |
+| Signup-role hole exploited? | No (no user with `role: Admin` in signup metadata). |
+| Supabase security advisor | 21 mutable search_path, 14 anon-executable definer RPCs, leaked-password protection off. |
+| Schema export | 356 objects, byte-identical (server/local md5 `0c0bd1d0…e491`). |
+
+### B. Database tests on the REAL schema (`npm run test:db`) — **30/30 PASS**
+Export reconstruction (32/111/22/8) · repo migration 20260814 proven destructive · 00 read-only (static + READ ONLY txn) ·
+01 before/after (signup as Admin, self-promotion, self-made expert, counter drift → all fixed; approve RPC still works; posting still works) ·
+02 anon 4→0 · 03 helpers, search_path everywhere, anon blocked from admin RPC, admin ban works ·
+04 admin booking RPC fails live, works after (bad status rejected, non-admin rejected) ·
+05 live bugs reproduced (enum-rejected notification types; farmer's slot lock affects 0 rows), booking/duplicate/index/past/own/empty/anon,
+direct writes blocked, cancellation + refunds + recipients, forgery by farmer and by expert blocked, read-state owner-only,
+reminders exactly once, Asia/Kolkata → UTC, no-show once, join/complete/review rules, rating trigger, refund state machine with
+simulated provider failure, scheduler failure rollback/retry, all scripts re-runnable ·
+06 fixture repair on the live drift pattern · 07 CV leak reproduced and closed, upload paths enforced · 08 publication · 99 rollback.
+
+Not covered: real concurrency (single connection), pg_cron execution itself (extension not in PGlite), Supabase Auth/GoTrue,
+PostgREST, Storage HTTP. These need the staging project.
+
+### C. Other suites
+| Suite | Result |
+|---|---|
+| Validation unit tests | 27/27 PASS |
+| Regression guards | 14/14 PASS (new: bundled fonts / no "google" ligature) |
+| Playwright (local builds, unauthenticated) | 5 PASS, 5 SKIPPED (signed-in, need staging) |
+| Staging API E2E | SKIPPED — no staging project (creation blocked by environment permission) |
+| Builds | user app, admin, Android `assembleDebug` PASS |
+
+### D. Android emulator (API 36.1)
+| Step | Result | Evidence |
+|---|---|---|
+| Airplane mode + cleared app data + launch | PASS — login renders real icons (person/lock/eye) and Inter; Google button shows text, no "GOOGLE" | `appium-results/2026-10-24_emulator/06_offline_login_bundled_icons.png` |
+| Signed-in expert/normal-user scenarios | BLOCKED — staging | — |
+
+---
+
+## Production apply verification (2026-10-24)
+All behavioural checks ran in forced-rollback DO blocks on production; persistence check afterwards: nothing left.
+| Check | Result |
+|---|---|
+| Snapshot current before apply (md5) | PASS |
+| Restore script returns exact prior catalog (local) | PASS (empty diff) |
+| 01: signup as Admin / self-promote / self-expert / bio edit | Farmer / blocked / blocked / ok — PASS |
+| 02: anon HTTP probe | 0 tables readable — PASS |
+| 02: signed-in reads unchanged | 14/4/2 — PASS |
+| 03: search_path, definer helpers, admin vs farmer vs anon on `ban_user` | PASS |
+| 03b: trigger functions not callable; counters update across users | PASS |
+| 07: foreign CV visibility 20→0; owner 3; admin 20 | PASS |
+| 08: publication contents, RLS on published tables | PASS (delivery NOT TESTED) |
+| Data row counts unchanged | PASS |
+| Playwright smoke (admin + app login, production auth) | 5/5 PASS |
+| Supabase security advisor | 21+14 warnings → 2 by design + 14 by design + leaked-password (dashboard) |

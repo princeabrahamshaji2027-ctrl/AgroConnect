@@ -240,3 +240,51 @@ staging build is possible.
 Expected once you rotate the passwords, apply 01–03 and 05, and the staging E2E plus device expert scenario pass:
 about 7.5. Reaching 9 additionally needs the real schema in git with CI running `test:db` against it, bundled fonts,
 a real video/payment provider or honest labelling of those features, and pagination.
+
+---
+
+## 14. Third pass (2026-10-24) — verified against the live database
+
+The Supabase connector gave read-only visibility into production. It confirmed suspected problems and found new ones;
+nothing was changed in production. The real schema is now in git (`supabase/schema/live_schema_20261024.sql`),
+the test harness runs on it, and every proposed script was rewritten and re-tested against it (30/30).
+Full details: `REMEDIATION_STATUS.md` (third pass), `AUDIT_ISSUES.md` (AUD-040…050).
+
+Most important new facts:
+- **Anyone can create an Admin account through public signup** (AUD-003b), and existing users can promote themselves (AUD-003).
+- **Every signed-in user can read every expert's CV** (AUD-043).
+- Consultation notifications have **never** been delivered (enum mismatch, AUD-045). The admin's booking Cancel/Complete is broken (AUD-042). Realtime is off (AUD-044).
+- Repo migrations do not describe production. One of them (`20260814`) would take production down if pushed.
+
+### Score, re-evaluated (7 categories, weights 20/20/15/15/15/7.5/7.5)
+| Category | Production as deployed today | Code in this branch, if the approved scripts are applied (verified locally only) |
+|---|---:|---:|
+| Core feature correctness | 5.5 | 6.5 |
+| Security & authorization | 2.0 | 6.5 |
+| Database/API integrity | 4.5 | 7.5 |
+| Integration & persistence | 5.0 | 6.5 |
+| Test coverage | 6.5 | 6.5 |
+| Stability & error handling | 6.0 | 6.5 |
+| Performance & usability | 5.5 | 6.0 |
+| **Weighted** | **4.8** | **6.6** |
+
+The earlier 5.7 was computed before these live findings. It is superseded. **Not 9/10.** The blockers, in order:
+password rotation; your approval to apply 01–08 (prevents the Admin-signup takeover and the CV leak); a staging
+project for signed-in E2E and the expert device scenario; a coordinated 05 + app release; the admin redeploy.
+
+### Production after the approved apply (2026-10-24)
+01, 02, 03 (+03b), 07 and 08 are live and verified. The Admin-signup takeover, self-promotion, self-made experts,
+anonymous profile reads and the expert-CV leak are **closed in production**. Counters now update correctly.
+04 and 05 are held for the coordinated app release.
+
+| Category | Before apply | Production now |
+|---|---:|---:|
+| Core feature correctness | 5.5 | 5.5 |
+| Security & authorization | 2.0 | 5.0 |
+| Database/API integrity | 4.5 | 5.5 |
+| Integration & persistence | 5.0 | 5.5 |
+| Test coverage | 6.5 | 7.0 |
+| Stability & error handling | 6.0 | 6.0 |
+| Performance & usability | 5.5 | 5.5 |
+| **Weighted** | **4.8** | **5.7** |
+Security is not higher yet: the exposed passwords are not rotated, and notifications/bookings remain client-writable until 05 ships.

@@ -4,7 +4,7 @@
 //   STAGING_SUPABASE_URL, STAGING_SUPABASE_ANON_KEY
 //   FIXTURE_PASSWORD            password of the *.agroconnect.local fixtures (npm run seed:fixtures on staging)
 //   E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD   (optional: admin tests are skipped without them)
-// Staging must have supabase/proposed/01, 02, 03, 05 and 06 applied.
+// Staging must have supabase/schema/live_schema_20261024.sql and supabase/proposed/01–08 applied (see REMEDIATION_STATUS.md).
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
@@ -55,7 +55,7 @@ describe('staging: normal user (user1)', { skip }, () => {
     const promote = await u.c.from('profiles').update({ role: 'Admin' }).eq('id', u.uid);
     assert.ok(promote.error, 'role change must fail');
     const expert = await u.c.from('profiles').select('id').eq('role', 'Expert').limit(1).single();
-    const forge = await u.c.from('notifications').insert({ user_id: expert.data.id, type: 'x', message: 'forged' });
+    const forge = await u.c.from('notifications').insert({ user_id: expert.data.id, type: 'booking', message: 'forged' });
     assert.ok(forge.error, 'notification forgery must fail');
     for (const [fn, args] of [['process_consultation_lifecycle', {}], ['admin_settle_refund', { p_booking_id: expert.data.id, p_succeeded: true }],
       ['approve_expert_application', { p_application_id: expert.data.id }], ['ban_user', { p_user_id: expert.data.id, p_reason: 'x' }]]) {
@@ -119,7 +119,7 @@ describe('staging: expert1 + booking lifecycle', { skip }, () => {
     assert.deepEqual([b.status, b.refund_status], ['Cancelled', 'Pending']);
     const { data: s } = await f.c.from('consultation_slots').select('is_booked').eq('id', slot.id).single();
     assert.equal(s.is_booked, false);
-    const { data: note } = await e.c.from('notifications').select('id').eq('related_id', bookingId).eq('type', 'meeting_cancelled_by_farmer');
+    const { data: note } = await e.c.from('notifications').select('id').eq('related_id', bookingId).eq('type', 'booking');
     assert.equal(note.length, 1, 'expert notified by the server');
   });
 });

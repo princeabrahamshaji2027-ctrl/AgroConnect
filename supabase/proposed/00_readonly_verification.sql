@@ -64,8 +64,9 @@ from information_schema.triggers where trigger_schema = 'public' order by 1, 2;
 -- 11. Is pg_cron available/enabled for the 05 lifecycle job?
 select name, default_version, installed_version from pg_available_extensions where name = 'pg_cron';
 
--- 12. Unexpected refund_status values (05 adds a NOT VALID check constraint)
-select refund_status, count(*) from public.consultation_bookings group by 1;
+-- 12. Unexpected refund_status values (05 adds a NOT VALID check constraint). Written via to_jsonb so it also runs
+--     before 04 has added the column (production on 2026-10-24 had no refund_status column).
+select to_jsonb(b) ->> 'refund_status' as refund_status, count(*) from public.consultation_bookings b group by 1;
 
 -- 13. Test-fixture state (AUD-015): role vs experts row vs latest application, for the *.agroconnect.local accounts
 select u.email, p.role, (e.id is not null) as has_experts_row, e.is_active,

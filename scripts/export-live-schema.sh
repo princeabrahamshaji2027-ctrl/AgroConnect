@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Export the live Supabase schema (structure only, no table data) into git.
 #
+# Alternative used on 2026-10-24 without a DB password: run scripts/sql/export_schema_ddl.sql (read-only) through the
+# Supabase connector / SQL editor and save the `ddl` column joined with blank lines — that is how
+# supabase/schema/live_schema_20261024.sql was produced (md5-verified against the server).
+#
 #   SUPABASE_DB_URL='postgresql://postgres.<ref>:<db-password>@aws-0-<region>.pooler.supabase.com:5432/postgres' \
 #     scripts/export-live-schema.sh
 #

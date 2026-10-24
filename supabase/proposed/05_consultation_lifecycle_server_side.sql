@@ -2,7 +2,11 @@
 -- AUD-013 / AUD-014 / AUD-032: move consultation booking, cancellation, join/complete, reminders, no-shows and
 -- refunds out of the browser, and stop clients writing notifications for other users.
 --
--- Depends on: 20260913, 20260914, 20260918 migrations (columns), 01 (is_admin search_path), 03 (is_admin()).
+-- Depends on: 04_reconcile_drift.sql (booking columns, experts.no_show_count) and 01/03. Written against the real
+-- live schema (supabase/schema/live_schema_20261024.sql): booking status is the booking_status enum and
+-- notifications.type is the notification_type enum ('booking'/'system' are used below; the specific event is in the
+-- message). The browser code used types such as meeting_reminder_24h that the enum rejects, which is why no
+-- booking notification has ever been stored in production (only 'announcement' rows exist).
 -- Safe to re-run: every object uses create or replace / if not exists / drop ... if exists.
 -- Business rules are copied from src/pages/Connect.jsx as of commit 6635e2f:
 --   reminders 24 h, day-of, 30 min (both participants) and 10 min (expert only);
@@ -27,9 +31,10 @@ create or replace function public.is_client_request() returns boolean
 language sql stable set search_path = public as $$ select current_user in ('anon', 'authenticated') $$;
 
 -- ---------------------------------------------------------------- data invariants
--- One active booking per slot. If this fails on production, run 00_readonly_verification.sql section 8 first.
-create unique index if not exists consultation_bookings_one_active_per_slot
-  on public.consultation_bookings (slot_id) where status = 'Booked' and slot_id is not null;
+-- One active booking per slot is already enforced live by the unique index one_booking_per_slot
+-- (slot_id) WHERE status <> 'Cancelled'. Create it only if missing (e.g. a fresh staging database).
+create unique index if not exists one_booking_per_slot
+  on public.consultation_bookings (slot_id) where status <> 'Cancelled';
 
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'consultation_bookings_refund_status_check') then
@@ -43,13 +48,13 @@ end $$;
 create or replace function public._notify(p_user uuid, p_type text, p_message text, p_related uuid) returns void
 language sql security definer set search_path = public as $$
   insert into public.notifications (user_id, type, message, related_id)
-  select p_user, p_type, p_message, p_related where p_user is not null;
+  select p_user, p_type::public.notification_type, p_message, p_related where p_user is not null;
 $$;
 
 create or replace function public._notify_admins(p_type text, p_message text, p_related uuid) returns void
 language sql security definer set search_path = public as $$
   insert into public.notifications (user_id, type, message, related_id)
-  select id, p_type, p_message, p_related from public.profiles where role = 'Admin';
+  select id, p_type::public.notification_type, p_message, p_related from public.profiles where role = 'Admin';
 $$;
 
 -- ---------------------------------------------------------------- booking
@@ -150,7 +155,7 @@ begin
        set status = 'Cancelled', cancellation_reason = trim(p_reason), offered_reschedule_slots = p_offered_slots,
            updated_at = now()
      where id = b.id;
-    perform public._notify(v_farmer_user, 'meeting_cancelled_by_expert',
+    perform public._notify(v_farmer_user, 'booking',
       format('Consultation on %s was cancelled by the expert. Reason: %s', b.meeting_date, trim(p_reason)), b.id);
   else
     v_refund := coalesce(v_rate, 500) * 0.5;
@@ -158,10 +163,10 @@ begin
        set status = 'Cancelled', cancellation_reason = trim(p_reason),
            refund_status = 'Pending', refund_amount = v_refund, updated_at = now()
      where id = b.id;
-    perform public._notify(v_expert_user, 'meeting_cancelled_by_farmer',
+    perform public._notify(v_expert_user, 'booking',
       format('Meeting on %s at %s was cancelled by farmer. Reason: %s', b.meeting_date,
              to_char(b.meeting_time, 'HH12:MI AM'), trim(p_reason)), b.id);
-    perform public._notify_admins('farmer_cancellation_admin_alert',
+    perform public._notify_admins('system',
       format('Farmer Cancellation Alert: Meeting %s on %s was cancelled by farmer.', left(b.id::text, 8), b.meeting_date), b.id);
   end if;
 
@@ -224,7 +229,7 @@ begin
     returning b.id) select coalesce(array_agg(id), '{}') into v_ids from c;
   v_24h := cardinality(v_ids);
   insert into public.notifications (user_id, type, message, related_id)
-  select p.uid, 'meeting_reminder_24h',
+  select p.uid, 'booking',
          format('Reminder: Consultation on %s at %s is tomorrow', b.meeting_date, to_char(b.meeting_time, 'HH12:MI AM')), b.id
     from public.consultation_bookings b
     cross join lateral (select f.user_id uid from public.farmer_profiles f where f.id = b.farmer_id
@@ -240,7 +245,7 @@ begin
     returning b.id) select coalesce(array_agg(id), '{}') into v_ids from c;
   v_day := cardinality(v_ids);
   insert into public.notifications (user_id, type, message, related_id)
-  select p.uid, 'meeting_reminder_dayof',
+  select p.uid, 'booking',
          format('Reminder: You have a consultation scheduled today at %s', to_char(b.meeting_time, 'HH12:MI AM')), b.id
     from public.consultation_bookings b
     cross join lateral (select f.user_id uid from public.farmer_profiles f where f.id = b.farmer_id
@@ -256,7 +261,7 @@ begin
     returning b.id) select coalesce(array_agg(id), '{}') into v_ids from c;
   v_30 := cardinality(v_ids);
   insert into public.notifications (user_id, type, message, related_id)
-  select p.uid, 'meeting_reminder_30min',
+  select p.uid, 'booking',
          format('Reminder: Consultation starts in 30 minutes (%s)', to_char(b.meeting_time, 'HH12:MI AM')), b.id
     from public.consultation_bookings b
     cross join lateral (select f.user_id uid from public.farmer_profiles f where f.id = b.farmer_id
@@ -272,7 +277,7 @@ begin
     returning b.id) select coalesce(array_agg(id), '{}') into v_ids from c;
   v_10 := cardinality(v_ids);
   insert into public.notifications (user_id, type, message, related_id)
-  select e.user_id, 'meeting_reminder_expert_10min',
+  select e.user_id, 'booking',
          'Upcoming consultation starts in 10 minutes. Please prepare to join.', b.id
     from public.consultation_bookings b join public.experts e on e.id = b.expert_id
    where b.id = any(v_ids);
@@ -296,17 +301,17 @@ begin
       from (select expert_id, count(*) n from public.consultation_bookings where id = any(v_ids) group by expert_id) x
      where e.id = x.expert_id;
     insert into public.notifications (user_id, type, message, related_id)
-    select f.user_id, 'meeting_auto_cancelled',
+    select f.user_id, 'booking',
            format('Meeting on %s was auto-cancelled because expert did not join within 5 minutes. Full refund of ₹%s requested.',
                   b.meeting_date, b.refund_amount), b.id
       from public.consultation_bookings b join public.farmer_profiles f on f.id = b.farmer_id where b.id = any(v_ids);
     insert into public.notifications (user_id, type, message, related_id)
-    select e.user_id, 'no_show_flagged',
+    select e.user_id, 'system',
            format('You missed your scheduled consultation on %s at %s. The session was auto-cancelled.',
                   b.meeting_date, to_char(b.meeting_time, 'HH12:MI AM')), b.id
       from public.consultation_bookings b join public.experts e on e.id = b.expert_id where b.id = any(v_ids);
     insert into public.notifications (user_id, type, message, related_id)
-    select a.id, 'expert_no_show_admin_alert',
+    select a.id, 'system',
            format('Expert No-Show Alert: Meeting %s on %s was auto-cancelled.', left(b.id::text, 8), b.meeting_date), b.id
       from public.consultation_bookings b cross join public.profiles a
      where b.id = any(v_ids) and a.role = 'Admin';
@@ -338,7 +343,7 @@ begin
   values (auth.uid(), 'settle_refund', 'consultation_bookings', b.id,
           jsonb_build_object('outcome', v_new, 'amount', b.refund_amount, 'reference', p_reference));
   if p_succeeded then
-    perform public._notify((select user_id from public.farmer_profiles where id = b.farmer_id), 'refund_completed',
+    perform public._notify((select user_id from public.farmer_profiles where id = b.farmer_id), 'booking',
       format('Your refund of ₹%s has been processed.', b.refund_amount), b.id);
   end if;
   return v_new;
@@ -458,6 +463,10 @@ grant execute on function public.admin_retry_refund(uuid) to authenticated, serv
 -- Requires the pg_cron extension (Supabase Dashboard -> Database -> Extensions -> pg_cron). Without it, nothing
 -- runs the job: enable it, or call process_consultation_lifecycle() from a scheduled Edge Function.
 do $$ begin
+  -- pg_cron is available on Supabase (not installed on production as of 2026-10-24); install it when possible.
+  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
+    execute 'create extension if not exists pg_cron';
+  end if;
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
     perform cron.unschedule(jobid) from cron.job where jobname = 'consultation-lifecycle';
     perform cron.schedule('consultation-lifecycle', '* * * * *', 'select public.process_consultation_lifecycle()');

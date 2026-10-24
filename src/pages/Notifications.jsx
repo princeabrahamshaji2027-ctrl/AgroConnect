@@ -103,6 +103,7 @@ export default function Notifications({ onGoBack, onProfileClick }) {
       case 'comment': return 'chat_bubble';
       case 'announcement': return 'campaign';
       case 'report': return 'report';
+      case 'booking': return 'event';
       default: return 'notifications';
     }
   };
@@ -113,12 +114,15 @@ export default function Notifications({ onGoBack, onProfileClick }) {
       case 'comment': return 'var(--primary-green)';
       case 'announcement': return '#FFA726';
       case 'report': return '#FF5A5A';
+      case 'booking': return 'var(--primary-green)';
       default: return 'var(--text-primary)';
     }
   };
 
   const handleNotificationTap = (n) => {
     handleMarkAsRead(n.id);
+    // Booking/system notifications carry a booking id in related_id, not a user id.
+    if (n.type === 'booking' || n.type === 'system') return;
     if (n.relatedId && onProfileClick) {
       onProfileClick(n.relatedId);
     } else if (n.type === 'announcement' && onProfileClick) {
@@ -193,7 +197,7 @@ export default function Notifications({ onGoBack, onProfileClick }) {
               {/* Message & details */}
               <div style={{ flex: 1, paddingRight: '12px' }}>
                 <div style={{ fontSize: '13px', lineHeight: '1.4' }}>
-                  {n.type !== 'announcement' && n.type !== 'system' && (
+                  {n.type !== 'announcement' && n.type !== 'system' && n.type !== 'booking' && (
                     <strong style={{ color: 'var(--text-primary)' }}>{n.senderName} </strong>
                   )}
                   <span style={{ color: '#eeeeee' }}>{n.message}</span>

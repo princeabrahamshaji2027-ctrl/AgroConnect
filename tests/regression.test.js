@@ -107,3 +107,11 @@ test('AUD-015: fixture seeder creates the experts row and has no hard-coded pass
   assert.match(src, /from\('experts'\)\.upsert/);
   assert.match(src, /Refusing to seed fixtures into the production project/);
 });
+
+test('AUD-035/034: app fonts and icons are bundled; no broken "google" icon ligature', () => {
+  assert.doesNotMatch(read('index.html'), /fonts\.googleapis\.com/);
+  const main = read('src/main.jsx');
+  assert.match(main, /import 'material-symbols\/outlined\.css'/);
+  assert.match(main, /import '@fontsource-variable\/inter'/);
+  for (const p of ['src/pages/Login.jsx', 'src/pages/Register.jsx']) assert.doesNotMatch(read(p), /icon="google"/, p);
+});

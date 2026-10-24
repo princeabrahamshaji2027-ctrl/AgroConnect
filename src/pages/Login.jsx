@@ -122,7 +122,9 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
         <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }}></div>
       </div>
 
-      <Button variant="secondary" icon="google" style={{ display: 'flex', justifyContent: 'center' }}>
+      {/* "google" is not a Material Symbols icon (it rendered as the word GOOGLE). No official Google mark is in the
+          repo, so the button shows text only until the branded asset is added with real Google sign-in. */}
+      <Button variant="secondary" style={{ display: 'flex', justifyContent: 'center' }}>
         Continue with Google
       </Button>
 
