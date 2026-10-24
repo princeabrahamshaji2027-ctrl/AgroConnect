@@ -5,8 +5,8 @@
 import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../src/supabase.js', import.meta.url), 'utf8');
-const url = src.match(/supabaseUrl = '([^']+)'/)[1];
-const key = src.match(/supabaseAnonKey = '([^']+)'/)[1];
+const url = src.match(/supabaseUrl = .*?'(https:[^']+)'/)[1];
+const key = src.match(/supabaseAnonKey = .*?'(eyJ[^']+)'/)[1];
 
 // Tables that must return nothing to an anonymous caller, with the reason.
 const MUST_BE_PRIVATE = {

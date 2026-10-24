@@ -10,7 +10,9 @@ export async function generateUsers(targetCount = 800) {
 
   const createdUsers = [];
   const BATCH_SIZE = 15;
-  const password = 'DemoUser@1234'; // Shared password for test accounts
+  // Shared password for generated demo accounts; kept out of git (set DEMO_SEED_PASSWORD in .env).
+  const password = process.env.DEMO_SEED_PASSWORD;
+  if (!password) throw new Error('Set DEMO_SEED_PASSWORD in .env before generating demo users.');
 
   for (let i = 0; i < targetCount; i += BATCH_SIZE) {
     const currentBatchSize = Math.min(BATCH_SIZE, targetCount - i);

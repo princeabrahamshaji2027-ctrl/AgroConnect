@@ -7,13 +7,14 @@
 create or replace function public.protect_profile_privileged_columns()
 returns trigger
 language plpgsql
-security definer
+-- SECURITY INVOKER on purpose: the check below relies on current_user being the caller's role.
 set search_path = public
 as $$
 begin
-  -- Only enforce for API callers (anon / authenticated). Service-role scripts, the auth signup trigger
-  -- and SECURITY DEFINER admin RPCs called by an admin keep working.
-  if coalesce(auth.role(), '') not in ('anon', 'authenticated') or public.is_admin() then
+  -- Only enforce for statements sent straight from a client: PostgREST runs them as anon/authenticated.
+  -- Inside SECURITY DEFINER functions (admin RPCs, counter triggers, the auth signup trigger) current_user is the
+  -- function owner, and service-role scripts run as service_role, so those keep working.
+  if current_user not in ('anon', 'authenticated') or public.is_admin() then
     return new;
   end if;
 
@@ -47,5 +48,5 @@ create trigger protect_profile_privileged_columns
   before insert or update on public.profiles
   for each row execute function public.protect_profile_privileged_columns();
 
--- NOTE: if follower_count/post_count are maintained by triggers on followers/posts, those triggers run as the
--- calling user; make them SECURITY DEFINER (or drop the two counter checks above) before applying.
+-- NOTE: if follower_count/post_count are maintained by triggers that are NOT security definer, they run as the
+-- calling user and will now be rejected. Check 00_readonly_verification.sql section 9 before applying.

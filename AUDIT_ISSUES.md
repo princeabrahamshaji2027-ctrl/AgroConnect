@@ -59,3 +59,35 @@ No secrets are reproduced here. Where a credential is involved, only the file is
 | AUD-027 | Low | Dead code: `src/mock/*.json` (unreferenced), admin `Products.jsx`, `Orders.jsx`, `Categories.jsx` (routes show Coming Soon). 52 oxlint warnings (unused vars, hook deps), 0 errors. |
 | AUD-030 | Low | `seed/lib/supabaseAdmin.js` silently falls back to the anon key when the service key is missing, so seed scripts "succeed" with partial writes. |
 | AUD-031 | Low | `android:allowBackup="true"` lets the Supabase session in WebView storage be included in device backups. |
+
+---
+
+## Remediation pass (2026-10-24, second session) — status updates
+
+"Ready" = code/SQL written and tested on the disposable PostgreSQL copy (`npm run test:db`); **not applied to production**.
+
+| ID | New status | What changed / evidence |
+|---|---|---|
+| AUD-001/002 | Fixed in code; **rotation BLOCKED on owner** | Credential map and rotation steps in `REMEDIATION_STATUS.md`. |
+| AUD-003 | Ready (01) | Test shows a farmer CAN self-promote on the baseline, and CANNOT after 01. Admin RPCs, "leave expert mode" and normal edits still work. Bug caught in my own first draft: the trigger function must be SECURITY INVOKER (fixed). |
+| AUD-008 | Ready (02, now RESTRICTIVE policies — no need to know live policy names) | Test: anon reads 4→0 rows, signed-in unchanged. Live probe still FAILS until applied. |
+| AUD-012 | Ready (03) | Test proves the repo's `is_banned()` errors at runtime (`profiles.status` doesn't exist) and that this also breaks non-admin profile updates; fixed by 03. |
+| AUD-013 | Ready (05) + client refactored | Reminders, no-show cancellation, refunds and admin alerts now run only in `process_consultation_lifecycle()` (pg_cron, every minute). `Connect.jsx` has no notification writes left. |
+| AUD-014 | Ready (05) + client refactored | `book_consultation_slot` (row lock + partial unique index + idempotent duplicate submit); cancel/join/complete RPCs; direct booking writes revoked. |
+| AUD-015 | Diagnosed; repair Ready (06, `seed/test-fixtures.js`) | Root cause confirmed (no `experts` row; seeder never created one). |
+| AUD-016 | Unchanged | Scenario D still unevidenced; the device run is BLOCKED on staging. |
+| AUD-024 | Partly fixed | Removed the unused `nowTick` state that re-rendered Catch Up every second. |
+| AUD-030 | Fixed | `seed/test-fixtures.js` refuses to run without the service-role key and refuses the production project. |
+
+### New findings
+
+| ID | Sev | Module | Description | Status |
+|---|---|---|---|---|
+| AUD-032 | High | Catch Up — farmer cancel | The farmer's appointment objects had no `slotId`, so a farmer cancellation never freed the slot (it stayed `is_booked` forever). Also, notifications were written for the expert and **every admin** from the farmer's browser. | Fixed by the 05 RPC (server frees the slot via `slot_id`). Test: cancellation test. |
+| AUD-033 | High | Refunds | The browser set `refund_status = 'Refunded'` (no-show: full rate; farmer cancel: 50 %) although no payment system exists. No money moved. | 05: refunds become `Pending`; `admin_settle_refund` (admin/service role) records Refunded/Failed with an audit entry; `admin_retry_refund` Failed→Pending. Terminal states block double refunds. |
+| AUD-034 | Low | Login UI | "Continue with Google" shows the word "google"/"GOOGLE" instead of an icon (`google` is not a Material Symbols name). The button also does nothing (AUD-021). | Open (device screenshot `appium-results/2026-10-24_emulator/02_login.png`). |
+| AUD-035 | Medium | App shell | Inter and Material Symbols load from fonts.googleapis.com at runtime. On a cold device launch before the network was ready, every icon rendered as its ligature name ("person", "lock", "visibility") and the text fell back to Roboto. Rural users on poor connections will see this. | Open. Recommend bundling the fonts (e.g. `@fontsource/inter`, `material-symbols` packages) — same look, no network dependency. |
+| AUD-036 | Low | Android | Every launch logs `Error injecting safe area CSS: TypeError: Cannot read properties of null (reading 'style')` from the Capacitor bridge (runs before `<body>` exists). No visible effect observed. | Open. |
+| AUD-037 | Medium | Seeds | `seed/generators/users.js` hard-coded the shared password for all generated demo users. | Fixed (reads `DEMO_SEED_PASSWORD`). Old value is in git history: rotate/delete those accounts if they exist in production. |
+| AUD-038 | High | Release process | 05 and the new `Connect.jsx` must ship together. The new client calls RPCs that production doesn't have yet, and after 05, already-installed old APKs can no longer book or cancel. | Documented release order in `REMEDIATION_STATUS.md`. Consider a forced-update broadcast (the app already supports `action_type = 'forced'`). |
+| AUD-039 | Info | Business rule | When an **expert** cancels, the farmer gets no refund (copied from the existing code). Probably unintended. | Product decision; not changed. |

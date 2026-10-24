@@ -1,16 +1,18 @@
-# Proposed database changes — NOT APPLIED
+# Proposed database changes — NOT APPLIED TO PRODUCTION
 
-These SQL files come out of the 2026-10-24 audit (`AUDIT_ISSUES.md`). They are deliberately **outside**
-`supabase/migrations/` so that no `supabase db push` picks them up by accident. Rules.md §4.1 requires explicit
-owner approval before any schema/policy change.
+Kept outside `supabase/migrations/` so `supabase db push` cannot apply them by accident (Rules.md §4.1).
+All of them are tested on a disposable PostgreSQL copy: `npm run test:db` (tests/db, PGlite).
+Gate, risks and rollback: `REMEDIATION_STATUS.md`.
 
 | File | Purpose | Writes? |
 |---|---|---|
-| `00_readonly_verification.sql` | Dumps live RLS policies, triggers and function bodies so the suspected issues below can be confirmed. Run first in the Supabase SQL editor. | No (read-only) |
-| `01_protect_profile_privileged_columns.sql` | AUD-003: stops a signed-in user from changing their own `role`, ban fields or counters through the `profiles_update` policy. | Trigger + function |
-| `02_profiles_require_sign_in.sql` | AUD-008: removes anonymous read access to `profiles`, `farmer_profiles`, `followers`. | Policies |
-| `03_fix_security_definer_functions.sql` | AUD-012: `is_banned()` references a column that does not exist; pins `search_path` on SECURITY DEFINER helpers. | Functions |
-| `04_book_consultation_rpc.sql` | AUD-014: atomic, race-free booking RPC (Rules.md §3.4). Client is **not** switched to it yet. | Function |
+| `00_readonly_verification.sql` | Live policies, triggers, function bodies, data checks. Proven read-only (runs in a READ ONLY transaction). | No |
+| `01_protect_profile_privileged_columns.sql` | AUD-003: clients cannot change their own role, ban fields or counters. | Trigger |
+| `02_profiles_require_sign_in.sql` | AUD-008: RESTRICTIVE policies block anonymous reads of profiles, farmer_profiles, followers. | Policies |
+| `03_fix_security_definer_functions.sql` | AUD-012: working `is_banned()`, pinned `search_path`. | Functions |
+| `05_consultation_lifecycle_server_side.sql` | AUD-013/014/032/033: booking, cancel, join, complete, scheduled reminders/no-shows, refund settlement, notification/slot/expert/review guards. Supersedes the old 04. | Functions, triggers, policies, grants, cron |
+| `06_repair_test_fixtures.sql` | AUD-015: makes `expert1@agroconnect.local` a valid approved expert; resets the other fixtures. | Fixture data |
+| `99_rollback.sql` | Undo 01, 02, 05. | Drops |
 
-Recommended order: run `00`, review the output, then apply `01`–`03` in a staging copy first, re-run `npm run test:rls`
-(expects 0 failures after `02`), and smoke-test login, feed, profile and Catch Up.
+Order: 00 (review) → 01 → 02 → 03 → 05 → 06 (staging). Once approved and applied, move them into
+`supabase/migrations/` with date prefixes.

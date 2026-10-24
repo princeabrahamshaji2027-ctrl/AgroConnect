@@ -31,3 +31,5 @@ __pycache__/
 native_screen.png
 test_init.png
 page_source.xml
+test-results/
+playwright-report/

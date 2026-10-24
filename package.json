@@ -12,8 +12,11 @@
     "seed:cleanup": "node seed/cleanup.js",
     "seed:fixtures": "node seed/test-fixtures.js",
     "seed:fixtures:reset": "node seed/test-fixtures.js --reset",
-    "test": "node src/utils/validation.test.js && node --test tests/*.test.js",
-    "test:rls": "node tests/rls-anon-probe.mjs"
+    "test": "node src/utils/validation.test.js && node --test tests/*.test.js && node --test tests/db/*.test.mjs",
+    "test:rls": "node tests/rls-anon-probe.mjs",
+    "test:db": "node --test tests/db/*.test.mjs",
+    "test:e2e": "playwright test",
+    "test:staging": "node --test tests/e2e/staging-api.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -31,7 +34,9 @@
     "react-swipeable": "^7.0.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@faker-js/faker": "^10.5.0",
+    "@playwright/test": "1.64.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",

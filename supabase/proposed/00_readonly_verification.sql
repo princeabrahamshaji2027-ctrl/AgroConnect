@@ -45,3 +45,31 @@ select id, full_name, created_at from public.profiles where role = 'Admin';
 select slot_id, count(*) from public.consultation_bookings
 where slot_id is not null and status = 'Booked'
 group by slot_id having count(*) > 1;
+
+-- 9. Functions that write notifications or profile counters, and whether they are SECURITY DEFINER.
+--    Any row with prosecdef = false that is used by a trigger will be blocked by 01/05 guards: make it
+--    SECURITY DEFINER (or move it into a definer function) before applying 01 and 05.
+select p.proname, p.prosecdef,
+       pg_get_functiondef(p.oid) ~* 'insert\s+into\s+(public\.)?notifications' as writes_notifications,
+       pg_get_functiondef(p.oid) ~* '(follower_count|post_count)' as writes_profile_counters
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.prokind = 'f'
+  and (pg_get_functiondef(p.oid) ~* 'insert\s+into\s+(public\.)?notifications'
+       or pg_get_functiondef(p.oid) ~* '(follower_count|post_count)');
+
+-- 10. All triggers in public (which functions above are actually wired to tables)
+select event_object_table, trigger_name, action_timing, event_manipulation, action_statement
+from information_schema.triggers where trigger_schema = 'public' order by 1, 2;
+
+-- 11. Is pg_cron available/enabled for the 05 lifecycle job?
+select name, default_version, installed_version from pg_available_extensions where name = 'pg_cron';
+
+-- 12. Unexpected refund_status values (05 adds a NOT VALID check constraint)
+select refund_status, count(*) from public.consultation_bookings group by 1;
+
+-- 13. Test-fixture state (AUD-015): role vs experts row vs latest application, for the *.agroconnect.local accounts
+select u.email, p.role, (e.id is not null) as has_experts_row, e.is_active,
+       (select a.status from public.expert_applications a where a.user_id = p.id order by a.created_at desc limit 1) as latest_application,
+       (select count(*) from public.consultation_slots s where s.expert_id = e.id and s.slot_date >= current_date) as future_slots
+from auth.users u join public.profiles p on p.id = u.id left join public.experts e on e.user_id = p.id
+where u.email like '%@agroconnect.local' order by u.email;

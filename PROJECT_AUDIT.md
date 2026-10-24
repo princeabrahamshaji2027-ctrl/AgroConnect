@@ -198,3 +198,45 @@ What blocks 9/10, in order:
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase Edge Function secrets (set automatically) | WIP `delete-user` |
 
 Note: `.env.example` is matched by the `.env.*` ignore rule and is therefore not in git.
+
+---
+
+## 13. Remediation pass (2026-10-24, second session)
+
+Full checklist, credential map, Render settings and the production gate: **`REMEDIATION_STATUS.md`**.
+
+### Architecture change (ready, not deployed)
+Consultation lifecycle moved from the browser into PostgreSQL. This needs `supabase/proposed/05_*.sql` to be applied
+**together with** the new client.
+
+```
+Browser (Connect.jsx) ── rpc ──> book_consultation_slot / cancel_consultation_booking / join_consultation / complete_consultation
+                                   (SECURITY DEFINER, validate caller + state, one transaction each)
+pg_cron (every minute) ─────────> process_consultation_lifecycle()  reminders · expert no-show · refund Pending · admin alerts
+Admin / payment Edge Function ──> admin_settle_refund / admin_retry_refund
+Guards (triggers, independent of live policy names): notifications only for self/admin · slot is_booked server-only ·
+expert counters admin-only · reviews only for own completed bookings. Direct INSERT/UPDATE/DELETE on bookings revoked.
+RESTRICTIVE read policies: bookings visible to their two participants and admins only.
+```
+Both frontends now accept `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` at build time (defaults unchanged), so a
+staging build is possible.
+
+### Test infrastructure added
+`npm run test:db` (24 SQL tests on a disposable PGlite copy), `npm run test:e2e` (Playwright, local Chrome),
+`npm run test:staging` (authenticated API E2E; staging only), `scripts/export-live-schema.sh` (schema-only export).
+
+### Updated quality score
+
+| Category | Weight | After audit | Now | Why |
+|---|---:|---:|---:|---|
+| Core feature correctness | 25% | 5.5 | 6.0 | Farmer-cancel slot leak and fake refunds fixed in code; signed-in flows still unverified. |
+| Integration & persistence | 20% | 5.5 | 6.5 | Booking lifecycle is transactional and tested, but only on the reconstructed copy. |
+| Security & authorization | 20% | 3.0 | 4.0 | Fixes for privilege escalation, PII exposure and notification forgery are written and tested, but **none are applied to production**, and the passwords are **not rotated**. Live exposure is unchanged. |
+| Automated testing & regression | 15% | 3.5 | 6.0 | 24 DB, 13 regression, 5 browser E2E passing; staging suites written but BLOCKED. |
+| Stability & error handling | 10% | 6.0 | 6.5 | Server-side validation gives consistent errors; no device crash. |
+| Performance, accessibility, usability | 10% | 5.0 | 5.5 | Removed per-second re-render; found font/icon network dependency (AUD-035). |
+| **Weighted** | | **4.7** | **5.7** | |
+
+Expected once you rotate the passwords, apply 01–03 and 05, and the staging E2E plus device expert scenario pass:
+about 7.5. Reaching 9 additionally needs the real schema in git with CI running `test:db` against it, bundled fonts,
+a real video/payment provider or honest labelling of those features, and pagination.

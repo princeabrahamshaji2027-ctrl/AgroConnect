@@ -281,150 +281,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [cancelCalYear, setCancelCalYear] = useState(new Date().getFullYear());
   const [cancelCalMonth, setCancelCalMonth] = useState(new Date().getMonth());
 
-  // Live Countdown Tick state
-  const [nowTick, setNowTick] = useState(Date.now());
 
-  useEffect(() => {
-    const timer = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Periodic check for Reminders (24h, Day-of, 30m, 10m expert) and 5-min Expert Auto-Cancel
-  useEffect(() => {
-    const checkRemindersAndNoShows = async () => {
-      if (!appointments || appointments.length === 0) return;
-      const now = Date.now();
-
-      for (const appt of appointments) {
-        if (!appt.date || !appt.time) continue;
-        const timeClean = appt.time.length === 5 ? `${appt.time}:00` : appt.time;
-        const startMs = new Date(`${appt.date}T${timeClean}`).getTime();
-        if (isNaN(startMs)) continue;
-
-        // Fetch fresh status and flags for this booking
-        const { data: freshBooking } = await supabase
-          .from('consultation_bookings')
-          .select('*, consultation_slots(rate)')
-          .eq('id', appt.id)
-          .maybeSingle();
-
-        if (!freshBooking || freshBooking.status !== 'Booked') continue;
-
-        const diffMs = startMs - now;
-        const farmerUserId = freshBooking.farmer_id ? appt.farmerUserId : null;
-        const expertUserId = appt.expertUserId;
-
-        // 1. Reminders (24h before)
-        if (diffMs > 0 && diffMs <= 24 * 60 * 60 * 1000 && !freshBooking.notified_24h) {
-          const msg = `Reminder: Consultation on ${appt.date} at ${formatTime12h(appt.time)} is tomorrow`;
-          if (farmerUserId) {
-            await supabase.from('notifications').insert({ user_id: farmerUserId, type: 'meeting_reminder_24h', message: msg, related_id: appt.id });
-          }
-          if (expertUserId) {
-            await supabase.from('notifications').insert({ user_id: expertUserId, type: 'meeting_reminder_24h', message: msg, related_id: appt.id });
-          }
-          await supabase.from('consultation_bookings').update({ notified_24h: true }).eq('id', appt.id);
-        }
-
-        // 2. Day-of Reminder
-        const isToday = formatDateYYYYMMDD(new Date()) === appt.date;
-        if (isToday && !freshBooking.notified_dayof) {
-          const msg = `Reminder: You have a consultation scheduled today at ${formatTime12h(appt.time)}`;
-          if (farmerUserId) {
-            await supabase.from('notifications').insert({ user_id: farmerUserId, type: 'meeting_reminder_dayof', message: msg, related_id: appt.id });
-          }
-          if (expertUserId) {
-            await supabase.from('notifications').insert({ user_id: expertUserId, type: 'meeting_reminder_dayof', message: msg, related_id: appt.id });
-          }
-          await supabase.from('consultation_bookings').update({ notified_dayof: true }).eq('id', appt.id);
-        }
-
-        // 3. 30-min Reminder
-        if (diffMs > 0 && diffMs <= 30 * 60 * 1000 && !freshBooking.notified_30min) {
-          const msg = `Reminder: Consultation starts in 30 minutes (${formatTime12h(appt.time)})`;
-          if (farmerUserId) {
-            await supabase.from('notifications').insert({ user_id: farmerUserId, type: 'meeting_reminder_30min', message: msg, related_id: appt.id });
-          }
-          if (expertUserId) {
-            await supabase.from('notifications').insert({ user_id: expertUserId, type: 'meeting_reminder_30min', message: msg, related_id: appt.id });
-          }
-          await supabase.from('consultation_bookings').update({ notified_30min: true }).eq('id', appt.id);
-        }
-
-        // 4. 10-min Expert Reminder
-        if (isCurrentExpert && diffMs > 0 && diffMs <= 10 * 60 * 1000 && !freshBooking.notified_expert_10min) {
-          const { data: { user: currentUser } } = await supabase.auth.getUser();
-          if (currentUser) {
-            await supabase.from('notifications').insert({
-              user_id: currentUser.id,
-              type: 'meeting_reminder_expert_10min',
-              message: `Upcoming consultation starts in 10 minutes. Please prepare to join.`,
-              related_id: appt.id
-            });
-          }
-          await supabase.from('consultation_bookings').update({ notified_expert_10min: true }).eq('id', appt.id);
-        }
-
-        // 5. Expert 5-min No-Show Auto-Cancellation
-        if (now >= startMs + 5 * 60 * 1000 && freshBooking.status === 'Booked' && !freshBooking.expert_joined_at) {
-          const slotRate = freshBooking.consultation_slots?.rate || 500;
-          await supabase.from('consultation_bookings').update({
-            status: 'Cancelled',
-            cancellation_reason: 'Expert did not join within 5 minutes of the scheduled start time (auto-cancelled)',
-            refund_status: 'Refunded',
-            refund_amount: slotRate
-          }).eq('id', appt.id);
-
-          if (freshBooking.slot_id) {
-            await supabase.from('consultation_slots').update({ is_booked: false }).eq('id', freshBooking.slot_id);
-          }
-
-          if (farmerUserId) {
-            await supabase.from('notifications').insert({
-              user_id: farmerUserId,
-              type: 'meeting_auto_cancelled',
-              message: `Meeting on ${appt.date} was auto-cancelled because expert did not join within 5 minutes. Full refund of ₹${slotRate} initiated.`,
-              related_id: appt.id
-            });
-          }
-
-          if (expertUserId) {
-            await supabase.from('notifications').insert({
-              user_id: expertUserId,
-              type: 'no_show_flagged',
-              message: `You missed your scheduled consultation on ${appt.date} at ${formatTime12h(appt.time)}. The session was auto-cancelled.`,
-              related_id: appt.id
-            });
-          }
-
-          // Increment expert no_show_count
-          if (freshBooking.expert_id) {
-            const { data: expRow } = await supabase.from('experts').select('no_show_count').eq('id', freshBooking.expert_id).single();
-            const currentCount = expRow?.no_show_count || 0;
-            await supabase.from('experts').update({ no_show_count: currentCount + 1 }).eq('id', freshBooking.expert_id);
-          }
-
-          // Notify all admins
-          const { data: adminProfiles } = await supabase.from('profiles').select('id').eq('role', 'Admin');
-          if (adminProfiles) {
-            for (const admin of adminProfiles) {
-              await supabase.from('notifications').insert({
-                user_id: admin.id,
-                type: 'expert_no_show_admin_alert',
-                message: `Expert No-Show Alert: Meeting ${appt.id.slice(0, 8)} on ${appt.date} was auto-cancelled.`,
-                related_id: appt.id
-              });
-            }
-          }
-          fetchData();
-        }
-      }
-    };
-
-    checkRemindersAndNoShows();
-    const reminderTimer = setInterval(checkRemindersAndNoShows, 60000);
-    return () => clearInterval(reminderTimer);
-  }, [appointments, isCurrentExpert]);
+  // Reminders, expert no-show cancellation and refunds run on the server
+  // (process_consultation_lifecycle, scheduled by pg_cron) — see supabase/proposed/05_*.sql.
 
 
   // Rebuilt Manage Availability States
@@ -939,81 +798,25 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    let { data: farmerProfile } = await supabase
-      .from('farmer_profiles')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (!farmerProfile) {
-      const { data: newFarmer } = await supabase
-        .from('farmer_profiles')
-        .insert({ user_id: user.id })
-        .select('id')
-        .single();
-      farmerProfile = newFarmer;
-    }
-
-    const dateToUse = selectedSlot ? selectedSlot.slot_date : bookingDate;
-    const timeToUse = selectedSlot ? selectedSlot.start_time : bookingTime;
-
-    if (!dateToUse || !timeToUse) {
+    if (!selectedSlot) {
       alert('Please select an available time slot.');
       return;
     }
 
-    // Insert booking
-    const { error: bookingErr } = await supabase
-      .from('consultation_bookings')
-      .insert({
-        expert_id: selectedExpert.id,
-        farmer_id: farmerProfile.id,
-        slot_id: selectedSlot ? selectedSlot.id : null,
-        meeting_date: dateToUse,
-        meeting_time: timeToUse,
-        issue_description: bookingIssue,
-        status: 'Booked'
-      });
+    // One server-side transaction: validates the slot, locks it, creates the booking and the meeting room.
+    const { error: bookingErr } = await supabase.rpc('book_consultation_slot', {
+      p_slot_id: selectedSlot.id,
+      p_issue: bookingIssue
+    });
 
     if (bookingErr) {
-      if (bookingErr.code === '23505' || bookingErr.message.includes('unique') || bookingErr.message.includes('slot')) {
+      if (bookingErr.code === '23505') {
         alert('This slot was just booked by another farmer. Please choose an available slot.');
         handleBookClick(selectedExpert);
         return;
       }
       alert(`Booking failed: ${bookingErr.message}`);
       return;
-    }
-
-    // Lock slot
-    if (selectedSlot) {
-      await supabase
-        .from('consultation_slots')
-        .update({ is_booked: true })
-        .eq('id', selectedSlot.id);
-    }
-
-    // Video meeting row
-    const { data: bookingRow } = await supabase
-      .from('consultation_bookings')
-      .select('id')
-      .eq('expert_id', selectedExpert.id)
-      .eq('farmer_id', farmerProfile.id)
-      .eq('meeting_date', dateToUse)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (bookingRow) {
-      const meetingCode = `AGRI-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-      await supabase.from('video_meetings').insert({
-        booking_id: bookingRow.id,
-        meeting_link: `https://meet.agroconnect.app/${meetingCode}`,
-        status: 'Scheduled'
-      });
     }
 
     setSelectedExpert(null);
@@ -1041,10 +844,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     
     const appt = appointments.find(a => a.roomId === currentCallRoom);
     if (appt) {
-      await supabase
-        .from('consultation_bookings')
-        .update({ status: 'Completed' })
-        .eq('id', appt.id);
+      const { error } = await supabase.rpc('complete_consultation', { p_booking_id: appt.id });
+      if (error && onShowToast) onShowToast(`Meeting not marked complete: ${error.message}`);
     }
 
     setCurrentCallRoom('');
@@ -1109,36 +910,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
   const handleServerValidatedJoin = async (meeting) => {
     try {
-      const { data: latestBooking, error } = await supabase
-        .from('consultation_bookings')
-        .select('meeting_date, meeting_time, status')
-        .eq('id', meeting.id)
-        .single();
-
-      if (error || !latestBooking) {
-        alert("Could not verify meeting status. Please try again.");
-        return;
-      }
-
-      if (latestBooking.status !== 'Booked') {
-        alert("This meeting is no longer scheduled.");
+      // The server checks participation, status and the join window, and records the expert's attendance.
+      const { error } = await supabase.rpc('join_consultation', { p_booking_id: meeting.id });
+      if (error) {
+        alert(error.message || "Could not verify meeting status. Please try again.");
         fetchData();
         return;
-      }
-
-      const timeClean = latestBooking.meeting_time.length === 5 ? `${latestBooking.meeting_time}:00` : latestBooking.meeting_time;
-      const startMs = new Date(`${latestBooking.meeting_date}T${timeClean}`).getTime();
-
-      if (Date.now() < startMs - 5 * 60 * 1000) {
-        alert("The meeting start time has not been reached yet.");
-        return;
-      }
-
-      if (isCurrentExpert) {
-        await supabase
-          .from('consultation_bookings')
-          .update({ expert_joined_at: new Date().toISOString() })
-          .eq('id', meeting.id);
       }
 
       setSelectedMeetingDetail(null);
@@ -1168,34 +945,16 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       const { data: { user } } = await supabase.auth.getUser();
       const appt = selectedMeetingDetail;
 
-      const { error: updateErr } = await supabase
-        .from('consultation_bookings')
-        .update({
-          status: 'Cancelled',
-          cancellation_reason: cancelReason.trim(),
-          offered_reschedule_slots: offeredSlots
-        })
-        .eq('id', appt.id);
+      // Server updates the booking, frees the slot and notifies the farmer.
+      const { error: updateErr } = await supabase.rpc('cancel_consultation_booking', {
+        p_booking_id: appt.id,
+        p_reason: cancelReason.trim(),
+        p_offered_slots: offeredSlots
+      });
 
       if (updateErr) throw updateErr;
 
-      if (appt.slotId) {
-        await supabase
-          .from('consultation_slots')
-          .update({ is_booked: false })
-          .eq('id', appt.slotId);
-      }
-
       const farmerUserId = appt.farmerUserId;
-      if (farmerUserId) {
-        await supabase.from('notifications').insert({
-          user_id: farmerUserId,
-          type: 'meeting_cancelled_by_expert',
-          message: `Consultation on ${appt.date} was cancelled by the expert. Reason: ${cancelReason.trim()}`,
-          related_id: appt.id
-        });
-      }
-
       if (user && farmerUserId) {
         let { data: conv } = await supabase
           .from('conversations')
@@ -1265,53 +1024,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       const { data: { user } } = await supabase.auth.getUser();
       const appt = selectedMeetingDetail;
 
-      let refundAmount = 250;
-      if (appt.slotId) {
-        const { data: slotRow } = await supabase.from('consultation_slots').select('rate').eq('id', appt.slotId).maybeSingle();
-        if (slotRow && slotRow.rate) refundAmount = Number(slotRow.rate) * 0.5;
-      }
-
-      const { error: updateErr } = await supabase
-        .from('consultation_bookings')
-        .update({
-          status: 'Cancelled',
-          cancellation_reason: cancelReason.trim(),
-          refund_status: 'Refunded',
-          refund_amount: refundAmount
-        })
-        .eq('id', appt.id);
+      // Server computes the refund, frees the slot and notifies the expert and admins.
+      const { data: refundAmount, error: updateErr } = await supabase.rpc('cancel_consultation_booking', {
+        p_booking_id: appt.id,
+        p_reason: cancelReason.trim()
+      });
 
       if (updateErr) throw updateErr;
 
-      if (appt.slotId) {
-        await supabase
-          .from('consultation_slots')
-          .update({ is_booked: false })
-          .eq('id', appt.slotId);
-      }
-
       const expertUserId = appt.expertUserId;
-      if (expertUserId) {
-        await supabase.from('notifications').insert({
-          user_id: expertUserId,
-          type: 'meeting_cancelled_by_farmer',
-          message: `Meeting on ${appt.date} at ${formatTime12h(appt.time)} was cancelled by farmer. Reason: ${cancelReason.trim()}`,
-          related_id: appt.id
-        });
-      }
-
-      const { data: adminProfiles } = await supabase.from('profiles').select('id').eq('role', 'Admin');
-      if (adminProfiles) {
-        for (const admin of adminProfiles) {
-          await supabase.from('notifications').insert({
-            user_id: admin.id,
-            type: 'farmer_cancellation_admin_alert',
-            message: `Farmer Cancellation Alert: Meeting ${appt.id.slice(0, 8)} on ${appt.date} was cancelled by farmer.`,
-            related_id: appt.id
-          });
-        }
-      }
-
       if (user && expertUserId) {
         let { data: conv } = await supabase
           .from('conversations')
@@ -1350,7 +1071,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       }
 
       if (onShowToast) {
-        onShowToast(`📅 Meeting cancelled. Partial refund of ₹${refundAmount} applied.`);
+        onShowToast(`📅 Meeting cancelled. Refund of ₹${refundAmount} requested.`);
       }
 
       setIsCancelSheetOpen(false);

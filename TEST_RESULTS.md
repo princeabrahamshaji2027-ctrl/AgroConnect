@@ -73,3 +73,70 @@ Also observed read-only: `experts`, `consultation_slots`, `reviews` and approved
 | AI assistant | NOT IMPLEMENTED (UI only) | Keyword-matched canned text. |
 | Video consultation | NOT IMPLEMENTED (simulated) | No real call provider. |
 | IoT / crop disease detection | NOT IMPLEMENTED | No code present. |
+
+---
+
+## Second session (2026-10-24) — remediation verification
+
+### A. Database tests on a disposable PostgreSQL copy (`npm run test:db`, PGlite 0.5.8 = PostgreSQL 18.3)
+The copy is the reconstructed base schema (`tests/db/reconstructed_base_schema.sql`, built from observed columns and
+client code; **not** the live schema) plus the repo's 6 real migrations, then the proposed scripts.
+**24/24 PASS.**
+
+| Area | Tests |
+|---|---|
+| 00 read-only | static keyword scan; all statements execute inside `BEGIN TRANSACTION READ ONLY` |
+| 01 | baseline vulnerability reproduced (farmer → Admin); after 01: role/ban/counter edits rejected, Admin insert rejected, bio edit OK, Expert→Farmer OK, admin edit OK, `approve_expert_application` still works |
+| 02 | anon 4→0 rows on profiles, 0 on followers; authenticated unchanged |
+| 03 | old `is_banned()` errors (and breaks profile updates); fixed; banned user's edit filtered; search_path pinned |
+| 05 booking | valid booking + video room + slot lock; booked/past/own/empty-issue/anon rejected with no partial rows; duplicate submit idempotent; unique-index backstop vs double booking; direct table writes rejected; legit expert slot/profile edits allowed |
+| 05 cancel/notify | only participants; farmer refund 50 % Pending; expert must offer slots; recipients exact (expert + admins / farmer); forgery rejected; own/admin inserts OK; `_notify` not callable by clients |
+| 05 scheduler | 24 h / 30 min / expert 10 min reminders to the right people, exactly once over repeated runs; none for cancelled bookings; no-show only when Booked + not joined + 5 min late, processed once, counter +1 once, slot freed, 3 notifications; clients can't run the job |
+| 05 join/complete/review | join window enforced; non-participant rejected; completion requires expert attendance; idempotent; reviews only by the farmer of a completed booking, once |
+| 05 refunds | not eligible before cancel; non-admin rejected; simulated provider failure → Failed → retry → Pending → Refunded; no double settlement; audit + farmer notice |
+| 05 recovery | injected delivery outage rolls back the whole run (flags unchanged); next run delivers exactly once |
+| 05/99 | 05 re-runnable; rollback restores old behaviour, keeps data, re-runnable |
+| 06 | expert1 → Expert + experts row + Approved + 28 future slots; user1/3 Farmer none; user2 Pending; user4 Rejected; idempotent; non-fixture user untouched; expert1 detected as expert through RLS, not admin, can't escalate; fixture farmer books expert1 end to end |
+
+Limit: PGlite is single-connection, so two truly parallel bookings were not executed. The row lock is in the
+function, and the unique index is proven to reject a second active booking.
+
+### B. Unit/regression (`npm test` first two stages)
+Validation 27/27 PASS. Regression guards 13/13 PASS (2 new: Catch Up uses RPCs only; fixture seeder safety).
+
+### C. Browser E2E (`npm run test:e2e`, Playwright 1.64 with local Chrome, production builds via `vite preview`)
+| Test | Result |
+|---|---|
+| admin: login empty, no auto sign-in request, no service-role JWT or admin email in any JS | PASS |
+| admin: wrong credentials → "Invalid login credentials", no dashboard | PASS |
+| admin: refresh on nested path `/users/123` serves the app | PASS (local preview; Render needs the rewrite rule) |
+| app: splash → empty login; register validation | PASS |
+| app: wrong credentials error | PASS |
+| admin signed-in (dashboard, Users, Experts, refresh), non-admin refused; app normal user, expert1, admin redirect | BLOCKED — skipped, needs staging (`E2E_STAGING=1` + credentials) |
+Screenshots: `appium-results/2026-10-24_web/`.
+
+### D. Staging API E2E (`npm run test:staging`)
+8 tests (anon isolation, profile persistence, self-promotion, notification forgery, admin/scheduler RPC
+rejection, direct booking writes, sign-out, expert1 validity, full book → see → isolate → cancel → refund →
+notify cycle, admin reads). **BLOCKED — all skipped** (no staging project). The suite refuses the production URL.
+
+### E. Android emulator (Pixel-class AVD, API 36.1, debug APK with the refactor)
+| Step | Result | Evidence |
+|---|---|---|
+| Install + launch (`am start`, 3.8 s) | PASS | — |
+| Splash → login, empty fields | PASS | `appium-results/2026-10-24_emulator/01_splash.png`, `02_login.png` |
+| Wrong credentials | PASS ("Invalid login credentials") | `03_invalid_login.png` |
+| Hardware back on login | PASS (stays in app) | — |
+| Landscape rotation | PASS (login still rendered) | `04_landscape_login.png` |
+| Force-stop + relaunch | PASS (back to login, no crash) | `05_relaunch.png` |
+| Crash check (logcat FATAL/AndroidRuntime) | PASS (none) | — |
+| Icon/font rendering on cold start | **FAIL** (AUD-035) | observed before fonts loaded |
+| Expert scenario (sign in as expert1, Catch Up expert view, availability, upcoming, history, lobby, reviews, restrictions, relaunch persistence) | **BLOCKED** | needs staging fixtures |
+| Normal-user signed-in flows | **BLOCKED** | same |
+
+Note: the first wrong-credentials run showed "Failed to fetch". The cause was the emulator clock: the snapshot
+was 82 days behind, which breaks TLS. After a cold boot with the correct time it passed. Environment issue, not an
+app defect.
+
+### F. Builds
+User app build PASS. Admin build PASS. Android `assembleDebug` + unit test PASS. oxlint 0 errors.

@@ -86,3 +86,24 @@ test('AUD-011: keep-alive declares timestamp outside try so the catch block can 
   const src = read('keep-alive.js');
   assert.ok(src.indexOf('const timestamp') < src.indexOf('try {'));
 });
+
+test('AUD-013/014: Catch Up writes go through server functions, not direct table writes', () => {
+  const src = read('src/pages/Connect.jsx');
+  assert.doesNotMatch(src, /from\('notifications'\)/, 'browser must not create notifications');
+  assert.doesNotMatch(src, /from\('consultation_bookings'\)\s*\.(insert|update|delete|upsert)\(/);
+  assert.doesNotMatch(src, /from\('video_meetings'\)/);
+  assert.doesNotMatch(src, /is_booked: true/);
+  for (const fn of ['book_consultation_slot', 'cancel_consultation_booking', 'join_consultation', 'complete_consultation']) {
+    assert.match(src, new RegExp(`rpc\\('${fn}'`), fn);
+  }
+  assert.doesNotMatch(src, /checkRemindersAndNoShows/);
+  assert.doesNotMatch(src, /setNowTick/, 'no whole-page re-render every second');
+});
+
+test('AUD-015: fixture seeder creates the experts row and has no hard-coded password', () => {
+  const src = read('seed/test-fixtures.js');
+  assert.doesNotMatch(src, /SHARED_PASSWORD/);
+  assert.doesNotMatch(src, /password:\s*'[^']+'/i);
+  assert.match(src, /from\('experts'\)\.upsert/);
+  assert.match(src, /Refusing to seed fixtures into the production project/);
+});
