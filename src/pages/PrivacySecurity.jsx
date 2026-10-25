@@ -3,7 +3,7 @@ import Header from '../components/Header';
 import { Button } from '../components/Button';
 import PasswordRequirements from '../components/PasswordRequirements';
 import { validatePassword } from '../utils/validation';
-import { supabase } from '../supabase';
+import { accountSignInMethods, changePassword, requestPasswordReset } from '../utils/authRecovery';
 import './pages.css';
 
 export default function PrivacySecurity({ onGoBack }) {
@@ -17,6 +17,11 @@ export default function PrivacySecurity({ onGoBack }) {
     localStorage.getItem('biometric_enabled') === 'true'
   );
 
+  // Google-only accounts have no password; they are not asked for one.
+  const [methods, setMethods] = useState(null);
+  const [resetSent, setResetSent] = useState('');
+  useEffect(() => { accountSignInMethods().then(setMethods); }, []);
+
   useEffect(() => {
     // Biometric availability is only detectable at native runtime.
     // The toggle appears only when explicitly supported — leave as false on web.
@@ -25,9 +30,14 @@ export default function PrivacySecurity({ onGoBack }) {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
+    if (saving) return;
     setMessage(null);
 
-    const pwdVal = validatePassword(newPassword);
+    if (!currentPassword) {
+      setMessage({ type: 'error', text: 'Please enter your current password.' });
+      return;
+    }
+    const pwdVal = validatePassword(newPassword, methods?.user?.email || '');
     if (!pwdVal.isValid) {
       setMessage({ type: 'error', text: pwdVal.errors[0] });
       return;
@@ -37,18 +47,24 @@ export default function PrivacySecurity({ onGoBack }) {
       return;
     }
     setSaving(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      setMessage({ type: 'success', text: 'Password updated successfully.' });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err) {
-      setMessage({ type: 'error', text: err.message || 'Failed to update password.' });
-    } finally {
-      setSaving(false);
+    // Supabase Auth checks the current password (not this screen); only then is the new one saved.
+    const res = await changePassword(currentPassword, newPassword);
+    setSaving(false);
+    setCurrentPassword('');
+    if (!res.ok) {
+      setMessage({ type: 'error', text: res.error });
+      return;
     }
+    setMessage({ type: 'success', text: 'Password updated successfully.' });
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  // Google-only account that wants a password as well: same e-mailed link as "Forgot Password?".
+  const handleSendSetPasswordLink = async () => {
+    setResetSent('');
+    const res = await requestPasswordReset(methods?.user?.email || '');
+    setResetSent(res.ok ? 'We sent a link to your email to set a password.' : res.error);
   };
 
   const toggleBiometric = () => {
@@ -67,12 +83,31 @@ export default function PrivacySecurity({ onGoBack }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Change Password</h3>
           
+          {methods && !methods.hasPassword ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+              <p>You sign in with Google, so your account has no AgroConnect password to change. Keep using "Continue with Google".</p>
+              <p>Want to sign in with email and password too? We can email you a link to set one.</p>
+              <Button type="button" variant="secondary" onClick={handleSendSetPasswordLink}>Email me a link to set a password</Button>
+              {resetSent && <div role="status" style={{ color: 'var(--primary-green)' }}>{resetSent}</div>}
+            </div>
+          ) : (
           <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
+              placeholder="Current password"
+              aria-label="Current password"
+              autoComplete="current-password"
+              style={{ padding: '14px 16px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'white', fontSize: '14px', outline: 'none' }}
+            />
             <input
               type="password"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               placeholder="New password"
+              aria-label="New password"
+              autoComplete="new-password"
               style={{ padding: '14px 16px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'white', fontSize: '14px', outline: 'none' }}
             />
             <input
@@ -80,6 +115,8 @@ export default function PrivacySecurity({ onGoBack }) {
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Confirm new password"
+              aria-label="Confirm new password"
+              autoComplete="new-password"
               style={{ padding: '14px 16px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'white', fontSize: '14px', outline: 'none' }}
             />
 
@@ -109,6 +146,7 @@ export default function PrivacySecurity({ onGoBack }) {
               {saving ? 'Updating...' : 'Update Password'}
             </Button>
           </form>
+          )}
         </div>
 
         {/* Biometric Lock — only shown on native devices with biometric support */}

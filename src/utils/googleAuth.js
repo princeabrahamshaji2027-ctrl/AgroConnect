@@ -3,6 +3,7 @@
 // Android: Google refuses sign-in inside an embedded WebView, so the system browser opens and Google returns to
 // <applicationId>://auth-callback (intent filter in AndroidManifest.xml); App.jsx exchanges the code.
 import { supabase, supabaseUrl, supabaseAnonKey } from '../supabase';
+import { friendlyAuthError } from './authRecovery';
 
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 export const AUTH_CALLBACK_HOST = 'auth-callback';
@@ -44,17 +45,19 @@ export async function signInWithGoogle() {
   await Browser.open({ url: data.url });
 }
 
-// Android: called with the deep link Google/Supabase sent back. Returns true when a session was created.
-export async function completeNativeGoogleSignIn(url) {
-  if (!url || !url.includes(`://${AUTH_CALLBACK_HOST}`)) return false;
+// Android: called with the deep link Supabase sent back — after Google sign-in OR a password-reset e-mail.
+// Returns null for unrelated links, else { recovery } — recovery is true only when this device started a password
+// reset (supabase-js stores that with the PKCE verifier), never because the link says so.
+export async function completeNativeAuthCallback(url) {
+  if (!url || !url.includes(`://${AUTH_CALLBACK_HOST}`)) return null;
   const { Browser } = await import('@capacitor/browser');
   Browser.close().catch(() => {});
   const params = new URL(url.replace(/#/, '?')).searchParams;
-  const err = params.get('error_description') || params.get('error');
-  if (err) throw new Error(err);
+  const err = params.get('error_code') || params.get('error_description') || params.get('error');
+  if (err) throw new Error(friendlyAuthError({ message: err }));
   const code = params.get('code');
-  if (!code) return false;
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error) throw error;
-  return true;
+  if (!code) return null;
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) throw new Error(friendlyAuthError(error));
+  return { recovery: data?.redirectType === 'recovery' };
 }

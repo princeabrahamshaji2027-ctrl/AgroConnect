@@ -6,7 +6,7 @@ import './pages.css';
 
 import { supabase } from '../supabase';
 
-export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin }) {
+export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin, onForgotPassword }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -109,7 +109,14 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
             <input type="checkbox" id="remember" style={{ accentColor: 'var(--primary-green)' }} />
             <label htmlFor="remember">Remember me</label>
           </span>
-          <span className="auth-link" style={{ fontSize: '13px' }}>Forgot Password?</span>
+          <button
+            type="button"
+            className="auth-link"
+            onClick={onForgotPassword}
+            style={{ fontSize: '13px', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+          >
+            Forgot Password?
+          </button>
         </div>
 
         <Button type="submit" variant="primary" style={{ marginTop: '16px' }}>

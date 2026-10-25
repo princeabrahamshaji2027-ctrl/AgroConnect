@@ -12,6 +12,7 @@ const appURL = process.env.E2E_APP_URL || 'http://localhost:4174';
 export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: /.*\.spec\.mjs/,
+  globalSetup: './tests/e2e/global-setup.mjs', // refuses signed-in runs against non-staging builds
   timeout: 60_000,
   reporter: [['list']],
   outputDir: 'test-results/e2e',

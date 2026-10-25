@@ -17,8 +17,10 @@ import NavBar from './components/NavBar';
 import { FAB } from './components/Button';
 import './index.css';
 
-import { supabase } from './supabase';
-import { completeNativeGoogleSignIn } from './utils/googleAuth';
+import { supabase, RECOVERY_FLAG } from './supabase';
+import { completeNativeAuthCallback } from './utils/googleAuth';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 export default function App() {
   const [screen, setScreen] = useState('splash'); // 'splash' | 'login' | 'register' | 'adminDashboard' | 'appLayout'
@@ -148,19 +150,22 @@ export default function App() {
     };
   }, [subScreen, viewingProfileId, activeTab]);
 
-  // Android: Google sign-in comes back through the <applicationId>://auth-callback deep link.
+  // Android: Google sign-in and password-reset links come back through <applicationId>://auth-callback.
   useEffect(() => {
     if (!window.Capacitor?.isNativePlatform?.()) return;
     let handle;
     import('@capacitor/app').then(({ App: CapApp }) => {
       handle = CapApp.addListener('appUrlOpen', async ({ url }) => {
         try {
-          if (await completeNativeGoogleSignIn(url)) {
+          const result = await completeNativeAuthCallback(url);
+          if (result?.recovery) {
+            setScreen('resetPassword');
+          } else if (result) {
             await handleSplashFinish();
             showToastNotification('🔓 Signed in with Google');
           }
         } catch (err) {
-          showToastNotification(`Google sign-in failed: ${err.message}`);
+          showToastNotification(`Sign-in link failed: ${err.message}`);
         }
       });
     });
@@ -170,6 +175,14 @@ export default function App() {
   // Handlers for main flow
   const handleSplashFinish = async () => {
     const { data: { session } } = await supabase.auth.getSession();
+    // Web: back from a password-reset e-mail (flag set by supabase.js on PASSWORD_RECOVERY)
+    let recovering = false;
+    try { recovering = sessionStorage.getItem(RECOVERY_FLAG) === '1'; } catch { /* storage blocked */ }
+    if (recovering && session) {
+      window.history.replaceState(null, '', window.location.pathname);
+      setScreen('resetPassword');
+      return;
+    }
     // Web: back from Google with ?code=... (supabase-js has exchanged it by now); keep the address bar clean.
     if (/[?&](code|error)=/.test(window.location.search)) {
       const err = new URLSearchParams(window.location.search).get('error_description');
@@ -208,6 +221,7 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (role) => {
+    try { sessionStorage.removeItem(RECOVERY_FLAG); } catch { /* ignore */ }
     if (role === 'admin') {
       showToastNotification('⚠️ Administrators must log in via the Admin Panel website.');
       await supabase.auth.signOut();
@@ -224,6 +238,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    try { sessionStorage.removeItem(RECOVERY_FLAG); } catch { /* ignore */ }
     try {
       await supabase.auth.signOut();
     } catch (err) {
@@ -518,6 +533,30 @@ export default function App() {
         <Login 
           onLoginSuccess={handleLoginSuccess}
           onGoToRegister={() => setScreen('register')}
+          onForgotPassword={() => setScreen('forgotPassword')}
+        />
+      )}
+
+      {screen === 'forgotPassword' && (
+        <ForgotPassword onBackToLogin={() => setScreen('login')} />
+      )}
+
+      {screen === 'resetPassword' && (
+        <ResetPassword
+          onDone={async () => {
+            try { sessionStorage.removeItem(RECOVERY_FLAG); } catch { /* ignore */ }
+            // sign out the recovery session; the user logs in again with the new password
+            await supabase.auth.signOut();
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user_role');
+            setScreen('login');
+            showToastNotification('🔑 Password updated. Please log in with your new password.');
+          }}
+          onCancel={async () => {
+            try { sessionStorage.removeItem(RECOVERY_FLAG); } catch { /* ignore */ }
+            await supabase.auth.signOut();
+            setScreen('login');
+          }}
         />
       )}
 

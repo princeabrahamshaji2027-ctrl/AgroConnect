@@ -298,3 +298,91 @@ test.describe('Catch Up meetings (staging)', () => {
     await expect(page.getByText(/Your consultation with Dr\. Ramesh Expert is booked for/).first()).toBeVisible({ timeout: 15_000 });
   });
 });
+
+// Account recovery (2026-10-25). Reset e-mails are only requested for unregistered addresses (no mail is sent).
+test.describe('account recovery (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  const unique = (tag) => `agroconnect-stg-${tag}${Date.now()}-${process.env.FIXTURE_EMAIL_TOKEN}@${process.env.FIXTURE_EMAIL_DOMAIN}`;
+
+  test('Forgot Password: invalid address, generic reply for an unregistered one, no double submit', async ({ page }) => {
+    await toLogin(page);
+    await page.getByRole('button', { name: 'Forgot Password?' }).click();
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
+    const email = page.getByLabel('Email address');
+    await email.fill('not-an-email');
+    await page.getByRole('button', { name: 'Send reset link' }).click();
+    await expect(page.getByRole('alert')).toContainText(/valid email/i);
+
+    let calls = 0;
+    page.on('request', (r) => { if (r.url().includes('/auth/v1/recover')) calls += 1; });
+    await email.fill(unique('noacct'));
+    const send = page.getByRole('button', { name: 'Send reset link' });
+    await send.click();
+    await send.click({ timeout: 500 }).catch(() => {});   // second tap while sending is ignored
+    await expect(page.getByText('If an account exists for this email, password-reset instructions will be sent.')).toBeVisible({ timeout: 15_000 });
+    expect(calls).toBe(1);
+    await page.getByRole('button', { name: 'Back to Log In' }).click();
+    await expect(page.getByText('Welcome Back')).toBeVisible();
+  });
+
+  test('a fake or reused reset link never opens "Set a new password"', async ({ page }) => {
+    await page.goto('/?code=00000000-0000-0000-0000-000000000000');
+    await expect(page.getByText('Welcome Back')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Set a new password')).toHaveCount(0);
+    expect(page.url()).not.toContain('code=');
+  });
+
+  test('Change Password checks the current password with Auth; correct one changes it (throwaway account)', async ({ page }) => {
+    const api = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const adminApi = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    await adminApi.auth.signInWithPassword({ email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD });
+    const email = unique('chpw');
+    const p1 = `Aa1!${Math.random().toString(36).slice(2, 10)}Zz`;
+    const p2 = `Bb2@${Math.random().toString(36).slice(2, 10)}Yy`;
+    const su = await api.auth.signUp({ email, password: p1, options: { data: { full_name: 'Change Password Test' } } });
+    if (su.error) throw su.error;
+    try {
+      await page.goto('/');
+      await expect(page.getByText('Welcome Back')).toBeVisible({ timeout: 20_000 });
+      await page.getByPlaceholder('Enter your email or username').fill(email);
+      await page.getByPlaceholder('Enter your password').fill(p1);
+      await page.getByRole('button', { name: 'Log In' }).click();
+      await nav(page, 'Profile').click();
+      await page.getByRole('button', { name: 'Profile menu' }).click();
+      await page.getByRole('button', { name: /Settings/ }).click();
+      await page.getByText(/Privacy/).first().click();
+      await page.getByLabel('Current password').fill('Wrong1!password');
+      await page.getByLabel('New password', { exact: true }).fill(p2);
+      await page.getByLabel('Confirm new password').fill(p2);
+      await page.getByRole('button', { name: 'Update Password' }).click();
+      await expect(page.getByText('Your current password is incorrect.')).toBeVisible({ timeout: 15_000 });
+
+      await page.getByLabel('Current password').fill(p1);
+      await page.getByRole('button', { name: 'Update Password' }).click();
+      await expect(page.getByText('Password updated successfully.')).toBeVisible({ timeout: 15_000 });
+      const check = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+      expect((await check.auth.signInWithPassword({ email, password: p1 })).error).toBeTruthy();
+      expect((await check.auth.signInWithPassword({ email, password: p2 })).error).toBeNull();
+    } finally {
+      await adminApi.functions.invoke('admin-delete-user', { body: { user_id: su.data.user.id } });
+    }
+  });
+
+  test('Google-only account sees no password form (identities mocked to Google only)', async ({ page }) => {
+    await login(page, fx('user1'));
+    await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
+    // MOCKED: the Auth user response is rewritten to look like a Google-only account; nothing is saved
+    await page.route('**/auth/v1/user', async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      body.identities = [{ provider: 'google', id: 'mock', user_id: body.id, identity_data: {} }];
+      await route.fulfill({ response: res, json: body });
+    });
+    await nav(page, 'Profile').click();
+    await page.getByRole('button', { name: 'Profile menu' }).click();
+    await page.getByRole('button', { name: /Settings/ }).click();
+    await page.getByText(/Privacy/).first().click();
+    await expect(page.getByText(/You sign in with Google, so your account has no AgroConnect password/)).toBeVisible();
+    await expect(page.getByLabel('Current password')).toHaveCount(0);
+  });
+});
