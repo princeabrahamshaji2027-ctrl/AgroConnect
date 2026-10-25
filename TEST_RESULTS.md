@@ -429,3 +429,7 @@ Owner connected the phone over USB. Staging APK installed next to the production
 * Still not verified on a device: push delivery (no Firebase), the password-reset e-mail link (needs a real inbox),
   an actual Google Meet call between two people (external service).
 * Staging after the runs: no open phone-test bookings, no pending demo payments.
+* Follow-up (same evening): disabled buttons restyled (`.btn:disabled`: grey, no glow; `Button` ignores its `style`
+  prop, so the Join button's old opacity never applied). Rebuilt staging APK re-checked on the phone: Meet check
+  **PASS**, 0 ANR, 0 crash, production app unchanged; "Join opens … (in …)" is grey before the window and turns into the
+  green "Join Meeting" by itself at T−5 min (screenshots 26, 27).
