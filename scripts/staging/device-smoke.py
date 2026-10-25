@@ -313,8 +313,23 @@ def demo_checkout():
         day = str(int(date[8:10]))
         tap_where(lambda n: re.fullmatch(rf'{day}\s*₹\d+', (n.get('text') or '').strip()) is not None, f'date {day}')
         wait_text(r'Choose a time')
-        tap_text(re.escape(f'{t12(start)} - {t12(end)} (₹450)'))
-        tap_where(lambda n: n.get('class') == 'android.widget.EditText' and 'Explain the problem' in (n.get('hint') or n.get('text') or ''), 'issue field')
+        # the time list scrolls inside the dialog: off-screen rows are still in the accessibility tree, and tapping
+        # their coordinates would hit the backdrop (which closes the dialog). Scroll until the row is inside the list.
+        label = f'{t12(start)} - {t12(end)} (₹450)'
+        ys = lambda n: list(map(int, re.findall(r'\d+', n.get('bounds'))))
+        for _ in range(15):
+            top = [ys(n)[3] for n in nodes() if (n.get('text') or '').strip().startswith('Choose a time')]
+            bottom = [ys(n)[1] for n in nodes() if re.match(r'.*(· Fee|Demo payment — no real money)', (n.get('text') or '').strip())]
+            row = [n for n in nodes() if label in (n.get('text') or '')]
+            if row and top and bottom and top[0] + 10 < (ys(row[0])[1] + ys(row[0])[3]) // 2 < bottom[0] - 10:
+                adb('shell', 'input', 'tap', *center(row[0])); break
+            if top and bottom:
+                adb('shell', 'input', 'swipe', '540', str(bottom[0] - 30), '540', str(top[0] + 60), '400'); time.sleep(1)
+        else:
+            raise AssertionError(f'time row not reachable: {label}')
+        wait_text(r'₹450\.00')   # fee line of the selected slot (the WebView splits it into several nodes)
+        tap_where(lambda n: 'Explain the problem' in (n.get('hint') or n.get('text') or n.get('content-desc') or '')
+                  or (n.get('class') == 'android.widget.EditText' and n.get('password') != 'true'), 'issue field')
         adb('shell', 'input', 'text', 'Phone%sdemo%scheckout'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
         tap_text(r'^Pay & Book$')
         t = wait_text(r'DEMO PAYMENT — NO REAL MONEY CHARGED', 30)
@@ -330,7 +345,10 @@ def demo_checkout():
     finally:
         for b in api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}&status=eq.Booked', None, f_tok) or []:
             api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': b['id'], 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
-        api(f'/rest/v1/consultation_slots?id=eq.{slot}&is_booked=eq.false', None, e_tok, method='DELETE')
+        try:   # a slot that ever had a booking stays (the cancelled booking keeps it); only unused slots are removed
+            api(f'/rest/v1/consultation_slots?id=eq.{slot}&is_booked=eq.false', None, e_tok, method='DELETE')
+        except AssertionError:
+            pass
 
 def google_enabled():
     r = subprocess.run(['curl', '-sS', f"{env['STAGING_SUPABASE_URL']}/auth/v1/settings", '-H', f"apikey: {env['STAGING_SUPABASE_ANON_KEY']}"],
@@ -424,6 +442,7 @@ def production_untouched():
     print(f'      production app unchanged: {", ".join(PROD_BEFORE)}')
 
 T0 = adb('shell', "date '+%m-%d %H:%M:%S.000'").strip()
+ONLY = os.environ.get('ONLY')   # optional: run only the checks whose name contains this text (+ the production check)
 for name, fn in [('farmer: login, feed, profile, Catch Up lists expert1, no expert tools', farmer),
                  ('session survives force-stop + relaunch', persistence),
                  ('rotation renders; single back press keeps app open', rotation_and_back),
@@ -438,6 +457,7 @@ for name, fn in [('farmer: login, feed, profile, Catch Up lists expert1, no expe
                  ('Catch Up: Meet link ready, Join opens by itself at T-5 min and hands the link to Google Meet', catchup_meeting),
                  ('own post offers no Connect, also after a relaunch', own_post_no_connect_after_relaunch),
                  ('production app not replaced (same version + lastUpdateTime)', production_untouched)]:
+    if ONLY and ONLY not in name and fn is not production_untouched: continue
     check(name, fn)
 anrs = [l for l in adb('logcat', '-d', '-b', 'events', '-T', T0, check=False).splitlines() if 'am_anr' in l]
 results.append(('no "isn\'t responding" (ANR) for the app', 'PASS' if not any(PKG in l for l in anrs) else 'FAIL',

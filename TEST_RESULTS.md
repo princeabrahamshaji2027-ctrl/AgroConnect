@@ -410,3 +410,22 @@ these (new checks: demo checkout, Meet hand-off — the script never reads or ca
 
 **Staging leftovers:** 26 free future slots of the synthetic expert from today's runs (their cancelled test bookings
 keep them via the foreign key); no open test bookings.
+
+### Physical phone — Nothing Phone 2 (Android 16), 2026-10-25 evening, staging APK of `feature/meet-demo-payment`
+Owner connected the phone over USB. Staging APK installed next to the production app (production untouched:
+1.0, lastUpdateTime 2026-09-16 09:31:07). `device-smoke.py`:
+* Full run: **15/16 checks PASS**, 0 ANR, 0 crash — incl. login, session after relaunch, rotation/back, expert mode,
+  admin redirect, Google button, icons-only bar/menus/calendar, own profile, leave-expert dialog, image + video posts,
+  own post without "Connect", and **Meet hand-off**: "Google Meet link ready" + countdown → Join enabled by itself at
+  T−5 min → tap → AgroConnect left the foreground (the link went to Google Meet / the browser via App Launcher) → no
+  in-app call screen → back in the app. The other app was never read or captured.
+* The 1 failure was the new **demo checkout** check, caused by the script: with ~26 test slots today the time list
+  scrolls, and tapping a row outside the visible list hit the backdrop (closes the dialog). Script fixed (scrolls the
+  row into view, waits for the fee, tolerant cleanup); re-run of that check: **PASS** — banner "DEMO PAYMENT — NO REAL
+  MONEY CHARGED", ₹450.00 INR, 30 minutes, Cancel booked nothing, Confirm → "Booking confirmed" → Upcoming shows
+  "Waiting for expert to add meeting link", exactly one booking. Screenshots 26–28, 31–33.
+* Observation (not changed): the disabled "Join opens … (in …)" button keeps the bright primary colour, so it looks
+  tappable although it is disabled; pre-existing styling.
+* Still not verified on a device: push delivery (no Firebase), the password-reset e-mail link (needs a real inbox),
+  an actual Google Meet call between two people (external service).
+* Staging after the runs: no open phone-test bookings, no pending demo payments.
