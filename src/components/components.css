@@ -54,6 +54,23 @@
   color: var(--text-primary);
 }
 
+/* Disabled buttons must look inactive (e.g. "Join opens … (in …)" before the join window). */
+.btn:disabled,
+.btn:disabled:hover,
+.btn:disabled:active {
+  background-color: #2a2a2a;
+  color: var(--text-secondary);
+  border-color: #3a3a3a;
+  box-shadow: none;
+  transform: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+.btn-text:disabled {
+  background: transparent;
+  color: var(--text-muted);
+}
+
 .btn-fab {
   position: fixed;
   bottom: calc(80px + var(--safe-bottom));
