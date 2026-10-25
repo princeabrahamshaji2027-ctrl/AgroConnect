@@ -1,6 +1,6 @@
 # Database remediation scripts
 
-**Applied to production 2026-10-24 (owner-approved): 01, 02, 03 (+03b block), 07, 08.** Held: 04, 05, 09. Staging only: 06, 09 (2026-10-25).
+**Applied to production 2026-10-24 (owner-approved): 01, 02, 03 (+03b block), 07, 08.** Held: 04, 05, 09, 10, 11. Staging only: 06, 09, 10, 11 (2026-10-25).
 Exact pre-apply restore: `supabase/backups/20261024_pre_remediation_restore.sql`.
 
 ## Original notes
@@ -22,8 +22,10 @@ Gate, risks and rollback: `REMEDIATION_STATUS.md`.
 | `07_storage_privacy.sql` | AUD-043: expert CVs readable only by owner/admin; uploads only under own folder. | Storage policies |
 | `08_enable_realtime.sql` | AUD-044: publish the tables the apps subscribe to. | Publication |
 | `09_expert_lifecycle_and_user_deletion.sql` | Change request 2026-10-25: safe expert removal (history kept, farmers refunded/notified), one expert request per user, resignations with admin approve/reject, no self-demotion, FK fixes for user deletion. Used with the Edge Function `supabase/functions/admin-delete-user`. | Functions, triggers, indexes, FKs |
+| `10_post_media_storage.sql` | Public media buckets no longer listable by anyone (owner/admin only); owners can delete/replace their post videos. | Storage policies |
+| `11_consultation_meetings.sql` | Catch Up: booking notifications, 5-minute reminder (existing job), server join window + participants, completion after start, no invented meeting links. | Columns, functions, grants |
 | `99_rollback.sql` | Undo 01 (guards), 02, 05, 07, 08. | Drops |
 
-Order: 00 (review) → 01 → 02 → 03 → 04 → 07 → 08 → 05 → 09 + deploy `admin-delete-user` (all with the new client release) → 06 (staging). Never push the
+Order: 00 (review) → 01 → 02 → 03 → 04 → 07 → 08 → 05 → 09 → 10 → 11 + deploy `admin-delete-user` (all with the new client release) → 06 (staging). Never push the
 repo's `supabase/migrations/20260814_profiles_rls_fix.sql` (see 04). Once approved and applied, move them into
 `supabase/migrations/` with date prefixes.

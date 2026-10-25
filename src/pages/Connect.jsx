@@ -6,6 +6,8 @@ import Dialog from '../components/Dialog';
 import BottomSheet from '../components/BottomSheet';
 import ExpertMenuSheet from '../components/ExpertMenuSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
+import MeetingRoom from '../components/MeetingRoom';
+import JoinMeetingButton, { meetingStartMs } from '../components/JoinMeetingButton';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -102,21 +104,14 @@ function groupMeetingsByDate(meetingList) {
   return grouped;
 }
 
-function getCountdownText(dateStr, timeStr) {
-  if (!dateStr || !timeStr) return { isReady: true, text: 'Join Meeting' };
-  const timeClean = timeStr.length === 5 ? `${timeStr}:00` : timeStr;
-  const startMs = new Date(`${dateStr}T${timeClean}`).getTime();
-  const diffMs = startMs - Date.now();
-  if (diffMs <= 5 * 60 * 1000) {
-    return { isReady: true, text: 'Join Meeting' };
-  }
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
-  const timeFormatted = `${hours > 0 ? `${hours}h ` : ''}${mins}m ${secs}s`;
-  return { isReady: false, text: `Starts in ${timeFormatted}` };
-}
-
+// End of the booked slot (as consultation_window() in the database); a slot ending after midnight ends next day.
+const slotEndMs = (b) => {
+  const slot = b.consultation_slots;
+  const start = meetingStartMs(b.meeting_date, b.meeting_time);
+  if (!slot?.end_time) return null;
+  const end = meetingStartMs(slot.slot_date || b.meeting_date, slot.end_time);
+  return end > start ? end : end + 24 * 60 * 60 * 1000;
+};
 const COMMON_TIME_SLOTS = [
   '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
   '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
@@ -323,6 +318,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [expertsList, setExpertsList] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [history, setHistory] = useState([]);
+  const [historyShown, setHistoryShown] = useState(15); // render in pages; long histories froze Android
   const [reviews, setReviews] = useState([]);
   const [allExpertSlotsMap, setAllExpertSlotsMap] = useState({});
 
@@ -330,11 +326,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [calYear, setCalYear] = useState(currentDateObj.getFullYear());
   const [calMonth, setCalMonth] = useState(currentDateObj.getMonth());
 
-  // Video call simulation states
-  const [inVideoCall, setInVideoCall] = useState(false);
-  const [currentCallRoom, setCurrentCallRoom] = useState('');
-  const [micMuted, setMicMuted] = useState(false);
-  const [camOff, setCamOff] = useState(false);
+  // Meeting room (no video provider yet; see MeetingRoom.jsx)
+  const [callSession, setCallSession] = useState(null); // { meeting, session } after the server accepted the join
+  const [joiningId, setJoiningId] = useState(null);
+  const [leavingCall, setLeavingCall] = useState(false);
+  // server clock = phone clock + offset, measured by consultation_join_status(); ticks once a second
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
 
   // Review submission state
   const [reviewingMeeting, setReviewingMeeting] = useState(null);
@@ -480,6 +477,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           .from('consultation_bookings')
           .select(`
             *,
+            consultation_slots:slot_id ( slot_date, start_time, end_time ),
             farmer_profiles:farmer_id (
               id,
               user_id,
@@ -507,7 +505,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             topic: b.issue_description || '',
             date: b.meeting_date,
             time: b.meeting_time,
-            roomId: `AGRI-${b.id.slice(0, 8).toUpperCase()}`,
+            endsMs: slotEndMs(b),
             slotId: b.slot_id,
             status: 'upcoming'
           })));
@@ -526,6 +524,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             .from('consultation_bookings')
             .select(`
               *,
+              consultation_slots:slot_id ( slot_date, start_time, end_time ),
               experts:expert_id (
                 id,
                 user_id,
@@ -550,7 +549,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               topic: appt.issue_description || '',
               date: appt.meeting_date,
               time: appt.meeting_time,
-              roomId: `AGRI-${appt.id.slice(0, 8).toUpperCase()}`,
+              endsMs: slotEndMs(appt),
               status: 'upcoming'
             })));
           }
@@ -580,7 +579,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           `)
           .eq('farmer_id', farmerProfileForHist.id)
           .neq('status', 'Booked')
-          .order('meeting_date', { ascending: false });
+          .order('meeting_date', { ascending: false })
+          .order('meeting_time', { ascending: false }); // newest first, also within one day
 
         const { data: reviewsData } = await supabase
           .from('reviews')
@@ -659,6 +659,14 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Measure the server clock once per load (one call, not one per booking).
+  useEffect(() => {
+    if (appointments.length === 0) return;
+    supabase.rpc('consultation_join_status', { p_booking_id: appointments[0].id }).then(({ data }) => {
+      if (data?.server_now) setClockOffsetMs(Date.parse(data.server_now) - Date.now());
+    });
+  }, [appointments]);
 
   const handleBookClick = async (expert, targetDate = null) => {
     setSelectedExpert(expert);
@@ -845,27 +853,29 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     setActiveSubTab('upcoming');
   };
 
-  const handleStartCall = (roomId) => {
-    setCurrentCallRoom(roomId);
-    setInVideoCall(true);
+  const joinErrorText = (err) => {
+    const msg = err?.message || '';
+    if (/Failed to fetch|NetworkError|network/i.test(msg)) return 'No connection. You have not joined the meeting — please check your internet and try again.';
+    if (/not a participant/i.test(msg)) return 'This meeting belongs to someone else. You cannot join it.';
+    return msg || 'Could not join the meeting. Please try again.';
   };
 
-
-
   const handleLeaveCall = async () => {
-    setInVideoCall(false);
-    
-    const appt = appointments.find(a => a.roomId === currentCallRoom);
-    if (appt) {
-      const { error } = await supabase.rpc('complete_consultation', { p_booking_id: appt.id });
-      if (error && onShowToast) onShowToast(`Meeting not marked complete: ${error.message}`);
-    }
-
-    setCurrentCallRoom('');
+    if (!callSession) return;
+    setLeavingCall(true);
+    const { meeting } = callSession;
+    const { error } = await supabase.rpc('complete_consultation', { p_booking_id: meeting.id });
+    setLeavingCall(false);
+    setCallSession(null);
     fetchData();
-    setActiveSubTab('history');
-    if (onShowToast) {
-      onShowToast('🔌 Meeting ended. Feel free to leave a review!');
+    if (!error) {
+      setActiveSubTab('history');
+      if (onShowToast) onShowToast(isCurrentExpert ? 'Consultation completed.' : 'Consultation completed. Please leave a review!');
+    } else if (onShowToast) {
+      // e.g. left before the start time or before the expert arrived: the booking stays in Upcoming
+      onShowToast(`You left the room. ${/before its scheduled start/.test(error.message)
+        ? 'The meeting can be completed after it starts.'
+        : /expert has not joined/.test(error.message) ? 'It stays open until the expert joins.' : error.message}`);
     }
   };
 
@@ -922,20 +932,24 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   };
 
   const handleServerValidatedJoin = async (meeting) => {
+    if (joiningId) return;
+    setJoiningId(meeting.id);
     try {
-      // The server checks participation, status and the join window, and records the expert's attendance.
-      const { error } = await supabase.rpc('join_consultation', { p_booking_id: meeting.id });
+      // The server checks participant, status, ban and the join window (its own clock), records attendance and
+      // returns the room. Nothing is shown as joined unless this call succeeds.
+      const { data, error } = await supabase.rpc('join_consultation', { p_booking_id: meeting.id });
       if (error) {
-        alert(error.message || "Could not verify meeting status. Please try again.");
+        alert(joinErrorText(error));
         fetchData();
         return;
       }
-
       setSelectedMeetingDetail(null);
-      handleStartCall(meeting.roomId);
+      if (data?.server_now) setClockOffsetMs(Date.parse(data.server_now) - Date.now());
+      setCallSession({ meeting, session: data });
     } catch (err) {
-      console.error(err);
-      alert("Error joining meeting room.");
+      alert(joinErrorText(err));
+    } finally {
+      setJoiningId(null);
     }
   };
 
@@ -1128,87 +1142,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     }
   };
 
-  if (inVideoCall) {
+  if (callSession) {
     return (
-      <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', backgroundColor: '#090909', position: 'relative', zIndex: 1000 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', background: 'rgba(0,0,0,0.5)', zIndex: 10 }}>
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>Video Consultation</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Room: {currentCallRoom}</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '12px', fontSize: '12px' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'red', animation: 'pulse 1s infinite' }}>fiber_manual_record</span>
-            <span>SIMULATED</span>
-          </div>
-        </div>
-
-        <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center' }}>
-          <div style={{ flex: 1.2, position: 'relative', backgroundColor: '#1E1E1E', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%', textAlign: 'center' }}>
-              <img 
-                src={appointments.find(a => a.roomId === currentCallRoom)?.expertAvatar || '/profile-placeholder.png'} 
-                alt="Expert" 
-                style={{ width: '96px', height: '96px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary-green)' }} 
-              />
-              <div>
-                <h4 style={{ fontSize: '16px', fontWeight: '600' }}>
-                  {appointments.find(a => a.roomId === currentCallRoom)?.expertName || 'Dr. Anita Rao'}
-                </h4>
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>Agronomist Expert (Consulting)</p>
-              </div>
-            </div>
-            
-            <div style={{ position: 'absolute', bottom: '16px', left: '16px', backgroundColor: 'rgba(0,0,0,0.6)', padding: '6px 12px', borderRadius: '10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--primary-green)' }}>mic</span>
-              <span>Audio Connected</span>
-            </div>
-          </div>
-
-          <div style={{ flex: 1, position: 'relative', backgroundColor: '#2A2A2A', borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {!camOff ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', width: '100%' }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--primary-green)', animation: 'spin 4s infinite linear' }}>filter_vintage</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Local Camera Active</span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '32px', color: 'var(--text-muted)' }}>videocam_off</span>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Camera Muted</span>
-              </div>
-            )}
-
-            <div style={{ position: 'absolute', bottom: '16px', left: '16px', backgroundColor: 'rgba(0,0,0,0.6)', padding: '6px 12px', borderRadius: '10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '14px', color: micMuted ? 'red' : 'var(--primary-green)' }}>
-                {micMuted ? 'mic_off' : 'mic'}
-              </span>
-              <span>You (Farmer)</span>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: '24px 20px 40px 20px', background: 'rgba(30, 30, 30, 0.95)', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'center', gap: '20px', zIndex: 10 }}>
-          <button 
-            onClick={() => setMicMuted(!micMuted)}
-            style={{ width: '50px', height: '50px', borderRadius: '50%', backgroundColor: micMuted ? 'var(--error)' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
-            <span className="material-symbols-outlined">{micMuted ? 'mic_off' : 'mic'}</span>
-          </button>
-
-          <button 
-            onClick={() => setCamOff(!camOff)}
-            style={{ width: '50px', height: '50px', borderRadius: '50%', backgroundColor: camOff ? 'var(--error)' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
-            <span className="material-symbols-outlined">{camOff ? 'videocam_off' : 'videocam'}</span>
-          </button>
-
-          <button 
-            onClick={handleLeaveCall}
-            style={{ width: '50px', height: '50px', borderRadius: '50%', backgroundColor: 'var(--error)', border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
-            <span className="material-symbols-outlined" style={{ transform: 'rotate(135deg)' }}>call_end</span>
-          </button>
-        </div>
-      </div>
+      <MeetingRoom
+        meeting={callSession.meeting}
+        session={callSession.session}
+        clockOffsetMs={clockOffsetMs}
+        onLeave={handleLeaveCall}
+        leaving={leavingCall}
+      />
     );
   }
 
@@ -1237,8 +1179,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         padding: '12px 16px', 
         marginTop: 'calc(var(--header-height) + var(--safe-top))', 
         borderBottom: '1px solid var(--border-color)', 
-        backgroundColor: 'rgba(18, 18, 18, 0.7)',
-        backdropFilter: 'blur(10px)',
+        // solid, not backdrop blur: a blurred bar over a long scrolling list made Android WebView stop responding
+        backgroundColor: 'rgb(18, 18, 18)',
         zIndex: 90
       }}>
         <button 
@@ -2038,7 +1980,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             ) : (
               /* Farmer view of upcoming appointments */
               appointments.map((appt) => {
-                const countdown = getCountdownText(appt.date, appt.time);
                 return (
                   <div
                     key={appt.id}
@@ -2066,24 +2007,13 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '11px', color: 'var(--primary-green)' }}>Tap for details & cancellation</span>
-                      <Button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleServerValidatedJoin(appt);
-                        }} 
-                        variant="primary" 
-                        icon="video_call"
-                        disabled={!countdown.isReady}
-                        style={{
-                          padding: '8px 16px',
-                          borderRadius: '12px',
-                          fontSize: '12px',
-                          opacity: countdown.isReady ? 1 : 0.6,
-                          cursor: countdown.isReady ? 'pointer' : 'not-allowed'
-                        }}
-                      >
-                        {countdown.text}
-                      </Button>
+                      <JoinMeetingButton
+                        meeting={appt}
+                        clockOffsetMs={clockOffsetMs}
+                        busy={joiningId === appt.id}
+                        onJoin={handleServerValidatedJoin}
+                        style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
+                      />
                     </div>
                   </div>
                 );
@@ -2103,7 +2033,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Meeting History</h3>
             
-            {history.map((hist) => (
+            {history.slice(0, historyShown).map((hist) => (
               <div key={hist.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -2151,6 +2081,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 </div>
               </div>
             ))}
+            {history.length > historyShown && (
+              <Button
+                variant="secondary"
+                onClick={() => setHistoryShown((n) => n + 15)}
+                style={{ alignSelf: 'center', padding: '8px 18px', borderRadius: '12px', fontSize: '12px' }}
+              >
+                Show older ({history.length - historyShown} more)
+              </Button>
+            )}
           </div>
         )}
 
@@ -2380,7 +2319,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       {/* ── Meeting Detail Bottom Sheet ─────────────────────────── */}
       <BottomSheet isOpen={!!selectedMeetingDetail} onClose={() => setSelectedMeetingDetail(null)}>
         {selectedMeetingDetail && (() => {
-          const countdown = getCountdownText(selectedMeetingDetail.date, selectedMeetingDetail.time);
           const otherName = isCurrentExpert ? selectedMeetingDetail.farmerName : selectedMeetingDetail.expertName;
           const otherAvatar = isCurrentExpert ? selectedMeetingDetail.farmerAvatar : selectedMeetingDetail.expertAvatar;
           
@@ -2431,21 +2369,14 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                   </Button>
                 )}
 
-                <Button
-                  onClick={() => handleServerValidatedJoin(selectedMeetingDetail)}
-                  variant="primary"
+                <JoinMeetingButton
+                  meeting={selectedMeetingDetail}
+                  clockOffsetMs={clockOffsetMs}
+                  busy={joiningId === selectedMeetingDetail.id}
+                  onJoin={handleServerValidatedJoin}
                   icon="videocam"
-                  disabled={!countdown.isReady}
-                  style={{
-                    flex: 1,
-                    borderRadius: '12px',
-                    fontSize: '13px',
-                    opacity: countdown.isReady ? 1 : 0.6,
-                    cursor: countdown.isReady ? 'pointer' : 'not-allowed'
-                  }}
-                >
-                  {countdown.text}
-                </Button>
+                  style={{ flex: 1, borderRadius: '12px', fontSize: '13px' }}
+                />
               </div>
             </div>
           );

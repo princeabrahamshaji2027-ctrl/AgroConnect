@@ -53,8 +53,10 @@ export default function Feed({
 
   const fetchPosts = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id;
+      // the saved session is available at once after a relaunch; getUser() needs the network first, and while it
+      // had not answered every card (including the user's own) offered "Connect"
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id || (await supabase.auth.getUser()).data.user?.id;
       setCurrentUserId(userId);
 
       let likedPostIds = new Set();

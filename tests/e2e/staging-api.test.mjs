@@ -132,8 +132,10 @@ describe('staging: expert1 + booking lifecycle', { skip }, () => {
     assert.deepEqual([b.status, b.refund_status], ['Cancelled', 'Pending']);
     const { data: s } = await f.c.from('consultation_slots').select('is_booked').eq('id', slot.id).single();
     assert.equal(s.is_booked, false);
-    const { data: note } = await e.c.from('notifications').select('id').eq('related_id', bookingId).eq('type', 'booking');
-    assert.equal(note.length, 1, 'expert notified by the server');
+    // the expert gets one notice for the booking (11) and one for the cancellation
+    const { data: note } = await e.c.from('notifications').select('message').eq('related_id', bookingId).eq('type', 'booking');
+    assert.equal(note.filter((n) => /^New consultation booked!/.test(n.message)).length, 1, 'expert not told about the booking once');
+    assert.equal(note.length, 2, 'expert notified about the cancellation by the server');
   });
 });
 

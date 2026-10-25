@@ -306,3 +306,59 @@ is unchanged.
 | Installed staging APK | identical to the verified artifact; staging ref only; only the `anon` key | |
 | Test tools | staging-anon/api/workflows refuse the production ref; create-test-accounts and device-smoke allow only the staging ref; build script refuses a production ref in the bundle/APK | Playwright has **no** guard of its own (tests whatever build is served on :4173/:4174) |
 | Leftover | 1 throwaway `deltest` account from the earlier failed full run (assertion before the delete) | test now deletes in `finally`; account left for owner approval |
+
+## Post media fix + Catch Up meetings — 2026-10-25 (branch `feature/media-fix-catchup-meetings`, staging only)
+
+### Post media
+**Reproduced first.** Web: image posts worked (upload 200, image loaded). Emulator (Android 16): image posts worked;
+**video posts could not be made** — the Video picker used the camera plugin's photo picker (videos not offered); a photo
+picked there was uploaded labelled `video/mp4`, shown as a dead player *above* the card plus the photo. Real videos (web)
+showed a player outside the card and a broken `<img>` inside it. Search dropped the media type. Production data was
+healthy (1 post, its file exists; 2 orphan uploads from posts that were never created).
+| Check | Result |
+|---|---|
+| `staging-media.test.mjs` (farmer image, expert video, text-only; other user reads them; served bytes + content type; anonymous/other-user listing 0; owner lists/deletes own; strangers cannot write/delete; video bucket rejects images) | **3/3 PASS** |
+| Playwright post media (image, video plays — duration > 0 —, no broken `<img>` beside the player, text-only, fake video refused, survives reload) | PASS |
+| Emulator: expert picks a real video in the system chooser → validated → posted → **plays in the card** ("Agro 28" frame, 0:01/0:01); image post; both survive force-stop + relaunch | PASS (screenshots in scratch, not committed) |
+| Pagination | not applicable: the feed loads all approved posts (no pagination exists) |
+
+### Catch Up meetings (`supabase/proposed/11`, staging)
+| Check | Result |
+|---|---|
+| DB tests 11 (PGlite, real schema, controlled clock): booking notifications once / failed booking notifies nobody; 5-min reminder at 2:55:00 not 2:54:59, both participants, once, never for cancelled/completed; join 2:54:59 denied, 2:55:00 + 3:00 allowed, slot end denied; other farmer/expert, anon, cancelled, completed, banned denied; client cannot pass a time; room only for participants; completion not before start; one review; no-show still cancels + refunds | **9/9 PASS** (`npm run test:db` 50/50) |
+| `staging-catchup.test.mjs` — **real time, real pg_cron**: book → expert + farmer notified once (exact wording) → duplicate/race send nothing → no invented link → join "Too early" → stranger refused → scheduler 5-min reminder to both → both join, same room → completion refused before start, allowed after → one review request → one review | **2/2 PASS** (7.8 min) |
+| pg_cron | 1 job (no duplicate), 60 runs/hour, 0 failures |
+| Playwright Catch Up: disabled "Join opens … (in …)" counting down without reload; Join inside the window → room says "Video not connected" (no fake audio/camera) → Leave explains why not completed; booking confirmation in Notifications | **2/2 PASS** |
+| Emulator: Upcoming showed "Join Meeting" / "Join opens 1:51 PM (in 0m 15s)" → second button opened by itself; farmer joined → honest room → left ("stays open until the expert joins"); the no-show scheduler then cancelled that booking (expert never joined) with refund Pending; expert joined the other one → left after start → **Completed**, room Completed, 1 review request | PASS |
+| Review submitted from the emulator UI | **not done** (History list long with test data; covered by DB + staging tests) |
+
+### Problems found while testing and fixed
+* **"Isn't responding" on Android** (owner saw it on the emulator): reproduced by scrolling Catch Up → History. Causes
+  in the app: (1) a `backdrop-filter: blur` bar over the scrolling list — with it gone, the same scroll test went from
+  1 ANR per run to 0 (twice, incl. 45 entries); (2) my first Join-button version re-rendered the whole 2,600-line page
+  every second (the existing regression test caught it) — now only the button ticks. History is also paged (15).
+  Separately the emulator itself is overloaded (load average up to 42, System UI and launcher not responding with
+  AgroConnect not running) — those dialogs are not the app.
+* History sorted by date only → also by time.
+* Tests that expected exactly one notification per booking (now booking notices exist) and a Google test written
+  while the provider was off — updated; Playwright **22/22**, staging-api lifecycle PASS.
+
+### Physical phone (Nothing Phone 2, Android 16) — final, after the emulator became unusable
+`device-smoke.py` **14/14 PASS in one run**, 0 ANR, 0 crash, production app unchanged (1.0, 2026-09-16 09:31:07):
+base checks; Google button (Google is now **on** in staging: the browser opens, the script never reads or captures it);
+icons-only bar / profile menu / Catch Up calendar; own avatar → own profile; expert leave dialog; **image + video
+posts in the feed card**; **Catch Up**: "Join opens 3:44 pm (in 0m 41s)" disabled → the 5-minute reminder arrived live
+in the app at 3:44 → button switched to "Join Meeting" by itself → honest room ("Video not connected") → leave;
+**own post shows no "Connect", also after a relaunch**. Video playback checked separately: tap → frame "Agro 19" playing.
+Screenshots 23–30 in `appium-results/2026-10-25_staging_device/`.
+
+Fixed from the phone screenshots: meeting room title under the status bar (safe-area padding); "Connect" on the user's
+own posts after a relaunch (feed read the user id with a network call that had not answered yet — now from the saved
+session, and the button is hidden until the viewer is known). Final suites after these fixes: `npm test` 27 + 14 + 50,
+`npm run test:staging` **27/27**, Playwright **22/22**.
+
+**Incidents (my test scripts, now fixed):** (1) the first phone run's Google check failed while the provider was on and
+its error text + failure screenshot contained the owner's Google account chooser (one account name and address) — the
+screenshot was deleted before any commit, the log scrubbed, and the script now reads only the app's own screen and never
+captures the browser. (2) Earlier, the emulator's "isn't responding" dialogs: partly the app (blur bar over History,
+fixed), partly the emulator itself (load average 42 after a clean reboot with System UI not responding).

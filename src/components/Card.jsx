@@ -77,7 +77,7 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
             </div>
           </div>
         </div>
-        {onConnectToggle && post.userId !== currentUserId && (
+        {onConnectToggle && currentUserId && post.userId !== currentUserId && (
           <button
             onClick={(e) => {
               e.stopPropagation();

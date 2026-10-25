@@ -126,3 +126,15 @@ tests in `tests/e2e/app.spec.mjs` + `scripts/staging/device-smoke.py`.
   email on the phone → app opens on Set new password → sign in with the new password; reuse the same link → friendly
   "link expired"; request on phone A, open on another device → friendly message; Google account → "Set a password".
 * Regression: full `npm test`, `npm run test:staging`, Playwright, `device-smoke.py`.
+
+## Status update 2026-10-25 (branch `feature/media-fix-catchup-meetings`)
+* **Post media**: fixed (video picking on Android, media inside the card, storage listing closed) — `10`, staging only.
+* **Catch Up meetings** (`11`, staging only): booking notifications to both, 5-minute reminder to both from the existing
+  scheduler, join window enforced on the server (T−5 min to slot end, participants only, not banned), completion not
+  before the start, honest meeting room.
+* **E. Real video consultations** is now the next step for meetings and needs an owner decision: provider (Jitsi
+  self-hosted/JaaS, Daily, Agora, 100ms, Twilio…), account and cost. The server side is ready for it:
+  `join_consultation()` already returns the room id only to the two participants inside the window; a provider would
+  add one Edge Function that mints a short-lived room token for that room (keys server-side).
+* **B. Push notifications** remain the gap for "notify immediately": notices are in-app (realtime + Notifications
+  screen); a phone that is closed gets nothing until FCM is set up.

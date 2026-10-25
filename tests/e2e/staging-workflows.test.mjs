@@ -157,8 +157,8 @@ describe('consultations', { skip }, () => {
     assert.ifError((await winnerClient.c.rpc('cancel_consultation_booking', { p_booking_id: winners[0].data, p_reason: 'race cleanup' })).error);
   });
 
-  test('join window, completion requires expert attendance, review by the farmer only, once', async () => {
-    const at = istFromNow(3);
+  test('join window, completion requires expert attendance, review by the farmer only, once', { timeout: 300000 }, async () => {
+    const at = istFromNow(2);
     const ins = await A.expert1.c.from('consultation_slots')
       .insert({ expert_id: A.expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
     assert.ifError(ins.error);
@@ -166,8 +166,12 @@ describe('consultations', { skip }, () => {
     assert.ok(booking);
     assert.ok((await A.user1.c.rpc('complete_consultation', { p_booking_id: booking })).error, 'completed without expert');
     assert.ok((await A.user3.c.rpc('join_consultation', { p_booking_id: booking })).error, 'non-participant joined');
-    assert.ifError((await A.expert1.c.rpc('join_consultation', { p_booking_id: booking })).error);
+    const joined = await A.expert1.c.rpc('join_consultation', { p_booking_id: booking });
+    assert.ifError(joined.error);
     assert.ifError((await A.user1.c.rpc('join_consultation', { p_booking_id: booking })).error);
+    // 11: not before the scheduled start
+    assert.match((await A.user1.c.rpc('complete_consultation', { p_booking_id: booking })).error?.message || '', /before its scheduled start/);
+    while (Date.now() < Date.parse(joined.data.starts_at) + 2000) await new Promise((r) => setTimeout(r, 5000));
     assert.ifError((await A.user1.c.rpc('complete_consultation', { p_booking_id: booking })).error);
     const b = await A.user1.c.from('consultation_bookings').select('status').eq('id', booking).single();
     assert.equal(b.data.status, 'Completed');
@@ -265,8 +269,9 @@ describe('scheduler (pg_cron, real time)', { skip }, () => {
     }
     assert.deepEqual([b.status, b.refund_status, Number(b.refund_amount)], ['Cancelled', 'Pending', 400]);
     const notes = await A.user3.c.from('notifications').select('message').eq('related_id', booking);
-    assert.equal(notes.data.length, 1, 'farmer should get exactly one auto-cancel notice');
-    assert.match(notes.data[0].message, /auto-cancelled/);
+    // besides the booking confirmation and reminders (11): exactly one auto-cancel notice
+    assert.equal(notes.data.filter((n) => /auto-cancelled/.test(n.message)).length, 1, 'farmer should get exactly one auto-cancel notice');
+    assert.equal(notes.data.filter((n) => /^Your consultation with .* is booked for/.test(n.message)).length, 1, 'booking confirmation');
   });
 });
 

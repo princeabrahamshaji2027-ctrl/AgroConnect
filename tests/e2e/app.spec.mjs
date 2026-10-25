@@ -46,7 +46,7 @@ test.describe('authenticated (staging)', () => {
     await login(page, fx('user1'));
     await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
     await nav(page, 'Profile').click();
-    await expect(page.getByText('Test User 1 (Farmer)')).toBeVisible();
+    await expect(page.locator('.profile-name')).toHaveText('Test User 1 (Farmer)');
     await nav(page, 'Catch Up').click();
     await expect(page.getByText('Available Verified Experts')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText('Dr. Ramesh Expert')).toBeVisible();
@@ -77,10 +77,22 @@ test.describe('authenticated (staging)', () => {
 test.describe('change list 2026-10-25 (staging)', () => {
   test.skip(!staging, 'set E2E_STAGING=1 and FIXTURE_PASSWORD and build the app against staging');
 
-  test('Google button is on Log In and Sign Up; with the provider off it explains instead of failing', async ({ page }) => {
+  test('Google button is on Log In and Sign Up; goes to Google for the staging project (or explains when the provider is off)', async ({ page }) => {
     await toLogin(page);
-    await page.getByRole('button', { name: /Continue with Google/ }).click();
-    await expect(page.getByText(/Google sign-in is not available yet/)).toBeVisible({ timeout: 15_000 });
+    // Google on staging was switched on by the owner on 2026-10-25; check whichever state the project is in
+    const settings = await (await fetch(`${process.env.STAGING_SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: process.env.STAGING_SUPABASE_ANON_KEY } })).json();
+    if (settings.external?.google) {
+      await Promise.all([
+        page.waitForURL(/accounts\.google\.com/, { timeout: 20_000 }),
+        page.getByRole('button', { name: /Continue with Google/ }).click(),
+      ]);
+      expect(page.url()).toContain('ahkgvuewgbjyahbiehrx'); // Google is asked on behalf of the staging project
+      await page.goto('/');
+      await expect(page.getByText('Welcome Back')).toBeVisible({ timeout: 20_000 });
+    } else {
+      await page.getByRole('button', { name: /Continue with Google/ }).click();
+      await expect(page.getByText(/Google sign-in is not available yet/)).toBeVisible({ timeout: 15_000 });
+    }
     await page.getByText('Sign Up', { exact: true }).click();
     await expect(page.getByRole('button', { name: /Continue with Google/ })).toBeVisible();
   });
@@ -92,7 +104,7 @@ test.describe('change list 2026-10-25 (staging)', () => {
       await expect(page.locator('.bottom-nav')).not.toContainText(label);
     }
     await nav(page, 'Profile').click();
-    await expect(page.getByText('Test User 1 (Farmer)')).toBeVisible();
+    await expect(page.locator('.profile-name')).toHaveText('Test User 1 (Farmer)');
     await expect(page.getByRole('button', { name: 'Edit Profile' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Log Out' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Profile menu' }).click();
@@ -220,5 +232,69 @@ test.describe('post media (staging)', () => {
     await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
     await expect.poll(() => page.locator('.card', { hasText: `${tag} image` }).first().locator('img.post-card-image').evaluate((e) => e.complete && e.naturalWidth > 0), { timeout: 20_000 }).toBe(true);
     await expect(page.locator('.card', { hasText: `${tag} video` }).first().locator('video.post-card-video')).toBeVisible();
+  });
+});
+
+// Catch Up meetings (2026-10-25): Join button follows the server's window; the room is honest about video.
+test.describe('Catch Up meetings (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  let farmer; let expert; let expertId; const slots = []; const bookings = [];
+  const ist = (min) => { const d = new Date(Math.ceil((Date.now() + min * 60000) / 60000) * 60000 + 330 * 60000); return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) }; };
+  const plus30 = (t) => { const [h, m] = t.split(':').map(Number); const x = (h * 60 + m + 30) % 1440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
+  const bookIn = async (min, topic) => {
+    const at = ist(min);
+    const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
+    if (s.error) throw s.error;
+    slots.push(s.data.id);
+    const r = await farmer.rpc('book_consultation_slot', { p_slot_id: s.data.id, p_issue: topic });
+    if (r.error) throw r.error;
+    bookings.push(r.data);
+    return r.data;
+  };
+  test.beforeAll(async () => {
+    farmer = mk(); expert = mk();
+    await farmer.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
+    const e = await expert.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
+    expertId = (await expert.from('experts').select('id').eq('user_id', e.data.user.id).single()).data.id;
+  });
+  test.afterAll(async () => {
+    for (const id of bookings) await farmer.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'E2E cleanup', p_offered_slots: [] });
+    for (const id of slots) await expert.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
+  });
+
+  test('before the window: disabled "Join opens …"; inside it: join -> honest meeting room -> leave explains why not completed', async ({ page }) => {
+    await bookIn(180, 'E2E far meeting');
+    await bookIn(8, 'E2E countdown meeting');
+    await bookIn(3, 'E2E soon meeting');
+    await login(page, fx('user1'));
+    await nav(page, 'Catch Up').click();
+    await page.getByRole('button', { name: /^Upcoming/ }).click();
+
+    const far = page.locator('.card', { hasText: 'E2E far meeting' }).first();
+    await expect(far.getByRole('button', { name: /Join opens .* \(in 2h \d+m\)/ })).toBeDisabled({ timeout: 20_000 });
+    const cd = page.locator('.card', { hasText: 'E2E countdown meeting' }).first().getByRole('button', { name: /Join opens/ });
+    await expect(cd).toBeDisabled();
+    const before = await cd.textContent();
+    await page.waitForTimeout(2200);
+    expect(await cd.textContent()).not.toBe(before); // seconds keep counting down without a reload
+
+    const soon = page.locator('.card', { hasText: 'E2E soon meeting' }).first();
+    const join = soon.getByRole('button', { name: 'Join Meeting' });
+    await expect(join).toBeEnabled({ timeout: 20_000 });
+    await join.click();
+    await expect(page.getByText('Consultation room')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Video not connected')).toBeVisible();
+    await expect(page.getByText(/You are checked in for this consultation/)).toBeVisible();
+    await expect(page.getByText(/Audio Connected|Local Camera Active/)).toHaveCount(0);
+    await page.getByRole('button', { name: /Leave room/ }).click();
+    await expect(page.getByText(/You left the room\..*(after it starts|until the expert joins)/)).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('the farmer sees the booking confirmation in Notifications', async ({ page }) => {
+    await login(page, fx('user1'));
+    await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
+    await page.locator('.feed-header-icon').last().click();
+    await expect(page.getByText(/Your consultation with Dr\. Ramesh Expert is booked for/).first()).toBeVisible({ timeout: 15_000 });
   });
 });

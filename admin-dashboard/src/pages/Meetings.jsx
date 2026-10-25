@@ -244,6 +244,7 @@ export default function Meetings() {
                   <Row k="Refund" v={`₹${Number(m.refund_amount || 0)} · ${m.refund_status}`} />
                 )}
                 {m.expert_joined_at && <Row k="Expert joined" v={new Date(m.expert_joined_at).toLocaleString()} />}
+                {m.farmer_joined_at && <Row k="Farmer joined" v={new Date(m.farmer_joined_at).toLocaleString()} />}
                 {video?.status && <Row k="Video session" v={video.status} />}
                 <Row k="Booked on" v={new Date(m.created_at).toLocaleString()} />
               </div>

@@ -207,3 +207,13 @@ Production unchanged since the approved 01/02/03/07/08 apply (migration history 
 **Production release readiness (04 + 05 + new app):** staging now proves the full lifecycle on a real Supabase
 project. Release order: (1) owner rotates exposed passwords; (2) apply 04, 05 (incl. pg_cron) to production;
 (3) ship the new web build and APK together; (4) optional forced-update broadcast for old APKs.
+
+## 2026-10-25 — media and Catch Up (staging only; production unchanged)
+New proposed migrations, applied to **staging** only and held for production with `04`, `05`, `09`:
+* `10_post_media_storage.sql` — security: anyone (even signed out) could **list** every file in the public media
+  buckets (avatars, post images, …) through the Storage API, incl. uploads of deleted/failed posts. Now owner/admin only.
+  Public file links keep working (by design those buckets are public; paths contain the user id + timestamp).
+* `11_consultation_meetings.sql` — the join window is now enforced only on the server with the database clock (it
+  never closed before, banned users were not checked, completion could happen before the start); the booking function
+  no longer stores invented `meet.agroconnect.app` links.
+Production release order: backup → 04 → 05 → 09 → 10 → 11 → deploy `admin-delete-user` → new APK + admin build.

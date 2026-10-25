@@ -36,7 +36,8 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 | Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
 |---|---|---|---|---|---|---|---|---|
 | Feed renders | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke screenshots | staging has no posts, so only the empty state is exercised | seed synthetic posts on staging |
-| Create post (text/image, camera) | yes | UNTESTED | UNTESTED | — | — | none | camera plugin path never run on a device | staging E2E: create, see in feed, delete |
+| Create post: text / image / video | yes (video fixed 2026-10-25) | PASS (image, video, text-only, bad file refused, reload) | PASS emulator (image via photo picker; video via system chooser, plays in card; survives relaunch) | — | STG | staging-media (3), Playwright post media; emulator screenshots | **Root cause:** Android video picker returned photos only and labelled them video/mp4; player drawn outside the card; card drew videos as `<img>`. One attachment per post (schema) | phone check |
+| Post media storage access | yes (10, staging) | — | — | — | STG | staging-media: anonymous/other-user listing 0, owner can list/delete, strangers cannot write/delete, video bucket rejects images | public buckets: anyone with a file's URL can view it (existing design; paths unguessable) | production needs `10` |
 | Likes / comments | yes | UNTESTED | UNTESTED | — | — | none (RLS covered by DB tests) | — | staging E2E |
 | Follow / followers | yes | UNTESTED | UNTESTED | — | — | none | — | staging E2E |
 | Own profile view | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke | — | — |
@@ -55,12 +56,12 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 | Expert application (apply → approve/reject) | yes | UNTESTED (UI) | UNTESTED | API PASS; one row per user | STG + LOCAL | staging-workflows, DB tests (09: one open request, no request while expert) | — | UI E2E: apply as user, approve in admin |
 | Remove expert / leave expert mode | yes (2026-10-25) | PASS (menu + dialog) | UNTESTED on device | API PASS; Remove button + Reports tab PASS | STG + LOCAL | DB tests 09; staging-workflows (request → reject → request → approve); Playwright | production needs `09` | phone test |
 | Expert availability editor | yes | PASS | PASS (phone, view only) | — | STG | app.spec, device-smoke | — | — |
-| Booking a slot | yes | UNTESTED (UI) | UNTESTED | — | STG + LOCAL | staging-api, staging-workflows (race: exactly one winner) | — | UI booking E2E |
+| Booking a slot + notifications | yes (11, staging) | PASS (confirmation shown in Notifications) | — | — | STG + LOCAL | DB tests 11; staging-catchup real time: expert "New consultation booked! …", farmer "Your consultation with … is booked …", once; duplicate submit / race / past / empty issue notify nobody | in-app only — no push (no FCM) | production needs `04`,`05`,`09`,`11` |
 | Cancel booking + refund flag | yes | UNTESTED (UI) | UNTESTED | API PASS | STG | staging-api (refund Pending, slot freed), admin cancel RPC | refunds are only a status; no money moves | payments module (Task 4) |
-| Join window / completion / review | yes | UNTESTED (UI) | UNTESTED | — | STG | staging-workflows | — | — |
-| Scheduler (no-show auto-cancel, pg_cron) | yes (server) | — | — | — | STG | staging-workflows: auto-cancelled ≈6.2 min, refund Pending, one notice; pg_cron 0 failures | **production**: 05 + pg_cron not applied (owner decision) | apply with the app release |
-| Video consultation | **simulated** | STUB | STUB | — | — | `Connect.jsx` "Video call simulation states"; no WebRTC/SDK | no real call; leaving marks completion | choose a video provider (Task 4) |
-| Admin: meetings (filters, details, review) | yes | — | — | PASS | STG | Playwright (All/Upcoming/History, details dialog with review) | Appointments/Reviews pages removed (merged) | — |
+| Join window / completion / review | yes (11, staging) | PASS (disabled "Join opens …" with live countdown; Join inside window) | PASS emulator (button opened by itself at T−5 min; farmer + expert joined; completion after start; review request) | — | STG + LOCAL | DB tests 11 (2:54:59 deny, 2:55:00/3:00 allow, slot end deny, strangers/cancelled/completed/banned deny, no client clock); staging-catchup real time | window ends at slot end; completion needs start reached + expert joined | — |
+| Scheduler: reminders 24 h / day-of / 30 min / 10 min (expert) / **5 min (both)**, no-show | yes (server) | — | — | — | STG | DB tests (controlled clock); staging-catchup: real pg_cron sent the 5-min reminder to both, once; 60/60 runs ok | one existing job, flag-claimed, retries safe | production needs `05`+`11` |
+| Video consultation | **no video provider** | room screen (honest) | room screen (honest) | — | — | `MeetingRoom.jsx`: check-in + "Video not connected", talk via Chat; the old fake "SIMULATED / Audio Connected / Local Camera Active" screen and invented meet.agroconnect.app links are gone | needs a provider decision (Jitsi/Daily/Agora/100ms…) and credentials | owner decision (MODULE_PLAN E) |
+| Admin: meetings (filters, details, review, join times) | yes | — | — | PASS | STG | Playwright (All/Upcoming/History, details dialog with review); staging-catchup (admin reads status, both join times, review) | Appointments/Reviews pages removed (merged) | — |
 | Admin: reviews | merged into Meetings details | — | — | PASS | STG | Playwright | — | — |
 
 ## Messaging and notifications
@@ -68,7 +69,7 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 | Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
 |---|---|---|---|---|---|---|---|---|
 | 1:1 chat (conversations, messages, realtime) | yes | UNTESTED | UNTESTED | — | — | none; RLS reviewed in audit only | — | staging E2E: two users exchange messages |
-| In-app notifications (realtime) | yes | UNTESTED (UI) | UNTESTED | — | STG | staging-workflows realtime: 10/11 runs PASS, 1 network failure before the test | — | UI badge check |
+| In-app notifications (realtime) | yes | PASS (booking confirmation visible in Notifications) | PASS emulator | — | STG | staging-workflows realtime; staging-catchup (booking + 5-min reminder rows delivered); Playwright | in-app only | push = module B |
 | Push notifications (FCM) | NONE | — | — | — | — | no push plugin in `package.json` | users only see notices while the app is open | Task 4 |
 | Admin broadcasts | yes | — | — | UNTESTED | LOCAL | DB tests cover `send_broadcast` gating | — | admin E2E |
 | Reports / moderation | yes | UNTESTED (report) | UNTESTED | UNTESTED | LOCAL | DB tests (`resolve_report` admin-only) | — | E2E: user reports, admin resolves |
