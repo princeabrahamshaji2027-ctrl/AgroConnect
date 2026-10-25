@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
-import { validateRequiredText, validateImageFile } from '../utils/validation';
+import { validateRequiredText, validateImageFile, validateVideoFile } from '../utils/validation';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -86,43 +86,6 @@ export default function CreatePost({ onPublish, onCancel }) {
     }
   };
 
-  const handleCapacitorVideoPick = async () => {
-    setPermissionError(null);
-    try {
-      const { Camera } = await import('@capacitor/camera');
-
-      const permResult = await Camera.requestPermissions({ permissions: ['photos'] });
-      if (permResult.photos === 'denied') {
-        setPermissionError('Gallery access denied. Please enable it in app Settings to pick a video.');
-        return;
-      }
-
-      // For video on Capacitor, use the CameraSource.PHOTOS with video limit
-      // Note: Full video recording would also need microphone permission — only request if recording
-      const photo = await Camera.getPhoto({
-        resultType: 'dataUrl',
-        source: 'PHOTOS',
-        // We rely on the native picker's ability to select video files
-        allowEditing: false,
-        quality: 85,
-      });
-
-      const res = await fetch(photo.dataUrl);
-      const blob = await res.blob();
-      if (blob.size > MAX_VIDEO_BYTES) {
-        setPermissionError(`Video too large (max 50 MB / ~60 seconds). Please trim and try again.`);
-        return;
-      }
-      const file = new File([blob], `post_video_${Date.now()}.${photo.format || 'mp4'}`, { type: 'video/mp4' });
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(blob));
-    } catch (err) {
-      if (err.message?.includes('cancelled') || err.message?.includes('user cancelled')) return;
-      console.error('Video pick error:', err);
-      setPermissionError('Could not access media. Please check app permissions in Settings.');
-    }
-  };
-
   // ─── Web file input fallback ─────────────────────────────────────────────────
   const handleWebImageChange = async (e) => {
     setPermissionError(null);
@@ -140,12 +103,14 @@ export default function CreatePost({ onPublish, onCancel }) {
     setPreviewUrl(URL.createObjectURL(file));
   };
 
-  const handleWebVideoChange = (e) => {
+  const handleWebVideoChange = async (e) => {
     setPermissionError(null);
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > MAX_VIDEO_BYTES) {
-      setPermissionError(`Video too large (max 50 MB / ~60 seconds). Please trim and try again.`);
+    const vidVal = await validateVideoFile(file, MAX_VIDEO_BYTES / (1024 * 1024));
+    if (!vidVal.isValid) {
+      setPermissionError(vidVal.error);
+      if (videoInputRef.current) videoInputRef.current.value = '';
       return;
     }
     setSelectedFile(file);
@@ -153,21 +118,16 @@ export default function CreatePost({ onPublish, onCancel }) {
   };
 
   // ─── Unified media picker ────────────────────────────────────────────────────
+  // Videos always use the file input: on Android the WebView opens the system chooser, which offers videos. The
+  // camera plugin's picker used before only returns photos, so "video" posts uploaded a photo labelled video/mp4.
   const handlePickMedia = () => {
     setPermissionError(null);
-    if (isCapacitor()) {
-      if (mediaType === 'image') {
-        handleCapacitorImagePick();
-      } else {
-        handleCapacitorVideoPick();
-      }
+    if (mediaType === 'video') {
+      videoInputRef.current?.click();
+    } else if (isCapacitor()) {
+      handleCapacitorImagePick();
     } else {
-      // Web fallback: trigger hidden file input
-      if (mediaType === 'image') {
-        imageInputRef.current?.click();
-      } else {
-        videoInputRef.current?.click();
-      }
+      imageInputRef.current?.click();
     }
   };
 
@@ -199,18 +159,24 @@ export default function CreatePost({ onPublish, onCancel }) {
       if (!user) throw new Error('Not authenticated');
 
       let storagePath = null;
-      let finalMediaType = mediaType; // 'image' | 'video'
+      let uploaded = null; // { bucket, fileName } so a failed post does not leave an orphan file
+      // The file decides the type, not the selected tab.
+      const finalMediaType = selectedFile?.type?.startsWith('video/') ? 'video' : 'image';
 
       if (selectedFile) {
-        const bucket = mediaType === 'video' ? 'post-videos' : 'post-images';
-        const ext = selectedFile.name.split('.').pop() || (mediaType === 'video' ? 'mp4' : 'jpg');
+        const bucket = finalMediaType === 'video' ? 'post-videos' : 'post-images';
+        const ext = selectedFile.name.split('.').pop() || (finalMediaType === 'video' ? 'mp4' : 'jpg');
         const fileName = `${user.id}/${Date.now()}.${ext}`;
 
-        const { error: uploadError } = await supabase.storage
+        const { error: storageError } = await supabase.storage
           .from(bucket)
-          .upload(fileName, selectedFile, { upsert: false, contentType: selectedFile.type });
+          .upload(fileName, selectedFile, {
+            upsert: false,
+            contentType: selectedFile.type || (finalMediaType === 'video' ? 'video/mp4' : 'image/jpeg'),
+          });
 
-        if (uploadError) throw uploadError;
+        if (storageError) throw new Error(`${finalMediaType === 'video' ? 'Video' : 'Image'} upload failed: ${storageError.message}. Your post was not published.`);
+        uploaded = { bucket, fileName };
 
         const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
         storagePath = urlData.publicUrl;
@@ -235,7 +201,10 @@ export default function CreatePost({ onPublish, onCancel }) {
         .select()
         .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        if (uploaded) await supabase.storage.from(uploaded.bucket).remove([uploaded.fileName]);
+        throw insertError;
+      }
 
       if (onPublish) onPublish(inserted);
     } catch (err) {
@@ -455,7 +424,7 @@ export default function CreatePost({ onPublish, onCancel }) {
                 <span className="material-symbols-outlined" style={{ animation: 'spin 1.5s infinite linear', fontSize: '18px' }}>
                   progress_activity
                 </span>
-                Publishing...
+                {selectedFile ? `Uploading ${mediaType}...` : 'Publishing...'}
               </span>
             ) : 'Publish Post'}
           </Button>

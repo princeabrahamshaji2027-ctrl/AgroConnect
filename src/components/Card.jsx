@@ -1,6 +1,34 @@
 import React, { useState } from 'react';
 import './components.css';
 
+// One attachment per post (posts.image_path + posts.media_type). Videos get a native player inside the card; a file
+// that cannot be loaded shows a placeholder instead of a broken image.
+function PostMedia({ src, mediaType }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="post-card-media-error">
+        <span className="material-symbols-outlined">{mediaType === 'video' ? 'videocam_off' : 'broken_image'}</span>
+        <span>{mediaType === 'video' ? 'Video unavailable' : 'Image unavailable'}</span>
+      </div>
+    );
+  }
+  if (mediaType === 'video') {
+    return (
+      <video
+        src={src}
+        className="post-card-video"
+        controls
+        playsInline
+        preload="metadata"
+        aria-label="Post video"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return <img src={src} alt="Post Attachment" className="post-card-image" loading="lazy" onError={() => setFailed(true)} />;
+}
+
 export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileClick, onConnectToggle, isConnected = false, currentUserId }) {
   const [isLiked, setIsLiked] = useState(post.liked);
   const [likesCount, setLikesCount] = useState(post.likes);
@@ -78,9 +106,7 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
 
       <div className="post-card-content">{post.content}</div>
 
-      {post.image && (
-        <img src={post.image} alt="Post Attachment" className="post-card-image" />
-      )}
+      {post.image && <PostMedia src={post.image} mediaType={post.mediaType} />}
 
       {post.tags && (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>

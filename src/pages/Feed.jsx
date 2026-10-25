@@ -543,16 +543,6 @@ export default function Feed({
 
         {posts.map(post => (
           <div key={post.id}>
-            {post.mediaType === 'video' && post.image && (
-              <div style={{ margin: '0 16px 4px 16px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#000' }}>
-                <video
-                  src={post.image}
-                  controls
-                  preload="metadata"
-                  style={{ width: '100%', maxHeight: '320px', display: 'block', objectFit: 'cover' }}
-                />
-              </div>
-            )}
             <PostCard
               post={post}
               onLike={handleLike}

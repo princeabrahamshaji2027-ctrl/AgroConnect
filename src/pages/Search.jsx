@@ -41,6 +41,7 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
           userRole: post.profiles?.role || 'Farmer',
           content: post.caption,
           image: post.image_path,
+          mediaType: post.media_type || 'image',
           likes: post.like_count || 0,
           category: post.category,
           location: post.location,

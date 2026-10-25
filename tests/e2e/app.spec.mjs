@@ -158,3 +158,67 @@ test.describe('own profile from a post (staging)', () => {
     await expect(page.getByText('My Posts')).toBeVisible();
   });
 });
+
+// Post media (2026-10-25 bug): what a user sees after posting through the real form.
+test.describe('post media (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  const tag = `E2E media ${Date.now()}`;
+  let api;
+  test.beforeAll(async () => {
+    api = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const { error } = await api.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
+    if (error) throw error;
+  });
+  test.afterAll(async () => {
+    const { data } = await api.from('posts').select('id, image_path, media_type').like('caption', `${tag}%`);
+    for (const p of data || []) {
+      await api.from('posts').delete().eq('id', p.id);
+      const m = p.image_path?.match(/\/object\/public\/(post-images|post-videos)\/(.+)$/);
+      if (m) await api.storage.from(m[1]).remove([m[2]]);
+    }
+  });
+
+  const publish = async (page, { kind, file, title }) => {
+    await page.getByRole('button', { name: 'Floating action button' }).or(page.locator('.fab')).first().click();
+    if (kind === 'video') await page.getByRole('button', { name: /videocam\s*video/i }).click();
+    if (file) await page.locator(`input[type=file][accept="${kind}/*"]`).setInputFiles(file);
+    await page.getByPlaceholder('e.g. Pest damage on Rice crop leaves').fill(`${tag} ${title}`);
+    await page.locator('textarea').first().fill('Synthetic caption for the post media test');
+    await page.getByRole('button', { name: 'Publish Post' }).click();
+  };
+
+  test('image, video and text-only posts render in the feed card; a non-video file is refused', async ({ page }) => {
+    await login(page, fx('user1'));
+    await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
+
+    await publish(page, { kind: 'image', file: 'tests/fixtures/media/sample.png', title: 'image' });
+    const imgCard = page.locator('.card', { hasText: `${tag} image` }).first();
+    await expect(imgCard).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => imgCard.locator('img.post-card-image').evaluate((e) => e.complete && e.naturalWidth > 0), { timeout: 15_000 }).toBe(true);
+
+    await publish(page, { kind: 'video', file: 'tests/fixtures/media/sample.webm', title: 'video' });
+    const vidCard = page.locator('.card', { hasText: `${tag} video` }).first();
+    await expect(vidCard).toBeVisible({ timeout: 20_000 });
+    const video = vidCard.locator('video.post-card-video');
+    await expect(video).toHaveAttribute('controls', '');
+    await expect.poll(() => video.evaluate((v) => v.readyState >= 1 && v.duration > 0), { timeout: 15_000 }).toBe(true);
+    await expect(vidCard.locator('img.post-card-image')).toHaveCount(0); // no broken picture next to the player
+
+    await publish(page, { kind: 'image', title: 'text only' });
+    const txtCard = page.locator('.card', { hasText: `${tag} text only` }).first();
+    await expect(txtCard).toBeVisible({ timeout: 20_000 });
+    await expect(txtCard.locator('img.post-card-image, video')).toHaveCount(0);
+
+    // a photo picked as a video is refused before anything is uploaded
+    await page.getByRole('button', { name: 'Floating action button' }).or(page.locator('.fab')).first().click();
+    await page.getByRole('button', { name: /videocam\s*video/i }).click();
+    await page.locator('input[type=file][accept="video/*"]').setInputFiles({ name: 'photo.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not really a video') });
+    await expect(page.getByText(/does not look like a video/)).toBeVisible();
+
+    // media survives a reload
+    await page.reload();
+    await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => page.locator('.card', { hasText: `${tag} image` }).first().locator('img.post-card-image').evaluate((e) => e.complete && e.naturalWidth > 0), { timeout: 20_000 }).toBe(true);
+    await expect(page.locator('.card', { hasText: `${tag} video` }).first().locator('video.post-card-video')).toBeVisible();
+  });
+});

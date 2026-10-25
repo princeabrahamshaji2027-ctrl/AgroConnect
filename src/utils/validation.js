@@ -250,6 +250,37 @@ export async function validateImageFile(file, maxSizeMB = 5) {
 }
 
 /**
+ * Validates a post video (size, extension, MIME, container signature). Matches the post-videos bucket:
+ * MP4, WebM, MOV/QuickTime, max 50 MB.
+ */
+export async function validateVideoFile(file, maxSizeMB = 50) {
+  if (!file) {
+    return { isValid: false, error: 'Please select a video file.' };
+  }
+  if (file.size > maxSizeMB * 1024 * 1024) {
+    return { isValid: false, error: `Video must be smaller than ${maxSizeMB} MB (about 60 seconds).` };
+  }
+  const ext = (file.name || '').split('.').pop()?.toLowerCase();
+  if (!['mp4', 'm4v', 'webm', 'mov'].includes(ext)) {
+    return { isValid: false, error: 'Allowed video formats: MP4, WEBM, MOV.' };
+  }
+  if (file.type && !['video/mp4', 'video/webm', 'video/quicktime', 'video/mov'].includes(file.type)) {
+    return { isValid: false, error: 'This video format is not supported. Please choose an MP4, WEBM or MOV video.' };
+  }
+  try {
+    const h = await readFileHeaderBytes(file, 12);
+    const isIsoMedia = h[4] === 0x66 && h[5] === 0x74 && h[6] === 0x79 && h[7] === 0x70; // ....ftyp (MP4/MOV)
+    const isWebm = h[0] === 0x1A && h[1] === 0x45 && h[2] === 0xDF && h[3] === 0xA3;      // EBML (WebM)
+    if (!isIsoMedia && !isWebm) {
+      return { isValid: false, error: 'File does not look like a video. Please choose an MP4, WEBM or MOV video.' };
+    }
+  } catch (err) {
+    return { isValid: false, error: 'Failed to verify video file.' };
+  }
+  return { isValid: true, error: null };
+}
+
+/**
  * Helper to read first N bytes of a File blob.
  */
 function readFileHeaderBytes(file, byteCount = 4) {
