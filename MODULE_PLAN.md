@@ -138,3 +138,17 @@ tests in `tests/e2e/app.spec.mjs` + `scripts/staging/device-smoke.py`.
   add one Edge Function that mints a short-lived room token for that room (keys server-side).
 * **B. Push notifications** remain the gap for "notify immediately": notices are in-app (realtime + Notifications
   screen); a phone that is closed gets nothing until FCM is set up.
+
+## Status update 2026-10-25 (branch `feature/recovery-video-push`, staging only)
+* **Account recovery — done on staging**: Forgot Password (same reply for every address), reset link handling
+  (PKCE; recovery only when this device asked), Set New Password, Change Password verifies the current password and
+  signs out other devices; Google-only accounts get "Email me a link to set a password". Open: the e-mailed link on a
+  real phone (needs the owner's inbox + phone).
+* **E. Video — Daily chosen** (free 10,000 participant-minutes/month, private rooms + short-lived meeting tokens,
+  works in the Android WebView). `video-room-token` Edge Function: validates through `join_consultation` as the caller,
+  then creates a private 2-person room limited to the join window and a non-owner token. Only the expert can end the
+  consultation (`12`). **Blocked:** Daily account + `DAILY_API_KEY` secret (owner).
+* **B. Push — FCM HTTP v1**: `13` + `push-dispatch` + app registration and tap routing (opens the booking).
+  **Blocked:** Firebase project, `google-services.json`, `FIREBASE_SERVICE_ACCOUNT` secret, approval for `pg_net` +
+  a cron job. Push is off in builds without `google-services.json`.
+* Release order and owner steps: `RELEASE_CHECKLIST.md`.

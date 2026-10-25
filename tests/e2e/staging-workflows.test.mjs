@@ -169,10 +169,11 @@ describe('consultations', { skip }, () => {
     const joined = await A.expert1.c.rpc('join_consultation', { p_booking_id: booking });
     assert.ifError(joined.error);
     assert.ifError((await A.user1.c.rpc('join_consultation', { p_booking_id: booking })).error);
-    // 11: not before the scheduled start
-    assert.match((await A.user1.c.rpc('complete_consultation', { p_booking_id: booking })).error?.message || '', /before its scheduled start/);
+    // 11: not before the scheduled start; 12: only the expert ends it
+    assert.match((await A.expert1.c.rpc('complete_consultation', { p_booking_id: booking })).error?.message || '', /before its scheduled start/);
     while (Date.now() < Date.parse(joined.data.starts_at) + 2000) await new Promise((r) => setTimeout(r, 5000));
-    assert.ifError((await A.user1.c.rpc('complete_consultation', { p_booking_id: booking })).error);
+    assert.match((await A.user1.c.rpc('complete_consultation', { p_booking_id: booking })).error?.message || '', /Only the expert/);
+    assert.ifError((await A.expert1.c.rpc('complete_consultation', { p_booking_id: booking })).error);
     const b = await A.user1.c.from('consultation_bookings').select('status').eq('id', booking).single();
     assert.equal(b.data.status, 'Completed');
     const fake = await A.user3.c.from('reviews').insert({ booking_id: booking, reviewer_id: A.user3.uid, expert_id: A.expertId, rating: 1, comment: 'fake' });
@@ -254,9 +255,14 @@ describe('realtime', { skip }, () => {
 
 describe('scheduler (pg_cron, real time)', { skip }, () => {
   test('no-show: booking whose expert never joins is auto-cancelled by the scheduled job within ~7 minutes', { timeout: 600000 }, async () => {
-    const at = istFromNow(1);
-    const ins = await A.expert1.c.from('consultation_slots')
-      .insert({ expert_id: A.expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 400 }).select('id').single();
+    // the previous test's slot may start in this same minute (same expert): take the next free minute
+    let ins;
+    for (let m = 1; m <= 4; m++) {
+      const at = istFromNow(m);
+      ins = await A.expert1.c.from('consultation_slots')
+        .insert({ expert_id: A.expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 400 }).select('id').single();
+      if (ins.error?.code !== '23505') break;
+    }
     assert.ifError(ins.error);
     const booking = (await A.user3.c.rpc('book_consultation_slot', { p_slot_id: ins.data.id, p_issue: 'no-show test' })).data;
     assert.ok(booking);

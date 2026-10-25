@@ -99,12 +99,12 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     assert.equal(fj.room_id, ej.data.room_id);
     assert.match((await A.user2.c.rpc('join_consultation', { p_booking_id: id })).error?.message || '', /not a participant/);
 
-    // completion only after the scheduled start
-    const tooSoon = await A.user1.c.rpc('complete_consultation', { p_booking_id: id });
+    // completion: only the expert (12), and only after the scheduled start
+    const tooSoon = await A.expert1.c.rpc('complete_consultation', { p_booking_id: id });
     assert.match(tooSoon.error?.message || '', /before its scheduled start/);
     await waitFor(async () => Date.now() >= Date.parse(fj.starts_at) + 2000, 420000, 'meeting start');
-    assert.ifError((await A.user1.c.rpc('complete_consultation', { p_booking_id: id })).error);
-    assert.ifError((await A.expert1.c.rpc('complete_consultation', { p_booking_id: id })).error);   // both leave
+    assert.match((await A.user1.c.rpc('complete_consultation', { p_booking_id: id })).error?.message || '', /Only the expert/);
+    assert.ifError((await A.expert1.c.rpc('complete_consultation', { p_booking_id: id })).error);
     const f2 = await myNotes(A.user1, id);
     assert.equal(f2.filter((m) => /Please rate/.test(m)).length, 1, 'review request not exactly once');
     assert.equal(f2.filter((m) => m.startsWith('Reminder: your consultation')).length, 1, '5-min reminder not exactly once');

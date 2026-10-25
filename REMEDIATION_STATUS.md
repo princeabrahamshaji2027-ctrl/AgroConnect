@@ -217,3 +217,14 @@ New proposed migrations, applied to **staging** only and held for production wit
   never closed before, banned users were not checked, completion could happen before the start); the booking function
   no longer stores invented `meet.agroconnect.app` links.
 Production release order: backup → 04 → 05 → 09 → 10 → 11 → deploy `admin-delete-user` → new APK + admin build.
+
+## 2026-10-25 — account recovery, video, push (branch `feature/recovery-video-push`, staging only; production unchanged)
+* No database change for account recovery (Supabase Auth only). Change Password now verifies the current password.
+* `12_expert_controlled_completion.sql` — a farmer could end a paid consultation for both; now only the expert can,
+  and a session the expert attended is completed by the scheduler at slot end.
+* `13_push_notifications.sql` — push queue. Security notes: device tokens are written only through
+  `register_push_device()` (tied to `auth.uid()`); the outbox has RLS on and no policies (service role only); only
+  server-made booking notifications are pushed (a client-made notification never is — a DB test caught the first,
+  SECURITY DEFINER version of the trigger doing exactly that); the dispatcher must present a Vault secret.
+* Staging-found fixes (`12b_13b`): reminder wording, no cancellation reason in pushes, 2-hour expiry.
+Production order: see `RELEASE_CHECKLIST.md` (backup → 04 → 05 → 09 → 10 → 11 → 12 → 13 → functions → apps).

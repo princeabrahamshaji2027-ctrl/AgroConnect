@@ -50,3 +50,8 @@ showing a raw error — verified on staging with Playwright.
 Production still lacks `04`, `05` (held for the coordinated app release) and now `09` + the `admin-delete-user`
 function. The app in this branch needs all of them. Order: backup → `04` → `05` → `09` → deploy function → new APK and
 admin build. Optional: `06`-style repair for "Dr. Ramesh Expert" (expert record missing).
+
+## Follow-up 2026-10-25 — recovery, video, push (staging only)
+"Forgot Password?" on the login screen now works (it was a dead link), Change Password asks for and checks the current
+password, Catch Up meetings have a real video room (Daily; waiting for the owner's Daily key) and the expert ends the
+consultation, and push notifications are prepared (waiting for Firebase). Production release: `RELEASE_CHECKLIST.md`.

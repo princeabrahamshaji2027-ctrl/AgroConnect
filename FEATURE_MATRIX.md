@@ -70,7 +70,9 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 |---|---|---|---|---|---|---|---|---|
 | 1:1 chat (conversations, messages, realtime) | yes | UNTESTED | UNTESTED | — | — | none; RLS reviewed in audit only | — | staging E2E: two users exchange messages |
 | In-app notifications (realtime) | yes | PASS (booking confirmation visible in Notifications) | PASS emulator | — | STG | staging-workflows realtime; staging-catchup (booking + 5-min reminder rows delivered); Playwright | in-app only | push = module B |
-| Push notifications (FCM) | NONE | — | — | — | — | no push plugin in `package.json` | users only see notices while the app is open | Task 4 |
+| Push notifications (FCM) | yes (staging) | — | NOT TESTED (no Firebase) | — | STG + LOCAL | DB tests 13; staging: devices own-only, outbox gets server notices once, client notices never, dispatcher refuses without secret, 503 without FCM; mocked FCM unit tests | **no delivery verified** — no Firebase project / scheduler call | owner: Firebase + approve pg_net/cron; phone test |
+| Video consultations (Daily) | yes (staging) | PASS (honest states, mocked provider) | NOT TESTED | — | STG | staging-video-push: 401/403/409/400, both participants pass, `video_not_configured` with no fake room; mocked Daily unit tests | **no real call** — no Daily key | owner: Daily key; two-device test |
+| Account recovery (forgot / reset / change password) | yes | PASS | NOT TESTED (reset link) | — | STG | staging-auth 6/6; Playwright 4 | e-mailed link not opened on a phone | owner inbox + phone |
 | Admin broadcasts | yes | — | — | UNTESTED | LOCAL | DB tests cover `send_broadcast` gating | — | admin E2E |
 | Reports / moderation | yes | UNTESTED (report) | UNTESTED | UNTESTED | LOCAL | DB tests (`resolve_report` admin-only) | — | E2E: user reports, admin resolves |
 

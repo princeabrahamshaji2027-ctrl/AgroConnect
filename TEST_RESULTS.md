@@ -362,3 +362,24 @@ its error text + failure screenshot contained the owner's Google account chooser
 screenshot was deleted before any commit, the log scrubbed, and the script now reads only the app's own screen and never
 captures the browser. (2) Earlier, the emulator's "isn't responding" dialogs: partly the app (blur bar over History,
 fixed), partly the emulator itself (load average 42 after a clean reboot with System UI not responding).
+
+## Account recovery, video, push + release audit — 2026-10-25 (branch `feature/recovery-video-push`, staging only)
+
+No phone and no emulator were used for this round (owner: phone not connected, emulator broken). **Nothing below was run
+on a device.** Production was not written to.
+
+| Suite | Result | Notes |
+|---|---|---|
+| `npm test` — validation | **27/27 PASS** | |
+| `npm test` — regression + unit (incl. 8 MOCKED Daily/FCM provider tests, 1 push-tap test) | **23/23 PASS** | AUD-013/014 updated: join now goes through the `video-room-token` function, which calls `join_consultation` as the caller |
+| `npm run test:db` (PGlite, real schema, 01–13) | **60/60 PASS** | incl. 10 new for 12/13 |
+| `npm run test:staging` (now 7 files, run one file at a time — they share fixture accounts) | **37/38 in the full run; the 1 failure fixed and its file re-run 9/9 PASS** | failure was a test-isolation bug (two tests created a slot in the same minute for the same expert → `unique_expert_slot`); older Catch Up tests updated: only the expert ends a consultation (12) |
+| — `staging-auth` (reset request for unknown/malformed address, fake codes, change password: wrong/same password refused, old password dead, other device signed out, role unchanged) | 6/6 PASS | throwaway account deleted |
+| — `staging-video-push` (401/403/409/400; both participants pass; `video_not_configured` with no room/token; devices own-only; outbox; dispatcher secret; 503 without FCM) | 5/5 PASS | provider NOT configured — no real video/push |
+| Playwright, E2E_STAGING=1 against fresh staging builds (global guard: bundles contain the staging ref only) | **29/29 PASS** | 3 use MOCKED responses and say so: Google-only identities, video provider down, room that cannot connect |
+| Production web/admin builds | PASS | production ref only, no push flag |
+| Staging APK build | PASS | camera/mic/notification permissions + push plugin; push off (no `google-services.json`) |
+
+**BLOCKED / device-required (not run, not counted as passed):** real Daily video call between two devices (no
+`DAILY_API_KEY`); push delivery to a closed phone and notification-tap routing (no Firebase project, no `pg_net`/cron);
+password-reset e-mail opened on the phone (needs the owner's inbox); camera/microphone permission prompts on Android.

@@ -93,9 +93,12 @@ test('AUD-013/014: Catch Up writes go through server functions, not direct table
   assert.doesNotMatch(src, /from\('consultation_bookings'\)\s*\.(insert|update|delete|upsert)\(/);
   assert.doesNotMatch(src, /from\('video_meetings'\)/);
   assert.doesNotMatch(src, /is_booked: true/);
-  for (const fn of ['book_consultation_slot', 'cancel_consultation_booking', 'join_consultation', 'complete_consultation']) {
+  for (const fn of ['book_consultation_slot', 'cancel_consultation_booking', 'complete_consultation']) {
     assert.match(src, new RegExp(`rpc\\('${fn}'`), fn);
   }
+  // joining goes through the video-room-token Edge Function, which calls join_consultation as the caller
+  assert.match(src, /functions\.invoke\('video-room-token'/);
+  assert.match(read('supabase/functions/video-room-token/index.ts'), /rpc\('join_consultation'/);
   assert.doesNotMatch(src, /checkRemindersAndNoShows/);
   assert.doesNotMatch(src, /setNowTick/, 'no whole-page re-render every second');
 });
