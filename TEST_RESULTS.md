@@ -201,3 +201,39 @@ All behavioural checks ran in forced-rollback DO blocks on production; persisten
 | Data row counts unchanged | PASS |
 | Playwright smoke (admin + app login, production auth) | 5/5 PASS |
 | Supabase security advisor | 21+14 warnings → 2 by design + 14 by design + leaked-password (dashboard) |
+
+---
+
+## Staging (`ahkgvuewgbjyahbiehrx`) — 2026-10-25
+| Test | Result |
+|---|---|
+| Schema reconstruction on a real Supabase project (export md5) | PASS (356 objects identical) |
+| Staging ⇄ production parity fingerprint (489 items) | PASS (only ACL notation differs for 3 functions, same rights) |
+| Anonymous attacker suite over HTTP (`staging-anon.test.mjs`): private reads, admin/booking/scheduler/internal RPCs, writes, CV list/upload | 5/5 PASS; no rows created |
+| Playwright unauthenticated vs staging builds | 5/5 PASS |
+| Staging bundles contain no production ref | PASS |
+| Local `npm test` (validation 27, regression 14, DB 30) | PASS |
+| Test-account signup via public API | BLOCKED (`email_address_invalid` for `.local`; email rate limit, confirmation on) |
+| Signed-in API suite (`staging-api.test.mjs`), signed-in Playwright, expert device scenario, realtime delivery, pg_cron runs | BLOCKED (accounts / scheduler approval) |
+
+### Staging, signed in — 2026-10-25 (accounts created through the public signup API; owner-approved)
+Accounts: 6 synthetic `agroconnect-stg-<role>-<token>@gmail.com` addresses (random token, not real mailboxes), created
+in one run, all with an immediate session ("Confirm email" off). Every signup requested `role: Admin`; all were
+created as **Farmer** (01's signup fix verified end to end). Admin promoted via `profiles`; 06 applied.
+
+| Suite / scenario | Result | Notes |
+|---|---|---|
+| `staging-api.test.mjs` | **8/8 PASS** | profile edit persists; self-promotion, notification forgery, admin/scheduler RPCs, direct booking writes rejected; sign-out; expert1 valid; book → isolate → cancel → refund Pending → slot freed → expert notified; admin reads |
+| Ban: admin bans, banned user cannot edit/post, admin unbans, user cannot change own ban flag | PASS | |
+| Expert application: no self-approval (update, RPC, direct experts insert); admin approves → Expert; admin demotes | PASS | fixture restored |
+| CV privacy (Storage HTTP): owner upload/download; other user cannot list/download/write; admin can | PASS | object removed |
+| Concurrent booking race (two farmers, one slot) | PASS | exactly one winner |
+| Join window, completion needs expert, review only by farmer and only once, rating trigger | PASS | |
+| Admin booking cancel RPC frees slot (broken in production until 04) | PASS | |
+| Realtime: farmer receives server-created booking notification | **FAIL first run (20 s timeout), PASS on re-run (2.4 s)** | isolated trace showed SUBSCRIBED → event; first-connection latency on the new project suspected; test unchanged |
+| pg_cron no-show (real scheduler, real time) | PASS | auto-cancelled ≈6.3 min after booking; refund Pending ₹400; one farmer notice |
+| pg_cron health | PASS | 21 runs, 0 failures |
+| Playwright vs staging builds (admin + app, signed in) | **10/10 PASS** | admin dashboard/Users/Experts + refresh; non-admin refused; farmer feed/profile/Catch Up; **expert1 expert mode + availability**; admin redirected from app |
+| Screenshots | — | `appium-results/2026-10-25_staging/` (admin dashboard/experts, user feed/profile/Catch Up, expert Catch Up/availability) |
+| Android device scenario on staging | **BLOCKED** | a staging APK would replace the production app id `com.agroconnect.app`; needs an approved staging app-id variant |
+| Post-test integrity | PASS | fixtures restored, 0 double bookings, 0 booking/slot mismatches |

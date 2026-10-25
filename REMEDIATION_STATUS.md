@@ -160,3 +160,50 @@ it is now part of `supabase/proposed/03_fix_security_definer_functions.sql`.
 together with the new app release); admin booking Cancel/Complete broken and missing columns (need 04); expert1
 fixture (06, staging); marketplace payment/order RLS (AUD-047); leaked-password protection.
 To undo: `supabase/backups/20261024_pre_remediation_restore.sql` (re-opens the holes).
+
+---
+
+# Staging — 2026-10-25 (`ahkgvuewgbjyahbiehrx`, owner-approved; production untouched)
+
+Details and rebuild steps: `supabase/staging/README.md`.
+
+| Step | Status | Evidence |
+|---|---|---|
+| Target verified before every write | DONE | `get_project` → `ahkgvuewgbjyahbiehrx` before each of 13 migrations |
+| Pre-setup backup | DONE | `supabase/backups/20261025_staging_pre_setup_state.sql` (staging was empty) |
+| Preflight compatibility | DONE | Found: new-project default grants differ from production → explicit parity grants; storage policy creation, bucket inserts, auth trigger all work |
+| Schema export applied | PASS | byte-identical to production snapshot (md5 `0c0bd1d0…e491`) |
+| 01/02/03/07/08 applied | PASS | parity fingerprint equals current production in every section (function ACL form differs, same effective rights) |
+| 04 + 05 (no scheduler) applied | PASS | 14 migrations; guards, revokes, restrictive read policies present; pg_cron **not** installed |
+| Test accounts via normal signup | **BLOCKED** | `email_address_invalid` for `.local`; `over_email_send_rate_limit` (email confirmation on). 0 users created |
+| 06 fixture repair | BLOCKED (needs accounts) | made email-keyed; still 30/30 in `test:db` |
+| Anonymous attacker suite vs staging HTTP API | **5/5 PASS** | `tests/e2e/staging-anon.test.mjs`; afterwards 0 rows anywhere |
+| Staging web + admin builds | PASS | `--mode staging`; bundles reference staging only |
+| Browser suite vs staging builds | 5 PASS / 5 SKIPPED | unauthenticated pass; signed-in need accounts |
+| Signed-in API / browser / device suites | BLOCKED | accounts |
+| Scheduler | DONE (approved 2026-10-25) | pg_cron 1.6.4; job `consultation-lifecycle` every minute; runs recorded as `succeeded` in `cron.job_run_details` |
+
+## pg_cron — what approving it means (staging)
+* `create extension pg_cron` installs the `cron` schema and a background worker in the staging database; Supabase's
+  `issue_pg_cron_access` event trigger then grants `postgres` access. Available on the Free plan.
+* `cron.schedule('consultation-lifecycle', '* * * * *', 'select public.process_consultation_lifecycle()')` runs every
+  minute as `postgres`: it writes reminder notifications, auto-cancels no-show bookings (refund → `Pending`, slot freed,
+  expert `no_show_count` + 1) for **staging data only**.
+* Side effects: one short transaction per minute; `cron.job_run_details` grows ~1,440 rows/day (prunable).
+  Undo: `select cron.unschedule('consultation-lifecycle'); drop extension pg_cron;`.
+
+## Owner actions to unblock staging accounts (dashboard, staging project only)
+1. Authentication → Sign In / Providers → Email → turn **off "Confirm email"** (staging only), so signup sends no email.
+2. Choose a test email domain that Supabase Auth accepts (it rejects `.local`). Options: a domain you control, or
+   tell me to use a public test domain and I will retry once; set it as `FIXTURE_EMAIL_DOMAIN` in `.env.staging`.
+3. Approve (or not) installing pg_cron and scheduling the job on staging.
+
+### Staging update — signed-in verification complete (2026-10-25)
+Accounts created via the normal signup flow (6, synthetic addresses), admin promoted, 06 applied, pg_cron installed and
+scheduled (owner-approved). API 8/8, workflows 7/7 + realtime pass on re-run, browser 10/10 — see `TEST_RESULTS.md`.
+Remaining for staging: Android device run (needs a staging app id so it does not replace the production app).
+Production unchanged since the approved 01/02/03/07/08 apply (migration history checked).
+
+**Production release readiness (04 + 05 + new app):** staging now proves the full lifecycle on a real Supabase
+project. Release order: (1) owner rotates exposed passwords; (2) apply 04, 05 (incl. pg_cron) to production;
+(3) ship the new web build and APK together; (4) optional forced-update broadcast for old APKs.

@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test';
 
+const fx = (name) => (process.env.FIXTURE_EMAIL_TOKEN
+  ? `agroconnect-stg-${name}-${process.env.FIXTURE_EMAIL_TOKEN}@${process.env.FIXTURE_EMAIL_DOMAIN}`
+  : `${name}@agroconnect.local`);
+
 const staging = process.env.E2E_STAGING === '1' && process.env.FIXTURE_PASSWORD;
 
 async function toLogin(page) {
@@ -38,7 +42,7 @@ test.describe('authenticated (staging)', () => {
   test.skip(!staging, 'set E2E_STAGING=1 and FIXTURE_PASSWORD and build the app against staging');
 
   test('normal user: feed, profile, Catch Up lists expert1, no expert tools, session survives reload', async ({ page }) => {
-    await login(page, 'user1@agroconnect.local');
+    await login(page, fx('user1'));
     await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
     await nav(page, 'Profile').click();
     await expect(page.getByText('Test User 1 (Farmer)')).toBeVisible();
@@ -51,7 +55,7 @@ test.describe('authenticated (staging)', () => {
   });
 
   test('expert1: Catch Up opens in expert mode with availability tools', async ({ page }) => {
-    await login(page, 'expert1@agroconnect.local');
+    await login(page, fx('expert1'));
     await nav(page, 'Catch Up').click();
     await expect(page.getByText('Expert Catch Up — Scheduled Meetings')).toBeVisible({ timeout: 20_000 });
     await page.getByText('Manage Availability').first().click();

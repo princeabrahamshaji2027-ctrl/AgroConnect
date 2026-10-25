@@ -8,6 +8,19 @@
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync, existsSync } from 'node:fs';
+
+// Falls back to .env.staging (git-ignored) when the variables are not exported in the shell.
+const envFile = new URL('../../.env.staging', import.meta.url);
+if (existsSync(envFile)) {
+  for (const l of readFileSync(envFile, 'utf8').split('\n')) {
+    const m = l.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+  }
+}
+const fx = (name) => (process.env.FIXTURE_EMAIL_TOKEN
+  ? `agroconnect-stg-${name}-${process.env.FIXTURE_EMAIL_TOKEN}@${process.env.FIXTURE_EMAIL_DOMAIN}`
+  : `${name}@agroconnect.local`);
 
 const URL_ = process.env.STAGING_SUPABASE_URL;
 const KEY = process.env.STAGING_SUPABASE_ANON_KEY;
@@ -40,7 +53,7 @@ describe('staging: anonymous', { skip }, () => {
 
 describe('staging: normal user (user1)', { skip }, () => {
   let u;
-  before(async () => { u = await signIn('user1@agroconnect.local'); });
+  before(async () => { u = await signIn(fx('user1')); });
 
   test('loads own profile and persists an edit', async () => {
     const bio = `e2e ${Date.now()}`;
@@ -70,7 +83,7 @@ describe('staging: normal user (user1)', { skip }, () => {
   });
 
   test('sign-out ends access', async () => {
-    const tmp = await signIn('user1@agroconnect.local');
+    const tmp = await signIn(fx('user1'));
     await tmp.c.auth.signOut();
     const { data } = await tmp.c.from('notifications').select('id').limit(1);
     assert.equal((data || []).length, 0);
@@ -79,7 +92,7 @@ describe('staging: normal user (user1)', { skip }, () => {
 
 describe('staging: expert1 + booking lifecycle', { skip }, () => {
   test('expert1 is a recognised, active expert with open slots and no admin rights', async () => {
-    const e = await signIn('expert1@agroconnect.local');
+    const e = await signIn(fx('expert1'));
     const { data: me } = await e.c.from('experts').select('id, is_active').eq('user_id', e.uid).maybeSingle();
     assert.ok(me, 'experts row exists (AUD-015)');
     assert.equal(me.is_active, true);
@@ -91,9 +104,9 @@ describe('staging: expert1 + booking lifecycle', { skip }, () => {
   });
 
   test('farmer books -> expert sees it -> other farmer does not -> farmer cancels -> refund Pending, slot freed', async () => {
-    const e = await signIn('expert1@agroconnect.local');
-    const f = await signIn('user1@agroconnect.local');
-    const other = await signIn('user3@agroconnect.local');
+    const e = await signIn(fx('expert1'));
+    const f = await signIn(fx('user1'));
+    const other = await signIn(fx('user3'));
     const { data: me } = await e.c.from('experts').select('id').eq('user_id', e.uid).single();
     const { data: slot } = await f.c.from('consultation_slots').select('id').eq('expert_id', me.id).eq('is_booked', false)
       .gt('slot_date', new Date().toISOString().slice(0, 10)).limit(1).single();

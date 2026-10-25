@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test';
 
+const fx = (name) => (process.env.FIXTURE_EMAIL_TOKEN
+  ? `agroconnect-stg-${name}-${process.env.FIXTURE_EMAIL_TOKEN}@${process.env.FIXTURE_EMAIL_DOMAIN}`
+  : `${name}@agroconnect.local`);
+
 const staging = process.env.E2E_STAGING === '1' && process.env.E2E_ADMIN_EMAIL && process.env.E2E_ADMIN_PASSWORD;
 
 function jwtRoles(text) {
@@ -65,7 +69,7 @@ test.describe('authenticated (staging)', () => {
 
   test('a non-admin account is refused', async ({ page }) => {
     await page.goto('/');
-    await page.getByPlaceholder('admin@agroconnect.com').fill('user1@agroconnect.local');
+    await page.getByPlaceholder('admin@agroconnect.com').fill(fx('user1'));
     await page.locator('input[type=password]').fill(process.env.FIXTURE_PASSWORD);
     await page.getByText('Sign In to Dashboard').click();
     await expect(page.getByText(/do not have administrator privileges/i)).toBeVisible({ timeout: 20_000 });

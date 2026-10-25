@@ -8,20 +8,20 @@
 -- (with experts rows) during earlier test runs, so they no longer represent Pending / fresh farmers.
 
 -- ---- expert1: approved expert with an experts row, application history and future open slots
+-- Fixtures are found by email (accounts created through normal signup get random ids).
 do $$
 declare
-  v_user constant uuid := '11111111-1111-4000-8000-000000000003';
-  v_expert constant uuid := '22222222-2222-4000-8000-000000000003';
+  v_user uuid := (select id from auth.users where email = 'expert1@agroconnect.local');
 begin
-  if not exists (select 1 from auth.users where id = v_user and email like '%@agroconnect.local') then
+  if v_user is null then
     raise notice 'expert1 fixture not present; skipped';
     return;
   end if;
 
   update public.profiles set role = 'Expert' where id = v_user;
 
-  insert into public.experts (id, user_id, specialization, verified_date, is_active)
-  values (v_expert, v_user, 'Soil & Agronomy', current_date, true)
+  insert into public.experts (user_id, specialization, verified_date, is_active)
+  values (v_user, 'Soil & Agronomy', current_date, true)
   on conflict (user_id) do update set is_active = true;
 
   if not exists (select 1 from public.expert_applications where user_id = v_user and status = 'Approved') then
@@ -46,14 +46,13 @@ declare
   r record;
 begin
   for r in
-    select * from (values
-      ('11111111-1111-4000-8000-000000000001'::uuid, null::text),
-      ('11111111-1111-4000-8000-000000000002'::uuid, 'Pending'),
-      ('11111111-1111-4000-8000-000000000004'::uuid, null),
-      ('11111111-1111-4000-8000-000000000005'::uuid, 'Rejected')
-    ) as f(user_id, app_status)
+    select u.id as user_id, f.app_status from (values
+      ('user1@agroconnect.local', null::text),
+      ('user2@agroconnect.local', 'Pending'),
+      ('user3@agroconnect.local', null),
+      ('user4@agroconnect.local', 'Rejected')
+    ) as f(email, app_status) join auth.users u on u.email = f.email
   loop
-    continue when not exists (select 1 from auth.users where id = r.user_id and email like '%@agroconnect.local');
     delete from public.experts where user_id = r.user_id;
     update public.profiles set role = 'Farmer' where id = r.user_id;
     delete from public.expert_applications where user_id = r.user_id;
