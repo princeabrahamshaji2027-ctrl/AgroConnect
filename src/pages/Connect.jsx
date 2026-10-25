@@ -6,9 +6,11 @@ import Dialog from '../components/Dialog';
 import BottomSheet from '../components/BottomSheet';
 import ExpertMenuSheet from '../components/ExpertMenuSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
-import MeetingRoom from '../components/MeetingRoom';
+import DemoCheckout from '../components/DemoCheckout';
+import { formatInr } from '../utils/money';
 import JoinMeetingButton, { meetingStartMs } from '../components/JoinMeetingButton';
 import { supabase } from '../supabase';
+import { normalizeMeetLink, openMeetingLink, prepareMeetWindow, MEET_LINK_HINT } from '../utils/meetLink';
 import './pages.css';
 
 const DAYS_OF_WEEK = [
@@ -112,6 +114,26 @@ const slotEndMs = (b) => {
   const end = meetingStartMs(slot.slot_date || b.meeting_date, slot.end_time);
   return end > start ? end : end + 24 * 60 * 60 * 1000;
 };
+// The saved Google Meet link of a booking (video_meetings is one row per booking; PostgREST may return it as a list).
+const meetingLinkOf = (b) => {
+  const vm = Array.isArray(b.video_meetings) ? b.video_meetings[0] : b.video_meetings;
+  return vm?.meeting_link || null;
+};
+function MeetLinkStatus({ link, expert = false }) {
+  const ready = !!link;
+  return (
+    <div
+      data-testid="meet-link-status"
+      style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 600,
+               color: ready ? 'var(--primary-green)' : '#FFA726' }}
+    >
+      <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">{ready ? 'link' : 'hourglass_top'}</span>
+      {ready ? (expert ? 'Google Meet link saved' : 'Google Meet link ready')
+             : (expert ? 'No meeting link yet — add a Google Meet link' : 'Waiting for expert to add meeting link')}
+    </div>
+  );
+}
+
 const COMMON_TIME_SLOTS = [
   '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
   '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
@@ -326,10 +348,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [calYear, setCalYear] = useState(currentDateObj.getFullYear());
   const [calMonth, setCalMonth] = useState(currentDateObj.getMonth());
 
-  // Meeting room (no video provider yet; see MeetingRoom.jsx)
-  const [callSession, setCallSession] = useState(null); // { meeting, session } after the server accepted the join
+  // Consultations happen in Google Meet: the expert saves the link, Join opens it outside the app (migration 14)
   const [joiningId, setJoiningId] = useState(null);
-  const [leavingCall, setLeavingCall] = useState(false);
+  const [completingId, setCompletingId] = useState(null);
+  const [linkEditor, setLinkEditor] = useState(null); // { appt, value, saving, error, saved }
+  const [checkout, setCheckout] = useState(null);     // { slotId, issue } while the DEMO checkout is open
   // server clock = phone clock + offset, measured by consultation_join_status(); ticks once a second
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
 
@@ -478,6 +501,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           .select(`
             *,
             consultation_slots:slot_id ( slot_date, start_time, end_time ),
+            video_meetings ( meeting_link ),
             farmer_profiles:farmer_id (
               id,
               user_id,
@@ -507,6 +531,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             time: b.meeting_time,
             endsMs: slotEndMs(b),
             slotId: b.slot_id,
+            meetingLink: meetingLinkOf(b),
             status: 'upcoming'
           })));
         }
@@ -525,6 +550,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             .select(`
               *,
               consultation_slots:slot_id ( slot_date, start_time, end_time ),
+              video_meetings ( meeting_link ),
               experts:expert_id (
                 id,
                 user_id,
@@ -550,6 +576,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               date: appt.meeting_date,
               time: appt.meeting_time,
               endsMs: slotEndMs(appt),
+              meetingLink: meetingLinkOf(appt),
               status: 'upcoming'
             })));
           }
@@ -603,6 +630,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             date: h.meeting_date,
             duration: '30 mins',
             status: h.status,
+            completionSource: h.completion_source,
             cancellationReason: h.cancellation_reason,
             reviewed: reviewedBookingIds.has(h.id)
           }));
@@ -853,64 +881,78 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       return;
     }
 
-    // One server-side transaction: validates the slot, locks it, creates the booking and the meeting room.
-    const { error: bookingErr } = await supabase.rpc('book_consultation_slot', {
-      p_slot_id: selectedSlot.id,
-      p_issue: bookingIssue
-    });
+    // Pay & Book opens the DEMO checkout; the booking is created only when the demo payment is confirmed on the server.
+    setCheckout({ slotId: selectedSlot.id, issue: bookingIssue.trim() });
+  };
 
-    if (bookingErr) {
-      if (bookingErr.code === '23505') {
-        alert('This slot was just booked by another farmer. Please choose an available slot.');
-        handleBookClick(selectedExpert);
-        return;
-      }
-      alert(`Booking failed: ${bookingErr.message}`);
+  const handleCheckoutClose = (result) => {
+    const expert = selectedExpert;
+    setCheckout(null);
+    if (result?.booked) {
+      setSelectedExpert(null);
+      setSelectedSlot(null);
+      setBookingDate('');
+      setBookingTime('');
+      setBookingIssue('');
+      if (onShowToast) onShowToast(`📅 Booked with ${expert?.name || 'the expert'} — demo payment, no real money charged.`);
+      fetchData();
+      setActiveSubTab('upcoming');
       return;
     }
-
-    setSelectedExpert(null);
-    setSelectedSlot(null);
-    setBookingDate('');
-    setBookingTime('');
-    setBookingIssue('');
-    
-    if (onShowToast) {
-      onShowToast(`📅 Meeting booked with ${selectedExpert.name}!`);
+    if (result?.cancelled) {
+      if (onShowToast) onShowToast('Demo payment cancelled. Nothing was booked.');
+      return;   // back to the booking dialog with the same choices
     }
-    fetchData();
-    setActiveSubTab('upcoming');
+    if (result?.reselect && expert) {
+      setSelectedSlot(null);
+      handleBookClick(expert);   // reload the expert's open slots
+    }
   };
 
   const joinErrorText = (err) => {
     const msg = err?.message || '';
     if (/Failed to fetch|NetworkError|network/i.test(msg)) return 'No connection. You have not joined the meeting — please check your internet and try again.';
     if (/not a participant/i.test(msg)) return 'This meeting belongs to someone else. You cannot join it.';
+    if (/not added the Google Meet link/i.test(msg)) return 'The expert has not added the Google Meet link yet. You will be notified when it is ready.';
     return msg || 'Could not join the meeting. Please try again.';
   };
 
-  // Leaving never completes a consultation; only the expert's "End consultation" does (server rule, migration 12).
-  const handleLeaveCall = async ({ end = false } = {}) => {
-    if (!callSession) return;
-    const { meeting } = callSession;
-    if (end) {
-      setLeavingCall(true);
-      const { error } = await supabase.rpc('complete_consultation', { p_booking_id: meeting.id });
-      setLeavingCall(false);
-      if (error) {
-        if (onShowToast) onShowToast(/before its scheduled start/.test(error.message)
-          ? 'The consultation can be ended after its scheduled start.' : error.message);
-        return;   // stay in the room
-      }
-      setCallSession(null);
-      fetchData();
-      setActiveSubTab('upcoming');
-      if (onShowToast) onShowToast('Consultation completed. The farmer has been asked for a review.');
+  // Only the booking's expert can mark it completed, after the start and once a Meet link was saved (server rule, 14).
+  // AgroConnect cannot see whether the Google Meet call happened; the expert confirms it.
+  const handleCompleteConsultation = async (meeting) => {
+    if (completingId) return;
+    setCompletingId(meeting.id);
+    const { error } = await supabase.rpc('complete_consultation', { p_booking_id: meeting.id });
+    setCompletingId(null);
+    if (error) {
+      if (onShowToast) onShowToast(/before its scheduled start/.test(error.message)
+        ? 'You can mark the consultation completed after its scheduled start.' : error.message);
       return;
     }
-    setCallSession(null);
+    setSelectedMeetingDetail(null);
     fetchData();
-    if (onShowToast) onShowToast('You left the room. You can rejoin until the session ends.');
+    if (onShowToast) onShowToast('Consultation marked completed. The farmer has been asked for a review.');
+  };
+
+  const handleSaveMeetingLink = async () => {
+    if (!linkEditor || linkEditor.saving) return;
+    const normalized = normalizeMeetLink(linkEditor.value);
+    if (!normalized) {
+      setLinkEditor({ ...linkEditor, error: `Paste a Google Meet link like ${MEET_LINK_HINT}`, saved: null });
+      return;
+    }
+    setLinkEditor({ ...linkEditor, saving: true, error: null, saved: null });
+    const { data, error } = await supabase.rpc('set_meeting_link', { p_booking_id: linkEditor.appt.id, p_link: normalized });
+    if (error) {
+      const msg = /Failed to fetch|NetworkError|network/i.test(error.message || '')
+        ? 'No connection. The link was not saved — please try again.' : (error.message || 'The link could not be saved.');
+      setLinkEditor((le) => le && { ...le, saving: false, error: msg });
+      return;
+    }
+    setLinkEditor((le) => le && { ...le, saving: false, value: data.meeting_link,
+      saved: data.changed ? 'Meeting link saved. The farmer has been notified.' : 'This link is already saved.' });
+    setSelectedMeetingDetail((d) => (d && d.id === linkEditor.appt.id ? { ...d, meetingLink: data.meeting_link } : d));
+    fetchData();
   };
 
   const handleOpenReviewDialog = (item) => {
@@ -965,32 +1007,27 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     setOfferedSlots(offeredSlots.filter((_, idx) => idx !== index));
   };
 
-  // Join through the video-room-token function: it runs the server checks (participant, ban, status, join window
-  // on the database clock), records attendance and — when a video provider is configured — returns a short-lived
-  // room token for this user only. Nothing is shown as joined unless the server accepted the join.
+  // Join: join_consultation() re-checks participant, ban, status and the join window on the database clock, records
+  // that this person opened the meeting from AgroConnect (not proof that the call happened) and returns the saved
+  // Google Meet link, which is then opened outside the app. The consultation itself takes place in Google Meet.
   const handleServerValidatedJoin = async (meeting) => {
     if (joiningId) return;
+    const preparedWindow = prepareMeetWindow();   // web: must happen during the tap
     setJoiningId(meeting.id);
     try {
-      const { data, error } = await supabase.functions.invoke('video-room-token', { body: { booking_id: meeting.id } });
-      let body = data;
+      const { data, error } = await supabase.rpc('join_consultation', { p_booking_id: meeting.id });
       if (error) {
-        try { body = await error.context.json(); } catch { body = null; }
-        // accepted by the server, but no video provider (yet) or the provider is down: honest room without video
-        if (body?.code === 'video_not_configured' || body?.code === 'provider_unavailable' || body?.code === 'provider_misconfigured') {
-          setSelectedMeetingDetail(null);
-          if (body.server_now) setClockOffsetMs(Date.parse(body.server_now) - Date.now());
-          setCallSession({ meeting, session: body, videoState: body.code === 'video_not_configured' ? 'not_configured' : 'unavailable' });
-          return;
-        }
-        alert(joinErrorText(body?.error ? { message: body.error } : error));
+        preparedWindow?.close();
+        alert(joinErrorText(error));
         fetchData();
         return;
       }
-      setSelectedMeetingDetail(null);
-      if (body?.server_now) setClockOffsetMs(Date.parse(body.server_now) - Date.now());
-      setCallSession({ meeting, session: body, videoState: 'ready' });
+      if (data?.server_now) setClockOffsetMs(Date.parse(data.server_now) - Date.now());
+      const opened = await openMeetingLink(data?.meeting_link, preparedWindow);
+      if (!opened.ok) { alert(opened.error); return; }
+      if (onShowToast) onShowToast('Opening Google Meet… The consultation takes place in Google Meet.');
     } catch (err) {
+      preparedWindow?.close();
       alert(joinErrorText(err));
     } finally {
       setJoiningId(null);
@@ -1185,22 +1222,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       alert(`Update failed: ${err.message}`);
     }
   };
-
-  if (callSession) {
-    return (
-      <MeetingRoom
-        meeting={callSession.meeting}
-        session={callSession.session}
-        videoState={callSession.videoState}
-        isExpert={isCurrentExpert}
-        clockOffsetMs={clockOffsetMs}
-        onLeave={() => handleLeaveCall({ end: false })}
-        onEnd={() => handleLeaveCall({ end: true })}
-        onRetry={() => { const m = callSession.meeting; setCallSession(null); handleServerValidatedJoin(m); }}
-        leaving={leavingCall}
-      />
-    );
-  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -2016,8 +2037,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                           </div>
                         )}
 
+                        <MeetLinkStatus link={appt.meetingLink} expert />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '8px', fontSize: '12px', color: 'var(--primary-green)' }}>
-                          <span>Tap for details, join link & cancellation</span>
+                          <span>{appt.meetingLink ? 'Tap to update the link, join or complete' : 'Tap to add the Google Meet link'}</span>
                           <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>chevron_right</span>
                         </div>
                       </div>
@@ -2053,6 +2075,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                       <strong>Topic:</strong> {appt.topic}
                     </div>
 
+                    <MeetLinkStatus link={appt.meetingLink} />
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '11px', color: 'var(--primary-green)' }}>Tap for details & cancellation</span>
                       <JoinMeetingButton
@@ -2060,6 +2084,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                         clockOffsetMs={clockOffsetMs}
                         busy={joiningId === appt.id}
                         onJoin={handleServerValidatedJoin}
+                        waitingText={appt.meetingLink ? undefined : 'Waiting for link'}
                         style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
                       />
                     </div>
@@ -2096,7 +2121,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     fontWeight: '700',
                     color: hist.status === 'Cancelled' ? 'var(--error)' : 'var(--text-secondary)'
                   }}>
-                    {hist.status === 'Cancelled' ? 'Cancelled' : `Completed (${hist.duration})`}
+                    {hist.status === 'Cancelled' ? 'Cancelled'
+                      : hist.completionSource === 'slot_ended' ? 'Closed after scheduled time' : `Completed (${hist.duration})`}
                   </span>
                 </div>
 
@@ -2222,9 +2248,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
       {/* Book Session Dialog */}
       <Dialog
-        isOpen={!!selectedExpert}
+        isOpen={!!selectedExpert && !checkout}
         title="Book Consultation Session"
-        confirmText="Confirm Booking"
+        confirmText="Pay & Book"
         onConfirm={handleConfirmBooking}
         onCancel={() => setSelectedExpert(null)}
       >
@@ -2289,6 +2315,18 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 <p style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-muted)' }}>This expert has not published any open slots for booking yet. Please check back later.</p>
               </div>
             )}
+
+            {selectedSlot && !selectedSlot.is_booked && (
+              <div data-testid="booking-fee" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1E1E1E', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 12px', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {formatTime12h(selectedSlot.start_time)} – {formatTime12h(selectedSlot.end_time)} · Fee
+                </span>
+                <strong style={{ color: 'var(--primary-green)' }}>
+                  {Number(selectedSlot.rate) > 0 ? `${formatInr(Math.round(Number(selectedSlot.rate) * 100))} INR` : 'Fee unavailable'}
+                </strong>
+              </div>
+            )}
+            <div style={{ fontSize: '10.5px', color: '#ffb74d' }}>Demo payment — no real money is charged.</div>
 
             <div className="form-group">
               <label className="form-label">Consultation Topic / Issue</label>
@@ -2400,6 +2438,28 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 </p>
               </div>
 
+              <div style={{ backgroundColor: '#1E1E1E', padding: '12px', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <MeetLinkStatus link={selectedMeetingDetail.meetingLink} expert={isCurrentExpert} />
+                {isCurrentExpert && selectedMeetingDetail.meetingLink && (
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{selectedMeetingDetail.meetingLink}</div>
+                )}
+                {isCurrentExpert && (
+                  <Button
+                    onClick={() => setLinkEditor({ appt: selectedMeetingDetail, value: selectedMeetingDetail.meetingLink || '', saving: false, error: null, saved: null })}
+                    variant="secondary"
+                    icon={selectedMeetingDetail.meetingLink ? 'edit' : 'add_link'}
+                    style={{ borderRadius: '12px', fontSize: '13px' }}
+                  >
+                    {selectedMeetingDetail.meetingLink ? 'Update Meeting Link' : 'Add Google Meet Link'}
+                  </Button>
+                )}
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                  {isCurrentExpert
+                    ? 'Create the meeting in Google Meet, copy its link and paste it here. Without a link the booking is cancelled 5 minutes after the start.'
+                    : 'The consultation takes place in Google Meet. Join opens the link 5 minutes before the start.'}
+                </div>
+              </div>
+
               {isCancelledBlocked && (
                 <div style={{ fontSize: '11px', color: '#FFA726', backgroundColor: 'rgba(255, 167, 38, 0.1)', padding: '8px 12px', borderRadius: '10px' }}>
                   ⚠️ Cancellation is only available up to 14 hours before the session.
@@ -2422,14 +2482,78 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                   clockOffsetMs={clockOffsetMs}
                   busy={joiningId === selectedMeetingDetail.id}
                   onJoin={handleServerValidatedJoin}
+                  waitingText={selectedMeetingDetail.meetingLink ? undefined : (isCurrentExpert ? 'Add the link first' : 'Waiting for link')}
                   icon="videocam"
                   style={{ flex: 1, borderRadius: '12px', fontSize: '13px' }}
                 />
               </div>
+
+              {isCurrentExpert && Date.now() + clockOffsetMs >= meetingStartMs(selectedMeetingDetail.date, selectedMeetingDetail.time) && (
+                <Button
+                  onClick={() => handleCompleteConsultation(selectedMeetingDetail)}
+                  variant="primary"
+                  icon="task_alt"
+                  disabled={completingId === selectedMeetingDetail.id || !selectedMeetingDetail.meetingLink}
+                  style={{ borderRadius: '12px', fontSize: '13px' }}
+                >
+                  {completingId === selectedMeetingDetail.id ? 'Saving…' : 'Mark consultation completed'}
+                </Button>
+              )}
+              {!isCurrentExpert && selectedMeetingDetail.endsMs && Date.now() + clockOffsetMs >= selectedMeetingDetail.endsMs && (
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  The scheduled time is over. The expert marks the consultation completed; then you can rate it in History.
+                </div>
+              )}
             </div>
           );
         })()}
       </BottomSheet>
+
+      {/* ── Expert: add / update the Google Meet link ─────────── */}
+      <BottomSheet isOpen={!!linkEditor} onClose={() => !linkEditor?.saving && setLinkEditor(null)}>
+        {linkEditor && (
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSaveMeetingLink(); }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
+            <h3 style={{ fontSize: '16px', fontWeight: '700' }}>
+              {linkEditor.appt.meetingLink ? 'Update Meeting Link' : 'Add Google Meet Link'}
+            </h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+              Open Google Meet, create a meeting for {linkEditor.appt.farmerName} on {linkEditor.appt.date} at {formatTime12h(linkEditor.appt.time)},
+              copy the meeting link and paste it below. Only you and this farmer can see it.
+            </p>
+            <label className="form-label" htmlFor="meet-link-input">Google Meet link</label>
+            <div className="input-container" style={{ padding: '8px 16px' }}>
+              <input
+                id="meet-link-input"
+                className="input-field"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                placeholder={MEET_LINK_HINT}
+                value={linkEditor.value}
+                onChange={(e) => setLinkEditor({ ...linkEditor, value: e.target.value, error: null, saved: null })}
+                disabled={linkEditor.saving}
+              />
+            </div>
+            {linkEditor.error && <div role="alert" style={{ fontSize: '12px', color: 'var(--error)' }}>{linkEditor.error}</div>}
+            {linkEditor.saved && <div role="status" style={{ fontSize: '12px', color: 'var(--primary-green)' }}>{linkEditor.saved}</div>}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Button type="button" variant="secondary" onClick={() => setLinkEditor(null)} disabled={linkEditor.saving} style={{ flex: 1, borderRadius: '12px' }}>
+                {linkEditor.saved ? 'Done' : 'Cancel'}
+              </Button>
+              <Button type="submit" variant="primary" icon="save" disabled={linkEditor.saving || !linkEditor.value.trim()} style={{ flex: 1, borderRadius: '12px' }}>
+                {linkEditor.saving ? 'Saving…' : 'Save link'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </BottomSheet>
+
+      {checkout && <DemoCheckout slotId={checkout.slotId} issue={checkout.issue} onClose={handleCheckoutClose} />}
 
       {/* ── Cancellation & Reschedule Bottom Sheet ───────────── */}
       <BottomSheet isOpen={isCancelSheetOpen} onClose={() => setIsCancelSheetOpen(false)}>

@@ -152,3 +152,12 @@ tests in `tests/e2e/app.spec.mjs` + `scripts/staging/device-smoke.py`.
   **Blocked:** Firebase project, `google-services.json`, `FIREBASE_SERVICE_ACCOUNT` secret, approval for `pg_net` +
   a cron job. Push is off in builds without `google-services.json`.
 * Release order and owner steps: `RELEASE_CHECKLIST.md`.
+
+## Final Catch Up flow 2026-10-25 (branch `feature/meet-demo-payment`, staging only)
+Farmer picks expert → date/time → sees fee + duration → **Pay & Book** → DEMO checkout ("DEMO PAYMENT — NO REAL MONEY
+CHARGED"; ready → processing → success/failed; cancel books nothing) → server confirms and books in one transaction →
+farmer + expert notified → expert creates a Google Meet meeting outside AgroConnect and pastes the link → farmer
+notified "link ready" → Join (from 5 min before the start until the slot ends) opens Google Meet outside the app →
+expert marks the consultation completed → farmer rates it once. Daily and the in-app video room are removed; no
+payment provider is used. Fee = the existing per-slot fee (`consultation_slots.rate`, INR) set by the expert.
+Open: phone test (Meet app hand-off, checkout on Android), push delivery (Firebase), reset e-mail (real inbox).

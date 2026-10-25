@@ -6,7 +6,7 @@ Restores the device's rotation settings and does not clear its log, so it is saf
   ANDROID_SERIAL=<serial> python3 -I scripts/staging/device-smoke.py
 Screenshots: appium-results/2026-10-25_staging_device/ (01-09 base run, 10-20 change request 2026-10-25)
 """
-import json, os, re, signal, subprocess, sys, time, xml.etree.ElementTree as ET
+import json, os, re, uuid, signal, subprocess, sys, time, xml.etree.ElementTree as ET
 
 # a kill (SIGTERM) must still run the finally blocks that restore the device's rotation settings
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
@@ -254,8 +254,17 @@ def own_post_no_connect_after_relaunch():
         for p_ in api(f"/rest/v1/posts?select=id&user_id=eq.{uid}&caption=like.Phone%20own%20post%20check*", None, tok) or []:
             api(f"/rest/v1/posts?id=eq.{p_['id']}", None, tok, method='DELETE')
 
+def demo_book_api(slot, issue, token):
+    """Book like the app does: DEMO checkout (no real money) -> server confirms and creates the booking (migration 14)."""
+    p = api('/rest/v1/rpc/start_demo_checkout', {'p_slot_id': slot, 'p_issue': issue, 'p_idempotency_key': str(uuid.uuid4())}, token)
+    c = api('/rest/v1/rpc/confirm_demo_payment', {'p_payment_id': p['payment_id']}, token)
+    assert c['status'] == 'succeeded', f"demo payment {c['status']}: {c.get('failure_reason')}"
+    return c['booking_id']
+
 def catchup_meeting():
-    """Booking ~6 min ahead: button disabled with countdown, opens by itself at T-5 min, join -> honest room, leave."""
+    """Booking ~6 min ahead with a Google Meet link: "link ready", countdown, Join opens by itself at T-5 min and hands
+    the link to Google Meet / the browser OUTSIDE the app. The other app is never read or captured (it may show the
+    phone owner's Google account); the script only checks that AgroConnect is no longer in front, then returns."""
     ist = lambda m: time.gmtime(((int(time.time() + m * 60) // 60) + 1) * 60 + 330 * 60)
     st = ist(6)
     date, start = time.strftime('%Y-%m-%d', st), time.strftime('%H:%M', st)
@@ -264,24 +273,64 @@ def catchup_meeting():
     expert_id = api(f'/rest/v1/experts?select=id&user_id=eq.{e_uid}', None, e_tok)[0]['id']
     slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end, 'rate': 300}, e_tok)[0]['id']
     f_uid, f_tok = sign_in_api('user1')
-    booking = api('/rest/v1/rpc/book_consultation_slot', {'p_slot_id': slot, 'p_issue': f'Phone meeting check {start}'}, f_tok)
+    booking = demo_book_api(slot, f'Phone meeting check {start}', f_tok)
     try:
+        api('/rest/v1/rpc/set_meeting_link', {'p_booking_id': booking, 'p_link': 'https://meet.google.com/agr-phon-tst'}, e_tok)
         fresh_login('user1', env['FIXTURE_PASSWORD'])   # the farmer's view (the previous check signed in as the expert)
         wait_text(SIGNED_IN, 40); nav('Catch Up'); time.sleep(3)
         tap_text(r'^Upcoming'); wait_text(rf'Phone meeting check {start}')
-        t = wait_text(r'Join opens .*\(in ')
+        wait_text(r'Google Meet link ready')
+        wait_text(r'Join opens .*\(in ')
         shot('26_phone_join_not_yet')
         # the button opens by itself (no restart) once the server window opens
-        t = wait_text(r'Join Meeting', 150); shot('27_phone_join_open')
-        tap_where(lambda n: (n.get('text') or '').endswith('Join Meeting') and n.get('clickable') == 'true' or (n.get('text') or '').endswith('Join Meeting'), 'Join Meeting')
-        t = wait_text(r'Consultation room', 30)
-        assert 'Video not connected' in t and 'Dr. Ramesh Expert' in t, 'room not shown as expected'
-        assert not re.search(r'Audio Connected|Local Camera Active|SIMULATED', t), 'fake call UI'
-        shot('28_phone_meeting_room')
-        tap_text(r'Leave room'); wait_text(r'You left the room', 20); shot('29_phone_left_room')
+        wait_text(r'Join Meeting', 150); shot('27_phone_join_open')
+        tap_where(lambda n: (n.get('text') or '').endswith('Join Meeting'), 'Join Meeting')
+        end_t = time.time() + 20
+        while time.time() < end_t and PKG in focus(): time.sleep(1)
+        assert PKG not in focus(), 'Join did not hand the link to Google Meet / the browser'
+        assert not re.search(r'Video not connected|Leave room|End consultation', texts()), 'in-app call screen shown'
+        adb('shell', 'input', 'keyevent', '4'); time.sleep(2)          # leave the other app without looking at it
+        if PKG not in focus(): adb('shell', 'am', 'start', '-W', '-n', f'{PKG}/com.agroconnect.app.MainActivity')
+        wait_text(r'Catch Up|Upcoming', 30); shot('28_phone_back_from_meet')
     finally:
-        # the expert never joins: let the server's cancel rules apply (farmer cancel, else the no-show job)
         api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': booking, 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
+
+def demo_checkout():
+    """Farmer books through the DEMO checkout on the phone: banner, fee, Cancel books nothing, Confirm books once."""
+    ist = lambda m: time.gmtime(((int(time.time() + m * 60) // 60) + 1) * 60 + 330 * 60)
+    st = ist(97)
+    date, start = time.strftime('%Y-%m-%d', st), time.strftime('%H:%M', st)
+    end = f"{(st.tm_hour + (st.tm_min + 30) // 60) % 24:02d}:{(st.tm_min + 30) % 60:02d}"
+    e_uid, e_tok = sign_in_api('expert1')
+    expert_id = api(f'/rest/v1/experts?select=id&user_id=eq.{e_uid}', None, e_tok)[0]['id']
+    slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end, 'rate': 450}, e_tok)[0]['id']
+    f_uid, f_tok = sign_in_api('user1')
+    t12 = lambda hm: f"{(int(hm[:2]) + 11) % 12 + 1:02d}:{hm[3:5]} {'PM' if int(hm[:2]) >= 12 else 'AM'}"
+    try:
+        fresh_login('user1', env['FIXTURE_PASSWORD'])
+        wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(r'Dr\. Ramesh Expert')
+        tap_text(r'^Book Consultation$'); wait_text(r'Select a Date')
+        day = str(int(date[8:10]))
+        tap_where(lambda n: re.fullmatch(rf'{day}\s*₹\d+', (n.get('text') or '').strip()) is not None, f'date {day}')
+        wait_text(r'Choose a time')
+        tap_text(re.escape(f'{t12(start)} - {t12(end)} (₹450)'))
+        tap_where(lambda n: n.get('class') == 'android.widget.EditText' and 'Explain the problem' in (n.get('hint') or n.get('text') or ''), 'issue field')
+        adb('shell', 'input', 'text', 'Phone%sdemo%scheckout'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
+        tap_text(r'^Pay & Book$')
+        t = wait_text(r'DEMO PAYMENT — NO REAL MONEY CHARGED', 30)
+        assert '₹450.00' in t and 'Dr. Ramesh Expert' in t, 'checkout summary wrong'
+        shot('31_phone_demo_checkout')
+        tap_text(r'^Cancel$'); wait_text(r'Pay & Book')
+        assert not api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}', None, f_tok), 'cancelled checkout booked'
+        tap_text(r'^Pay & Book$'); wait_text(r'Confirm Demo Payment')
+        tap_text(r'^Confirm Demo Payment$')
+        wait_text(r'Booking confirmed', 30); shot('32_phone_demo_payment_success')
+        tap_text(r'^View my booking$'); wait_text(r'Waiting for expert to add meeting link', 30); shot('33_phone_upcoming_waiting_link')
+        assert len(api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}', None, f_tok)) == 1, 'not exactly one booking'
+    finally:
+        for b in api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}&status=eq.Booked', None, f_tok) or []:
+            api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': b['id'], 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
+        api(f'/rest/v1/consultation_slots?id=eq.{slot}&is_booked=eq.false', None, e_tok, method='DELETE')
 
 def google_enabled():
     r = subprocess.run(['curl', '-sS', f"{env['STAGING_SUPABASE_URL']}/auth/v1/settings", '-H', f"apikey: {env['STAGING_SUPABASE_ANON_KEY']}"],
@@ -385,7 +434,8 @@ for name, fn in [('farmer: login, feed, profile, Catch Up lists expert1, no expe
                  ('own avatar on own post opens own profile', own_avatar),
                  ('expert: ☰ menu has Leave being an expert with reason dialog', expert_menu),
                  ('post media: image + video posts show in the feed card, video plays', post_media),
-                 ('Catch Up: Join opens by itself at T-5 min, join -> honest room, leave', catchup_meeting),
+                 ('Catch Up: DEMO checkout (banner, fee, cancel books nothing, confirm books once)', demo_checkout),
+                 ('Catch Up: Meet link ready, Join opens by itself at T-5 min and hands the link to Google Meet', catchup_meeting),
                  ('own post offers no Connect, also after a relaunch', own_post_no_connect_after_relaunch),
                  ('production app not replaced (same version + lastUpdateTime)', production_untouched)]:
     check(name, fn)

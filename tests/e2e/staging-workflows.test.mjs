@@ -5,6 +5,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { demoBook } from './demo-booking.mjs';
 
 const envFile = new URL('../../.env.staging', import.meta.url);
 const env = existsSync(envFile) ? Object.fromEntries(readFileSync(envFile, 'utf8').split('\n')
@@ -146,26 +147,27 @@ describe('consultations', { skip }, () => {
       .gt('slot_date', istFromNow(0).date).order('slot_date', { ascending: false }).limit(1);
     const slot = slots[0].id;
     const [a, b] = await Promise.all([
-      A.user1.c.rpc('book_consultation_slot', { p_slot_id: slot, p_issue: 'race A' }),
-      A.user3.c.rpc('book_consultation_slot', { p_slot_id: slot, p_issue: 'race B' }),
+      demoBook(A.user1.c, slot, 'race A'),
+      demoBook(A.user3.c, slot, 'race B'),
     ]);
     const winners = [a, b].filter((r) => !r.error);
     assert.equal(winners.length, 1, `expected one winner, got ${winners.length}`);
     const loser = [a, b].find((r) => r.error);
-    assert.match(loser.error.message, /already booked|duplicate|one_booking_per_slot/);
+    assert.match(loser.error.message, /already booked|just been booked|slot_taken|duplicate|one_booking_per_slot/);
     const winnerClient = a.error ? A.user3 : A.user1;
     assert.ifError((await winnerClient.c.rpc('cancel_consultation_booking', { p_booking_id: winners[0].data, p_reason: 'race cleanup' })).error);
   });
 
-  test('join window, completion requires expert attendance, review by the farmer only, once', { timeout: 300000 }, async () => {
+  test('join window, completion by the expert after a Meet link was saved, review by the farmer only, once', { timeout: 300000 }, async () => {
     const at = istFromNow(2);
     const ins = await A.expert1.c.from('consultation_slots')
       .insert({ expert_id: A.expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
     assert.ifError(ins.error);
-    const booking = (await A.user1.c.rpc('book_consultation_slot', { p_slot_id: ins.data.id, p_issue: 'completion test' })).data;
+    const booking = (await demoBook(A.user1.c, ins.data.id, 'completion test')).data;
     assert.ok(booking);
     assert.ok((await A.user1.c.rpc('complete_consultation', { p_booking_id: booking })).error, 'completed without expert');
     assert.ok((await A.user3.c.rpc('join_consultation', { p_booking_id: booking })).error, 'non-participant joined');
+    assert.ifError((await A.expert1.c.rpc('set_meeting_link', { p_booking_id: booking, p_link: 'https://meet.google.com/cmp-test-abc' })).error);
     const joined = await A.expert1.c.rpc('join_consultation', { p_booking_id: booking });
     assert.ifError(joined.error);
     assert.ifError((await A.user1.c.rpc('join_consultation', { p_booking_id: booking })).error);
@@ -189,7 +191,7 @@ describe('consultations', { skip }, () => {
   test('admin consultation management: cancel via admin RPC frees the slot (previously broken in production)', async () => {
     const { data: slots } = await A.user1.c.from('consultation_slots').select('id').eq('expert_id', A.expertId).eq('is_booked', false)
       .gt('slot_date', istFromNow(0).date).order('slot_date', { ascending: false }).limit(1);
-    const booking = (await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slots[0].id, p_issue: 'admin cancel test' })).data;
+    const booking = (await demoBook(A.user1.c, slots[0].id, 'admin cancel test')).data;
     assert.ok((await A.user1.c.rpc('admin_update_booking_status', { p_booking_id: booking, p_new_status: 'Cancelled' })).error, 'farmer used admin RPC');
     assert.ifError((await A.admin.c.rpc('admin_update_booking_status', { p_booking_id: booking, p_new_status: 'Cancelled', p_cancellation_reason: 'staging admin test' })).error);
     const s = await A.user1.c.from('consultation_slots').select('is_booked').eq('id', slots[0].id).single();
@@ -209,7 +211,7 @@ describe('realtime', { skip }, () => {
     const { data: slots } = await A.user1.c.from('consultation_slots').select('id').eq('expert_id', A.expertId).eq('is_booked', false)
       .gt('slot_date', istFromNow(0).date).order('slot_date', { ascending: false }).limit(1);
     assert.ok(slots?.length, 'no free future expert1 slot to book');
-    const booked = await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slots[0].id, p_issue: 'realtime test' });
+    const booked = await demoBook(A.user1.c, slots[0].id, 'realtime test');
     assert.ifError(booked.error);
     const booking = booked.data;
     const c = A.user1.c;
@@ -254,7 +256,7 @@ describe('realtime', { skip }, () => {
 });
 
 describe('scheduler (pg_cron, real time)', { skip }, () => {
-  test('no-show: booking whose expert never joins is auto-cancelled by the scheduled job within ~7 minutes', { timeout: 600000 }, async () => {
+  test('no-show: booking whose expert never adds a Meet link is auto-cancelled by the scheduled job within ~7 minutes', { timeout: 600000 }, async () => {
     // the previous test's slot may start in this same minute (same expert): take the next free minute
     let ins;
     for (let m = 1; m <= 4; m++) {
@@ -264,7 +266,7 @@ describe('scheduler (pg_cron, real time)', { skip }, () => {
       if (ins.error?.code !== '23505') break;
     }
     assert.ifError(ins.error);
-    const booking = (await A.user3.c.rpc('book_consultation_slot', { p_slot_id: ins.data.id, p_issue: 'no-show test' })).data;
+    const booking = (await demoBook(A.user3.c, ins.data.id, 'no-show test')).data;
     assert.ok(booking);
     const deadline = Date.now() + 9 * 60000;
     let b;

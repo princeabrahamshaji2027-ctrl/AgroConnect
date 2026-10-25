@@ -23,7 +23,8 @@ export function getJoinState(appt, nowMs) {
 }
 
 // Only this button re-renders every second (not the whole Catch Up page, which froze Android WebView).
-export default function JoinMeetingButton({ meeting, clockOffsetMs = 0, busy, onJoin, icon = 'video_call', style }) {
+// waitingText: shown (disabled) once the window is open but there is nothing to join yet (no Google Meet link saved).
+export default function JoinMeetingButton({ meeting, clockOffsetMs = 0, busy, onJoin, icon = 'video_call', style, waitingText }) {
   const [now, setNow] = useState(() => Date.now() + clockOffsetMs);
   useEffect(() => {
     setNow(Date.now() + clockOffsetMs);
@@ -31,7 +32,8 @@ export default function JoinMeetingButton({ meeting, clockOffsetMs = 0, busy, on
     return () => clearInterval(t);
   }, [clockOffsetMs]);
   const state = getJoinState(meeting, now);
-  const enabled = state.isReady && !busy;
+  const waiting = state.isReady && !!waitingText;
+  const enabled = state.isReady && !waiting && !busy;
   return (
     <Button
       onClick={(e) => { e.stopPropagation(); if (enabled) onJoin(meeting); }}
@@ -40,7 +42,7 @@ export default function JoinMeetingButton({ meeting, clockOffsetMs = 0, busy, on
       disabled={!enabled}
       style={{ ...style, opacity: enabled ? 1 : 0.6, cursor: enabled ? 'pointer' : 'not-allowed' }}
     >
-      {busy ? 'Joining…' : state.text}
+      {busy ? 'Opening…' : waiting ? waitingText : state.text}
     </Button>
   );
 }

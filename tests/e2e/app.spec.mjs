@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { demoBook } from './demo-booking.mjs';
 
 const fx = (name) => (process.env.FIXTURE_EMAIL_TOKEN
   ? `agroconnect-stg-${name}-${process.env.FIXTURE_EMAIL_TOKEN}@${process.env.FIXTURE_EMAIL_DOMAIN}`
@@ -247,7 +248,7 @@ test.describe('Catch Up meetings (staging)', () => {
     const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
     if (s.error) throw s.error;
     slots.push(s.data.id);
-    const r = await farmer.rpc('book_consultation_slot', { p_slot_id: s.data.id, p_issue: topic });
+    const r = await demoBook(farmer, s.data.id, topic);
     if (r.error) throw r.error;
     bookings.push(r.data);
     return r.data;
@@ -263,10 +264,12 @@ test.describe('Catch Up meetings (staging)', () => {
     for (const id of slots) await expert.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
   });
 
-  test('before the window: disabled "Join opens …"; inside it: join -> honest meeting room -> leave explains why not completed', async ({ page }) => {
+  test('before the window: disabled "Join opens …"; no link: "Waiting for link"; link saved: Join opens Google Meet outside the app', async ({ page, context }) => {
     await bookIn(180, 'E2E far meeting');
     await bookIn(8, 'E2E countdown meeting');
-    await bookIn(3, 'E2E soon meeting');
+    const soonId = await bookIn(3, 'E2E soon meeting');
+    // Google Meet itself is never contacted by the test: the new tab gets a local stand-in page
+    await context.route('https://meet.google.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Meet stand-in</title>' }));
     await login(page, fx('user1'));
     await nav(page, 'Catch Up').click();
     await page.getByRole('button', { name: /^Upcoming/ }).click();
@@ -279,17 +282,23 @@ test.describe('Catch Up meetings (staging)', () => {
     await page.waitForTimeout(2200);
     expect(await cd.textContent()).not.toBe(before); // seconds keep counting down without a reload
 
-    const soon = page.locator('.card', { hasText: 'E2E soon meeting' }).first();
-    const join = soon.getByRole('button', { name: 'Join Meeting' });
-    await expect(join).toBeEnabled({ timeout: 20_000 });
-    await join.click();
-    await expect(page.getByText('Consultation with Dr. Ramesh Expert')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Video not connected')).toBeVisible();
-    await expect(page.getByText(/You are checked in for this consultation/)).toBeVisible();
-    await expect(page.getByText(/Audio Connected|Local Camera Active/)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'End consultation' })).toHaveCount(0);   // farmers cannot end it
-    await page.getByRole('button', { name: 'Leave room' }).click();
-    await expect(page.getByText('You left the room. You can rejoin until the session ends.')).toBeVisible({ timeout: 15_000 });
+    const soon = () => page.locator('.card', { hasText: 'E2E soon meeting' }).first();
+    await expect(soon().getByText('Waiting for expert to add meeting link')).toBeVisible();
+    await expect(soon().getByRole('button', { name: 'Waiting for link' })).toBeDisabled({ timeout: 20_000 });
+
+    const set = await expert.rpc('set_meeting_link', { p_booking_id: soonId, p_link: 'https://meet.google.com/eee-soon-tst' });
+    expect(set.error).toBeNull();
+    await page.reload();
+    await nav(page, 'Catch Up').click();
+    await page.getByRole('button', { name: /^Upcoming/ }).click();
+    await expect(soon().getByText('Google Meet link ready')).toBeVisible({ timeout: 20_000 });
+    const popupPromise = page.waitForEvent('popup');
+    await soon().getByRole('button', { name: 'Join Meeting' }).click();
+    const popup = await popupPromise;
+    await popup.waitForURL('https://meet.google.com/eee-soon-tst', { timeout: 15_000 });
+    await expect(page.getByText(/Opening Google Meet/)).toBeVisible();
+    await expect(page.getByText(/Video not connected|End consultation|Leave room/)).toHaveCount(0);   // no in-app call screen
+    await popup.close();
   });
 
   test('the farmer sees the booking confirmation in Notifications', async ({ page }) => {
@@ -388,63 +397,139 @@ test.describe('account recovery (staging)', () => {
   });
 });
 
-// Video room (2026-10-25). The Daily provider is not configured on staging: the real function answers
-// "video_not_configured"; the two MOCKED tests replace the function's answer to exercise the call UI states.
-test.describe('video room (staging)', () => {
+// Final Catch Up flow (2026-10-25): DEMO checkout (no real money, no provider) and Google Meet links. Real staging
+// backend; the one MOCKED test only cuts the network for one request and says so.
+test.describe('demo checkout + Google Meet links (staging)', () => {
   test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
   const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  let farmer; let expert; let expertId; const slots = []; const bookings = [];
-  const ist = (min) => { const d = new Date(Math.ceil((Date.now() + min * 60000) / 60000) * 60000 + 330 * 60000); return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) }; };
-  const plus30 = (t) => { const [h, m] = t.split(':').map(Number); const x = (h * 60 + m + 30) % 1440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
+  let farmer; let farmer2; let expert; let expertId; const slots = []; const bookings = [];
+  const pad = (n) => String(n).padStart(2, '0');
+  const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${pad(((h + 11) % 12) + 1)}:${pad(m)} ${h >= 12 ? 'PM' : 'AM'}`; };
+  // A slot later today (browser + server both use Asia/Kolkata) on a minute nobody else uses.
+  const newSlotToday = async (rate) => {
+    for (let k = 0; k < 20; k++) {
+      const d = new Date(Date.now() + (95 + k * 7) * 60000 + 330 * 60000);
+      const date = d.toISOString().slice(0, 10); const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+      const [h, m] = time.split(':').map(Number); const e = (h * 60 + m + 30) % 1440; const end = `${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
+      const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: date, start_time: time, end_time: end, rate }).select('id, slot_date, start_time, end_time').single();
+      if (!s.error) { slots.push(s.data.id); return { ...s.data, label: `${t12(time)} - ${t12(end)} (₹${rate})` }; }
+    }
+    throw new Error('no free slot minute');
+  };
   test.beforeAll(async () => {
-    farmer = mk(); expert = mk();
+    farmer = mk(); farmer2 = mk(); expert = mk();
     await farmer.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
+    await farmer2.auth.signInWithPassword({ email: fx('user2'), password: process.env.FIXTURE_PASSWORD });
     const e = await expert.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
     expertId = (await expert.from('experts').select('id').eq('user_id', e.data.user.id).single()).data.id;
-    const at = ist(3);
-    const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
-    slots.push(s.data.id);
-    bookings.push((await farmer.rpc('book_consultation_slot', { p_slot_id: s.data.id, p_issue: 'E2E video room' })).data);
   });
   test.afterAll(async () => {
-    for (const id of bookings) await farmer.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'E2E cleanup', p_offered_slots: [] });
+    const mine = await farmer.from('consultation_bookings').select('id').eq('status', 'Booked').in('slot_id', slots);
+    for (const { id } of mine.data || []) bookings.push(id);
+    for (const id of bookings) for (const c of [farmer, farmer2]) await c.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'E2E cleanup', p_offered_slots: [] });
     for (const id of slots) await expert.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
   });
-  const openRoom = async (page, who) => {
-    await login(page, fx(who));
+  const openCheckout = async (page, slot, issue) => {
+    await login(page, fx('user1'));
     await nav(page, 'Catch Up').click();
-    if (who === 'user1') await page.getByRole('button', { name: /^Upcoming/ }).click();
-    const card = page.locator('.card', { hasText: who === 'user1' ? 'E2E video room' : 'Test User 1 (Farmer)' }).first();
-    await expect(card).toBeVisible({ timeout: 20_000 });
-    if (who !== 'user1') await card.click();
-    await page.getByRole('button', { name: /Join Meeting/ }).first().click();
+    const card = page.locator('.card', { hasText: 'Dr. Ramesh Expert' });
+    await card.getByRole('button', { name: 'Book Consultation' }).click({ timeout: 20_000 });
+    const day = String(Number(slot.slot_date.slice(8, 10)));
+    await card.locator('div[style*="cursor: pointer"]').filter({ has: page.locator(`span:text-is("${day}")`) }).first().click();
+    await page.getByText(slot.label).click();
+    await expect(page.getByTestId('booking-fee')).toContainText('INR');
+    await page.getByPlaceholder(/Explain the problem/).fill(issue);
+    await page.getByRole('button', { name: 'Pay & Book' }).click();
+    await expect(page.getByText('DEMO PAYMENT — NO REAL MONEY CHARGED')).toBeVisible({ timeout: 15_000 });
   };
 
-  test('expert gets "End consultation" (refused before the start, stays in the room); real function says video not configured', async ({ page }) => {
-    await openRoom(page, 'expert1');
-    await expect(page.getByText('Consultation with Test User 1 (Farmer)')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/Video calling is not set up/)).toBeVisible();
-    await page.getByRole('button', { name: 'End consultation' }).click();
-    await expect(page.getByText('The consultation can be ended after its scheduled start.')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('button', { name: 'Leave room' })).toBeVisible();
+  test('Pay & Book: demo checkout shows the server fee; cancel books nothing; confirm books once; no payment service is contacted', async ({ page }) => {
+    const slot = await newSlotToday(450);
+    const hosts = new Set();
+    page.on('request', (r) => hosts.add(new URL(r.url()).host));
+    await openCheckout(page, slot, 'E2E demo checkout');
+    await expect(page.getByText('₹450.00')).toBeVisible();
+    await expect(page.getByText('30 minutes')).toBeVisible();
+    await expect(page.getByText(/No money is charged and no payment details are asked for/)).toBeVisible();
+    await expect(page.locator('.demo-checkout input')).toHaveCount(0);   // no card / UPI / bank fields at all
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText('Demo payment cancelled. Nothing was booked.')).toBeVisible();
+    expect((await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data).toHaveLength(0);
+
+    await page.getByRole('button', { name: 'Pay & Book' }).click();
+    const confirm = page.getByRole('button', { name: 'Confirm Demo Payment' });
+    await confirm.click();
+    await expect(page.getByText(/Processing demo payment/)).toBeVisible();
+    await expect(confirm).toHaveCount(0);                                   // cannot be tapped twice
+    await expect(page.getByText('Booking confirmed')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/no real money was charged/)).toBeVisible();
+    await page.getByRole('button', { name: 'View my booking' }).click();
+    const booked = (await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data;
+    expect(booked).toHaveLength(1);
+    bookings.push(booked[0].id);
+    const upcoming = page.locator('.card', { hasText: 'E2E demo checkout' }).first();
+    await expect(upcoming.getByText('Waiting for expert to add meeting link')).toBeVisible({ timeout: 20_000 });
+    const pays = (await farmer.from('demo_payments').select('status').eq('slot_id', slot.id)).data.map((p) => p.status).sort();
+    expect(pays).toEqual(['cancelled', 'succeeded']);
+    const supabaseHost = new URL(process.env.STAGING_SUPABASE_URL).host;
+    const unexpected = [...hosts].filter((h) => !['localhost:4174', supabaseHost, 'fonts.googleapis.com', 'fonts.gstatic.com'].includes(h));
+    expect(unexpected).toEqual([]);
   });
 
-  test('MOCKED provider down: honest "not reachable" room with Try again', async ({ page }) => {
-    await page.route('**/functions/v1/video-room-token', (route) => route.fulfill({ status: 502, contentType: 'application/json',
-      body: JSON.stringify({ code: 'provider_unavailable', error: 'down', role: 'farmer', ends_at: new Date(Date.now() + 1800000).toISOString(), server_now: new Date().toISOString() }) }));
-    await openRoom(page, 'user1');
-    await expect(page.getByText(/video service is not reachable right now/)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('button', { name: 'Try video again' })).toBeVisible();
+  test('MOCKED network failure on confirm: no false success; Try again (same attempt) books once', async ({ page }) => {
+    const slot = await newSlotToday(400);
+    let cut = true;
+    await page.route('**/rest/v1/rpc/confirm_demo_payment', (route) => (cut ? (cut = false, route.abort('failed')) : route.continue()));
+    await openCheckout(page, slot, 'E2E network failure');
+    await page.getByRole('button', { name: 'Confirm Demo Payment' }).click();
+    await expect(page.getByText(/No connection\. Your demo payment was not confirmed yet/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Booking confirmed')).toHaveCount(0);
+    expect((await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data).toHaveLength(0);
+    await page.getByRole('button', { name: 'Try again' }).click();
+    await expect(page.getByText('Booking confirmed')).toBeVisible({ timeout: 20_000 });
+    expect((await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data).toHaveLength(1);
+    expect((await farmer.from('demo_payments').select('id').eq('slot_id', slot.id)).data).toHaveLength(1);
   });
 
-  test('MOCKED room + token that cannot connect: "Not connected" and Rejoin, never shown as connected', async ({ page }) => {
-    await page.route('**/functions/v1/video-room-token', (route) => route.fulfill({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({ provider: 'daily', room_url: 'https://agroconnect-invalid-test.daily.co/agro-none', token: 'not-a-real-token', role: 'farmer',
-        ends_at: new Date(Date.now() + 1800000).toISOString(), server_now: new Date().toISOString() }) }));
-    await openRoom(page, 'user1');
-    await expect(page.getByText('Consultation with Dr. Ramesh Expert')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Not connected')).toBeVisible({ timeout: 45_000 });
-    await expect(page.getByRole('button', { name: 'Rejoin' })).toBeVisible();
-    await expect(page.getByText(/^Connected with/)).toHaveCount(0);
+  test('slot taken by another farmer during checkout: clear message, nothing booked for this farmer, back to slot choice', async ({ page }) => {
+    const slot = await newSlotToday(300);
+    await openCheckout(page, slot, 'E2E slot conflict');
+    const other = await demoBook(farmer2, slot.id, 'E2E other farmer wins');
+    expect(other.error).toBeNull(); bookings.push(other.data);
+    await page.getByRole('button', { name: 'Confirm Demo Payment' }).click();
+    await expect(page.getByText(/Another farmer booked this slot moments ago/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Booking confirmed')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Choose another slot' }).click();
+    await expect(page.getByText('Choose a time *')).toBeVisible();
+    await expect(page.getByText(slot.label)).toHaveCount(0);   // the taken slot is no longer offered
+  });
+
+  test('expert: invalid link refused, valid Google Meet link saved and kept after reload; farmer sees "link ready"', async ({ page }) => {
+    const slot = await newSlotToday(350);
+    const b = await demoBook(farmer, slot.id, 'E2E meet link'); expect(b.error).toBeNull(); bookings.push(b.data);
+    await login(page, fx('expert1'));
+    await nav(page, 'Catch Up').click();
+    const card = page.locator('.card', { hasText: 'E2E meet link' }).first();
+    await expect(card.getByText('No meeting link yet — add a Google Meet link')).toBeVisible({ timeout: 20_000 });
+    await card.click();
+    await page.getByRole('button', { name: 'Add Google Meet Link' }).click();
+    const input = page.getByLabel('Google Meet link');
+    for (const bad of ['https://meet.google.com.attacker.example/abc-defg-hij', 'javascript:alert(1)', 'http://meet.google.com/abc-defg-hij']) {
+      await input.fill(bad);
+      await page.getByRole('button', { name: 'Save link' }).click();
+      await expect(page.getByRole('alert')).toContainText('Paste a Google Meet link');
+    }
+    await input.fill(' https://meet.google.com/uit-estl-nkk?authuser=0 ');
+    await page.getByRole('button', { name: 'Save link' }).click();
+    await expect(page.getByRole('status')).toContainText('Meeting link saved. The farmer has been notified.', { timeout: 15_000 });
+    await expect(input).toHaveValue('https://meet.google.com/uit-estl-nkk');
+    await page.getByRole('button', { name: 'Save link' }).click();
+    await expect(page.getByRole('status')).toContainText('This link is already saved.');
+    await page.reload();
+    await nav(page, 'Catch Up').click();
+    await expect(page.locator('.card', { hasText: 'E2E meet link' }).first().getByText('Google Meet link saved')).toBeVisible({ timeout: 20_000 });
+    const notes = (await farmer.from('notifications').select('message').eq('related_id', b.data)).data.map((n) => n.message);
+    expect(notes.filter((m) => /added the Google Meet link/.test(m))).toHaveLength(1);
+    expect(notes.join(' ')).not.toContain('meet.google.com');
   });
 });

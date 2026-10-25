@@ -55,3 +55,8 @@ admin build. Optional: `06`-style repair for "Dr. Ramesh Expert" (expert record 
 "Forgot Password?" on the login screen now works (it was a dead link), Change Password asks for and checks the current
 password, Catch Up meetings have a real video room (Daily; waiting for the owner's Daily key) and the expert ends the
 consultation, and push notifications are prepared (waiting for Firebase). Production release: `RELEASE_CHECKLIST.md`.
+
+## Final pass 2026-10-25 — Google Meet + demo payment (staging only)
+Video calls inside the app (Daily) were replaced by Google Meet links that the expert pastes; "Pay & Book" opens a
+clearly labelled demo checkout (no real money, no payment provider). Details and production order:
+`RELEASE_CHECKLIST.md`; tests: `TEST_RESULTS.md`.

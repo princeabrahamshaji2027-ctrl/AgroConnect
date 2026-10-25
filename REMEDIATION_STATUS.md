@@ -228,3 +228,14 @@ Production release order: backup → 04 → 05 → 09 → 10 → 11 → deploy `
   SECURITY DEFINER version of the trigger doing exactly that); the dispatcher must present a Vault secret.
 * Staging-found fixes (`12b_13b`): reminder wording, no cancellation reason in pushes, 2-hour expiry.
 Production order: see `RELEASE_CHECKLIST.md` (backup → 04 → 05 → 09 → 10 → 11 → 12 → 13 → functions → apps).
+
+## 2026-10-25 — Google Meet links + DEMO payment (branch `feature/meet-demo-payment`, staging only; production unchanged)
+`14_meet_links_and_demo_payment.sql` (applied to staging, held for production after 13). Security-relevant points:
+* Booking only through `confirm_demo_payment()` (server fee, idempotent, slot row lock → one winner); clients lost
+  EXECUTE on `book_consultation_slot`. `demo_payments`: RLS own rows/admin, no client writes. No real money, no provider.
+* Meeting links: only the booking's expert, validated twice (client `new URL()` + server regex, exact host
+  `meet.google.com`, https, no credentials/port/other paths), stored normalised; participants only can read them; the
+  notification never contains the link.
+* Found while building it: a reviewer could UPDATE their review onto another booking/expert (policy allowed it) — now
+  blocked by `guard_reviews_update`; review text ≤ 1000 characters; expert slot fees must be ₹1–₹1,00,000.
+* Removed: Daily (`@daily-co/daily-js`, `video-room-token` provider code, in-app room, camera/microphone permissions).

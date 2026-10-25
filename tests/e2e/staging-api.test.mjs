@@ -9,6 +9,7 @@ import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, existsSync } from 'node:fs';
+import { demoBook } from './demo-booking.mjs';
 
 // Falls back to .env.staging (git-ignored) when the variables are not exported in the shell.
 const envFile = new URL('../../.env.staging', import.meta.url);
@@ -111,11 +112,12 @@ describe('staging: expert1 + booking lifecycle', { skip }, () => {
     const { data: slot } = await f.c.from('consultation_slots').select('id').eq('expert_id', me.id).eq('is_booked', false)
       .gt('slot_date', new Date().toISOString().slice(0, 10)).limit(1).single();
 
-    const { data: bookingId, error } = await f.c.rpc('book_consultation_slot', { p_slot_id: slot.id, p_issue: 'E2E soil test' });
+    const key = crypto.randomUUID();   // one checkout = one key; a double tap or retry reuses it
+    const { data: bookingId, error } = await demoBook(f.c, slot.id, 'E2E soil test', { key });
     assert.ifError(error);
-    const again = await f.c.rpc('book_consultation_slot', { p_slot_id: slot.id, p_issue: 'E2E soil test' });
+    const again = await demoBook(f.c, slot.id, 'E2E soil test', { key });
     assert.equal(again.data, bookingId, 'duplicate submission is idempotent');
-    const stolen = await other.c.rpc('book_consultation_slot', { p_slot_id: slot.id, p_issue: 'mine' });
+    const stolen = await demoBook(other.c, slot.id, 'mine');
     assert.ok(stolen.error, 'slot cannot be double booked');
 
     const seen = await e.c.from('consultation_bookings').select('id').eq('id', bookingId);

@@ -383,3 +383,30 @@ on a device.** Production was not written to.
 **BLOCKED / device-required (not run, not counted as passed):** real Daily video call between two devices (no
 `DAILY_API_KEY`); push delivery to a closed phone and notification-tap routing (no Firebase project, no `pg_net`/cron);
 password-reset e-mail opened on the phone (needs the owner's inbox); camera/microphone permission prompts on Android.
+
+## Final Catch Up pass — Google Meet + DEMO payment — 2026-10-25 (branch `feature/meet-demo-payment`, staging only)
+
+No phone and no emulator were used (owner: phone not connected, emulator broken). Nothing below ran on a device.
+Production was only read (slot fees: all ₹500, valid); nothing was written there.
+
+| Suite | Result | Notes |
+|---|---|---|
+| `npm test` — validation | **27/27 PASS** | |
+| `npm test` — regression + unit | **22/22 PASS** | new: Meet link parsing (client), no Daily/payment SDK in package/app, manifest without camera/mic; 4 FCM tests are MOCKED |
+| `npm run test:db` (PGlite, real schema, 01–14) | **74/74 PASS** | 14 new for migration 14: fee from slot, double tap/retry idempotent, two-farmer race → one booking, cancel/expiry/ownership, no client writes or skipping the checkout, fee changed, invalid fee/own/past slot/inactive expert, link validation (15 bad inputs), link permissions + notify-once + push without link, join window + link, completion rules, scheduler (no link → cancel with demo refund; link → closed after 24 h as `slot_ended`), reviews (own/once/≤1000/rating/cannot move), re-runnable |
+| `npm run test:staging` (7 files, one at a time) | **41/42 in the full run; the 1 failure fixed and its file re-run 9/9 PASS** | failure = test set-up collision (`unique_expert_slot`, two files used the same minute for the same expert); helper now takes the next free minute |
+| — Scenario A (real time, real pg_cron): demo checkout → both notified once → expert saves Meet link (farmer refused, stranger refused, lookalike refused, retry changes nothing) → farmer told once (no link in text) → too early → 5-min reminder → both join, link returned → expert completes (`completion_source = expert`) → one review | PASS | `staging-catchup` |
+| — Scenarios B, C, D, E, F, G + join window + retired function + push | 9/9 PASS | `staging-meet-payment-push` |
+| Playwright, E2E_STAGING=1, fresh staging builds | **30/30 PASS** | new: Pay & Book → checkout (fee ₹450.00 from the server, no input fields, cancel books nothing, confirm → processing → success → one booking, demo_payments `cancelled` + `succeeded`, **no request to any host except the app, staging Supabase and Google Fonts**); MOCKED network cut on confirm → no false success → Try again books once; slot taken by another farmer during checkout → clear message → slot no longer offered; expert link editor (3 invalid links refused, valid saved/normalised, retry "already saved", kept after reload, farmer notified once); farmer "Waiting for link" → "link ready" → Join opens a new tab at the Meet URL (a local stand-in page — Google is never contacted) and no in-app call screen |
+| Lint (oxlint, both apps) | 0 errors, 52 warnings | same count as before this pass |
+| Type check | not applicable / not run | the apps are JavaScript; Edge Functions are TypeScript but `deno` is not installed here |
+| Builds | PASS | app + admin production (production ref only, no staging ref, no service_role, no Daily/payment SDK); app + admin staging (staging ref only); staging APK `com.agroconnect.app.staging` (permissions: INTERNET, POST_NOTIFICATIONS + FCM's own; **no CAMERA/RECORD_AUDIO**; plugins incl. `@capacitor/app-launcher`; push off — no `google-services.json`) |
+| Secret scan | PASS | only tracked key = production **anon** key (public by design); no `.env`, keystore, service account or `google-services.json` tracked |
+| Visual check (390×844) | PASS | booking dialog (fee line, demo note) and checkout (banner, summary, buttons) screenshots reviewed; not committed |
+
+**Not run / device-required (not counted as passed):** checkout and Join on the Android phone (Meet app hand-off via
+App Launcher), push delivery to a closed phone, the reset e-mail link on the phone. `device-smoke.py` was updated for
+these (new checks: demo checkout, Meet hand-off — the script never reads or captures the other app).
+
+**Staging leftovers:** 26 free future slots of the synthetic expert from today's runs (their cancelled test bookings
+keep them via the foreign key); no open test bookings.

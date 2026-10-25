@@ -63,6 +63,11 @@ export default function Meetings() {
             meeting_link,
             status
           ),
+          demo_payments (
+            amount_paise,
+            currency,
+            status
+          ),
           reviews (
             rating,
             comment,
@@ -202,6 +207,7 @@ export default function Meetings() {
         const m = selected;
         const review = reviewOf(m);
         const video = (Array.isArray(m.video_meetings) ? m.video_meetings[0] : m.video_meetings) || null;
+        const demoPay = (Array.isArray(m.demo_payments) ? m.demo_payments[0] : m.demo_payments) || null;
         const canAct = isUpcoming(m) || m.status === 'Booked';
         const Person = ({ label, p }) => (
           <div className="flex items-center gap-3">
@@ -241,11 +247,18 @@ export default function Meetings() {
                 <Row k="Topic / issue" v={m.issue_description || '—'} />
                 {m.cancellation_reason && <Row k="Cancellation reason" v={m.cancellation_reason} />}
                 {m.refund_status && m.refund_status !== 'None' && (
-                  <Row k="Refund" v={`₹${Number(m.refund_amount || 0)} · ${m.refund_status}`} />
+                  <Row k="Refund (demo)" v={`₹${Number(m.refund_amount || 0)} · ${m.refund_status}`} />
                 )}
-                {m.expert_joined_at && <Row k="Expert joined" v={new Date(m.expert_joined_at).toLocaleString()} />}
-                {m.farmer_joined_at && <Row k="Farmer joined" v={new Date(m.farmer_joined_at).toLocaleString()} />}
-                {video?.status && <Row k="Video session" v={video.status} />}
+                {demoPay && (
+                  <Row k="Demo payment" v={`₹${(demoPay.amount_paise / 100).toFixed(2)} ${demoPay.currency} · ${demoPay.status} · DEMO, no real money`} />
+                )}
+                <Row k="Google Meet link" v={video?.meeting_link ? 'Saved by the expert' : 'Not added'} />
+                {m.completion_source && (
+                  <Row k="Completed by" v={m.completion_source === 'slot_ended' ? 'Closed after the scheduled time (not confirmed by the expert)'
+                    : m.completion_source === 'expert' ? 'The expert' : m.completion_source} />
+                )}
+                {m.expert_joined_at && <Row k="Expert opened Meet from the app" v={new Date(m.expert_joined_at).toLocaleString()} />}
+                {m.farmer_joined_at && <Row k="Farmer opened Meet from the app" v={new Date(m.farmer_joined_at).toLocaleString()} />}
                 <Row k="Booked on" v={new Date(m.created_at).toLocaleString()} />
               </div>
 

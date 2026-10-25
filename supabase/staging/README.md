@@ -20,9 +20,10 @@ Built 2026-10-25 through the Supabase connector. Every write was preceded by a `
 | 17 | `remediation_11_consultation_meetings` | `supabase/proposed/11_…sql` (function bodies verified identical to the file) |
 | 18 | `remediation_12_expert_controlled_completion` | `supabase/proposed/12_…sql` — only the expert ends a consultation; the scheduler auto-completes at slot end |
 | 19 | `remediation_13_push_notifications` | `supabase/proposed/13_…sql` — `push_devices`, `push_outbox`, enqueue trigger, claim/finish RPCs, Vault secret `push_dispatch_secret` |
+| 21 | `remediation_14_meet_links_and_demo_payment` | `supabase/proposed/14_…sql` — Google Meet links, DEMO payment checkout, booking only via the checkout (13 function bodies verified identical to the file, comments ignored) |
 | 20 | `remediation_12b_13b_reminder_wording_push_privacy_expiry` | fixes found on staging, already folded into the `12`/`13` files: date-correct 24 h reminder text, cancellation reasons never in a push, queued pushes expire after 2 h |
 
-Edge Functions on staging: `admin-delete-user` (verify_jwt on), `video-room-token` (verify_jwt on; secret `DAILY_API_KEY` **not set** → answers `video_not_configured`), `push-dispatch` (verify_jwt off, checks the Vault secret; secret `FIREBASE_SERVICE_ACCOUNT` **not set** → `push_not_configured`, rows stay queued). Not installed: `pg_net` and a push-dispatch cron job (need owner approval).
+Edge Functions on staging: `admin-delete-user` (verify_jwt on), `video-room-token` v2 = **retired stub** (answers 410; the Daily code is gone — delete the function in the dashboard), `push-dispatch` (verify_jwt off, checks the Vault secret; secret `FIREBASE_SERVICE_ACCOUNT` **not set** → `push_not_configured`, rows stay queued). Not installed: `pg_net` and a push-dispatch cron job (need owner approval).
 
 Not applied: `supabase/migrations/20260814_profiles_rls_fix.sql` (known destructive), `06` (needs the test accounts).
 Pre-setup state: `supabase/backups/20261025_staging_pre_setup_state.sql`.

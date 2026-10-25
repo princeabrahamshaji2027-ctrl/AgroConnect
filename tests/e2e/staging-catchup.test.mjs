@@ -6,6 +6,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { demoBook } from './demo-booking.mjs';
 
 const envFile = new URL('../../.env.staging', import.meta.url);
 const env = existsSync(envFile) ? Object.fromEntries(readFileSync(envFile, 'utf8').split('\n')
@@ -56,15 +57,20 @@ async function newSlot(minutes, rate = 450) {
   created.slots.push(data.id);
   return data.id;
 }
+const MEET = 'https://meet.google.com/agr-ocon-nct';
 const myNotes = async (who, booking) =>
   (await who.c.from('notifications').select('message').eq('user_id', who.uid).eq('related_id', booking).order('created_at')).data.map((n) => n.message);
 
 describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
   test('book -> notify both -> early join denied -> 5-min reminder -> both join -> complete -> one review', { timeout: 900000 }, async () => {
     const slot = await newSlot(7);
-    const book = await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slot, p_issue: 'Catch Up lifecycle test' });
+    const key = crypto.randomUUID();
+    const book = await demoBook(A.user1.c, slot, 'Catch Up lifecycle test', { key });
     assert.ifError(book.error);
     const id = book.data;
+    // DEMO payment: amount from the slot (paise), recorded as succeeded only after the booking exists
+    assert.deepEqual([book.payment.status, book.payment.currency, book.payment.demo], ['succeeded', 'INR', true]);
+    assert.ok(book.payment.amount_paise > 0);
 
     // immediate notifications, one each, with names
     const e1 = await myNotes(A.expert1, id);
@@ -72,8 +78,8 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     assert.equal(e1.length, 1); assert.match(e1[0], /^New consultation booked! Test User 1 \(Farmer\) booked a session with you for .+ at \d{1,2}:\d{2} [AP]M\./);
     assert.equal(f1.length, 1); assert.match(f1[0], /^Your consultation with Dr\. Ramesh Expert is booked for .+ at \d{1,2}:\d{2} [AP]M\.$/);
     // duplicate submit: same booking, nothing new; another farmer cannot take the slot and gets nothing
-    assert.equal((await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slot, p_issue: 'again' })).data, id);
-    assert.ok((await A.user2.c.rpc('book_consultation_slot', { p_slot_id: slot, p_issue: 'race' })).error, 'slot double-booked');
+    assert.equal((await demoBook(A.user1.c, slot, 'Catch Up lifecycle test', { key })).data, id);   // retry of the same checkout
+    assert.ok((await demoBook(A.user2.c, slot, 'race')).error, 'slot double-booked');
     assert.equal((await myNotes(A.expert1, id)).length, 1);
     const vm = (await A.user1.c.from('video_meetings').select('meeting_link').eq('booking_id', id)).data;
     assert.deepEqual(vm.map((r) => r.meeting_link), [null], 'invented meeting link stored');
@@ -87,6 +93,16 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     assert.match((await A.user2.c.rpc('join_consultation', { p_booking_id: id })).error?.message || '', /not a participant/);
     assert.ok((await A.user2.c.rpc('consultation_join_status', { p_booking_id: id })).error, 'stranger read join status');
 
+    // the expert pastes the Google Meet link (validated on the server); the farmer is told once, without the link
+    assert.match((await A.user1.c.rpc('set_meeting_link', { p_booking_id: id, p_link: MEET })).error?.message || '', /Only the expert/);
+    assert.match((await A.user2.c.rpc('set_meeting_link', { p_booking_id: id, p_link: MEET })).error?.message || '', /not a participant/);
+    assert.match((await A.expert1.c.rpc('set_meeting_link', { p_booking_id: id, p_link: 'https://meet.google.com.attacker.example/abc-defg-hij' })).error?.message || '', /valid Google Meet link/);
+    assert.ifError((await A.expert1.c.rpc('set_meeting_link', { p_booking_id: id, p_link: MEET })).error);
+    assert.equal((await A.expert1.c.rpc('set_meeting_link', { p_booking_id: id, p_link: MEET })).data.changed, false, 'retry changed the link');
+    const linkNotes = (await myNotes(A.user1, id)).filter((m) => /added the Google Meet link/.test(m));
+    assert.equal(linkNotes.length, 1); assert.doesNotMatch(linkNotes[0], /meet\.google\.com/);
+    assert.equal((await A.user2.c.from('video_meetings').select('meeting_link').eq('booking_id', id)).data.length, 0, 'stranger read the link');
+
     // the real scheduler sends the 5-minute reminder to both, once
     await waitFor(async () => (await myNotes(A.user1, id)).some((m) => m.startsWith('Reminder: your consultation with Dr. Ramesh Expert starts at')), 240000, 'farmer 5-min reminder');
     await waitFor(async () => (await myNotes(A.expert1, id)).some((m) => m.startsWith('Reminder: your consultation with Test User 1 (Farmer) starts at')), 60000, 'expert 5-min reminder');
@@ -97,6 +113,7 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     assert.ifError(ej.error);
     assert.equal(fj.role, 'farmer'); assert.equal(ej.data.role, 'expert');
     assert.equal(fj.room_id, ej.data.room_id);
+    assert.equal(fj.meeting_link, MEET); assert.equal(ej.data.meeting_link, MEET);
     assert.match((await A.user2.c.rpc('join_consultation', { p_booking_id: id })).error?.message || '', /not a participant/);
 
     // completion: only the expert (12), and only after the scheduled start
@@ -116,15 +133,15 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     assert.ok((await A.user1.c.from('reviews').insert({ ...rev, rating: 4 })).error, 'second review accepted');
 
     // admin sees the whole record
-    const adm = (await A.admin.c.from('consultation_bookings').select('status, farmer_joined_at, expert_joined_at, reviews(rating)').eq('id', id).single()).data;
-    assert.equal(adm.status, 'Completed');
+    const adm = (await A.admin.c.from('consultation_bookings').select('status, completion_source, farmer_joined_at, expert_joined_at, reviews(rating)').eq('id', id).single()).data;
+    assert.equal(adm.status, 'Completed'); assert.equal(adm.completion_source, 'expert');
     assert.ok(adm.farmer_joined_at && adm.expert_joined_at);
     assert.equal(adm.reviews[0]?.rating ?? adm.reviews?.rating, 5);
   });
 
   test('a cancelled booking cannot be joined and is never reminded', async () => {
     const slot = await newSlot(240);
-    const id = (await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slot, p_issue: 'cancel test' })).data;
+    const id = (await demoBook(A.user1.c, slot, 'cancel test')).data;
     assert.ok(id);
     assert.ifError((await A.user1.c.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'test', p_offered_slots: [] })).error);
     const st = (await A.user1.c.rpc('consultation_join_status', { p_booking_id: id })).data;

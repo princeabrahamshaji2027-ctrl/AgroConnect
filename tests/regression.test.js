@@ -93,14 +93,29 @@ test('AUD-013/014: Catch Up writes go through server functions, not direct table
   assert.doesNotMatch(src, /from\('consultation_bookings'\)\s*\.(insert|update|delete|upsert)\(/);
   assert.doesNotMatch(src, /from\('video_meetings'\)/);
   assert.doesNotMatch(src, /is_booked: true/);
-  for (const fn of ['book_consultation_slot', 'cancel_consultation_booking', 'complete_consultation']) {
+  for (const fn of ['cancel_consultation_booking', 'complete_consultation', 'join_consultation', 'set_meeting_link']) {
     assert.match(src, new RegExp(`rpc\\('${fn}'`), fn);
   }
-  // joining goes through the video-room-token Edge Function, which calls join_consultation as the caller
-  assert.match(src, /functions\.invoke\('video-room-token'/);
-  assert.match(read('supabase/functions/video-room-token/index.ts'), /rpc\('join_consultation'/);
+  // booking only through the DEMO checkout (migration 14): the old direct booking call is gone from the app
+  assert.doesNotMatch(src, /book_consultation_slot/);
+  const checkout = read('src/components/DemoCheckout.jsx');
+  for (const fn of ['start_demo_checkout', 'confirm_demo_payment', 'cancel_demo_payment']) assert.match(checkout, new RegExp(`rpc\\('${fn}'`), fn);
+  assert.match(checkout, /DEMO PAYMENT — NO REAL MONEY CHARGED/);
+  assert.doesNotMatch(checkout, /p_amount/, 'client sends an amount');
   assert.doesNotMatch(src, /checkRemindersAndNoShows/);
   assert.doesNotMatch(src, /setNowTick/, 'no whole-page re-render every second');
+});
+
+test('Catch Up uses Google Meet links and a demo checkout: no embedded/paid video, no payment provider', () => {
+  const pkg = read('package.json');
+  assert.doesNotMatch(pkg, /daily-co|razorpay|stripe|paypal|agora|twilio|jitsi|100ms/i);
+  for (const f of ['src/pages/Connect.jsx', 'src/components/DemoCheckout.jsx', 'src/utils/meetLink.js', 'src/App.jsx']) {
+    assert.doesNotMatch(read(f), /daily-co|video-room-token|razorpay|stripe|paypal|card number|cvv|upi pin/i, f);
+  }
+  const meet = read('src/utils/meetLink.js');
+  assert.match(meet, /new URL\(raw\)/, 'links are parsed, not substring-matched');
+  assert.match(meet, /url\.hostname !== 'meet\.google\.com'/);
+  assert.doesNotMatch(read('android/app/src/main/AndroidManifest.xml'), /RECORD_AUDIO|android\.permission\.CAMERA/);
 });
 
 test('AUD-015: fixture seeder creates the experts row and has no hard-coded password', () => {

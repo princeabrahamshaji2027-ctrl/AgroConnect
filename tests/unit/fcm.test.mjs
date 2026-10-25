@@ -1,10 +1,9 @@
-// MOCKED provider tests: Daily (video) and FCM (push) modules with a fake fetch. They prove request shapes, secret
-// handling and error mapping — NOT that a real call connects or a real phone shows a notification.
-//   node --test tests/unit/providers.test.mjs
+// MOCKED provider tests: the FCM (push) module with a fake fetch. They prove request shapes, secret handling and error
+// mapping — NOT that a real phone shows a notification.
+//   node --test tests/unit/fcm.test.mjs
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto, generateKeyPairSync } from 'node:crypto';
-import { createDailyProvider, roomNameFor, VideoProviderError } from '../../supabase/functions/video-room-token/daily.js';
 import { deliver, getAccessToken, parseServiceAccount, sendToToken } from '../../supabase/functions/push-dispatch/fcm.js';
 
 const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -18,48 +17,6 @@ function fakeFetch(routes) {
   f.calls = calls;
   return f;
 }
-
-describe('Daily provider (mocked)', () => {
-  test('room names come from the server room id only', () => {
-    assert.equal(roomNameFor('8f1c…/../x'), 'agro-8f1cx');
-  });
-
-  test('missing API key: "not configured", never a fake room', () => {
-    assert.throws(() => createDailyProvider({ apiKey: '' }), (e) => e instanceof VideoProviderError && e.status === 503 && !e.retryable);
-  });
-
-  test('creates a PRIVATE 2-person room limited to the join window, then a non-owner token for the caller', async () => {
-    const f = fakeFetch([
-      [(u, i) => u.endsWith('/rooms/agro-r1') && (i.method || 'GET') === 'GET', () => json(404, { error: 'not-found' })],
-      [(u, i) => u.endsWith('/rooms') && i.method === 'POST', () => json(200, { name: 'agro-r1', url: 'https://x.daily.co/agro-r1' })],
-      [(u) => u.endsWith('/meeting-tokens'), () => json(200, { token: 'tok-123' })],
-    ]);
-    const p = createDailyProvider({ apiKey: 'k-secret', fetchImpl: f });
-    const room = await p.ensureRoom('agro-r1', { nbf: 1000, exp: 2800 });
-    assert.equal(room.url, 'https://x.daily.co/agro-r1');
-    const create = JSON.parse(f.calls[1].body);
-    assert.deepEqual([create.privacy, create.properties.max_participants, create.properties.nbf, create.properties.exp, create.properties.eject_at_room_exp],
-      ['private', 2, 1000, 2800, true]);
-    const token = await p.createToken({ roomName: 'agro-r1', userId: 'u-1', userName: 'Asha', exp: 2800 });
-    assert.equal(token, 'tok-123');
-    const props = JSON.parse(f.calls[2].body).properties;
-    assert.deepEqual([props.room_name, props.user_id, props.is_owner, props.exp, props.eject_at_token_exp], ['agro-r1', 'u-1', false, 2800, true]);
-    for (const c of f.calls) assert.equal(c.headers.Authorization, 'Bearer k-secret');   // key only in the header
-  });
-
-  test('existing room is reused; provider errors are mapped (bad key -> 503 not retryable, 5xx/offline -> 502 retryable)', async () => {
-    const reuse = fakeFetch([[(u) => u.includes('/rooms/agro-r2'), () => json(200, { url: 'https://x.daily.co/agro-r2' })]]);
-    await createDailyProvider({ apiKey: 'k', fetchImpl: reuse }).ensureRoom('agro-r2', { nbf: 1, exp: 2 });
-    assert.equal(reuse.calls.filter((c) => c.method === 'POST').length, 0);
-
-    const badKey = createDailyProvider({ apiKey: 'k', fetchImpl: fakeFetch([[() => true, () => json(401, {})]]) });
-    await assert.rejects(badKey.ensureRoom('agro-x', { nbf: 1, exp: 2 }), (e) => e.status === 503 && !e.retryable);
-    const down = createDailyProvider({ apiKey: 'k', fetchImpl: fakeFetch([[() => true, () => json(503, {})]]) });
-    await assert.rejects(down.createToken({ roomName: 'a', userId: 'u', exp: 1 }), (e) => e.status === 502 && e.retryable);
-    const offline = createDailyProvider({ apiKey: 'k', fetchImpl: async () => { throw new TypeError('fetch failed'); } });
-    await assert.rejects(offline.ensureRoom('a', { nbf: 1, exp: 2 }), (e) => e.status === 502);
-  });
-});
 
 describe('FCM (mocked)', () => {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });

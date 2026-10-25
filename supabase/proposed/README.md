@@ -1,6 +1,6 @@
 # Database remediation scripts
 
-**Applied to production 2026-10-24 (owner-approved): 01, 02, 03 (+03b block), 07, 08.** Held: 04, 05, 09, 10, 11, 12, 13. Staging only: 06; on staging also 09–13 (2026-10-25).
+**Applied to production 2026-10-24 (owner-approved): 01, 02, 03 (+03b block), 07, 08.** Held: 04, 05, 09, 10, 11, 12, 13, 14. Staging only: 06; on staging also 09–14 (2026-10-25).
 Exact pre-apply restore: `supabase/backups/20261024_pre_remediation_restore.sql`.
 
 ## Original notes
@@ -26,8 +26,9 @@ Gate, risks and rollback: `REMEDIATION_STATUS.md`.
 | `11_consultation_meetings.sql` | Catch Up: booking notifications, 5-minute reminder (existing job), server join window + participants, completion after start, no invented meeting links. | Columns, functions, grants |
 | `12_expert_controlled_completion.sql` | Only the booking's expert ends a consultation (after the start, after joining); the scheduler auto-completes at slot end when the expert attended; one review request; date-correct reminder text. | Functions |
 | `13_push_notifications.sql` | Push: device registry (own rows only, through RPCs), outbox filled by a trigger on server-made booking notifications, claim/finish RPCs for the `push-dispatch` function (service role), retries/backoff, 2 h expiry, Vault dispatch secret. Requires Vault. | Tables, trigger, functions, Vault secret |
+| `14_meet_links_and_demo_payment.sql` | Final Catch Up flow: Google Meet link per booking (`set_meeting_link`, expert only, validated + normalised, farmer notified once), `join_consultation` returns it; DEMO payment checkout (`demo_payments`, `start_/confirm_/cancel_demo_payment`, fee from the slot, idempotent, no slot hold, 15-min expiry); `book_consultation_slot` no longer client-callable; completion needs a link; no-show = no link; close 24 h after slot as `slot_ended`; review update guard; slot fee range. | Table, columns, functions, triggers, grants |
 | `99_rollback.sql` | Undo 01 (guards), 02, 05, 07, 08. | Drops |
 
-Order: 00 (review) → 01 → 02 → 03 → 04 → 07 → 08 → 05 → 09 → 10 → 11 → 12 → 13 + deploy `admin-delete-user`, `video-room-token`, `push-dispatch` (all with the new client release) → 06 (staging). Never push the
+Order: 00 (review) → 01 → 02 → 03 → 04 → 07 → 08 → 05 → 09 → 10 → 11 → 12 → 13 → 14 + deploy `admin-delete-user`, `push-dispatch` (`video-room-token` is retired) (all with the new client release) → 06 (staging). Never push the
 repo's `supabase/migrations/20260814_profiles_rls_fix.sql` (see 04). Once approved and applied, move them into
 `supabase/migrations/` with date prefixes.
