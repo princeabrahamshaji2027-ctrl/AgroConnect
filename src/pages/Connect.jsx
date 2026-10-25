@@ -242,7 +242,7 @@ function InlineCalendarPicker({ year, month, onPrevMonth, onNextMonth, onSelectD
   );
 }
 
-export default function Connect({ onPeaAIClick, onShowToast, initialBooking, clearInitialBooking, onProfileClick }) {
+export default function Connect({ onPeaAIClick, onShowToast, initialBooking, clearInitialBooking, onProfileClick, focusBookingId, clearFocusBooking }) {
   const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews' | 'marketplace' | 'availability'
   
   // Book Consultation States
@@ -660,6 +660,35 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     fetchData();
   }, []);
 
+  // Opened from a push notification: show that booking if it is still upcoming for this user (the list is loaded
+  // with the user's own permissions, so another person's booking id finds nothing).
+  useEffect(() => {
+    if (!focusBookingId) return;
+    const upcoming = appointments.find((a) => a.id === focusBookingId);
+    if (upcoming) {
+      setActiveSubTab('upcoming');
+      setSelectedMeetingDetail(upcoming);
+      if (clearFocusBooking) clearFocusBooking();
+      return;
+    }
+    const past = history.find((h) => h.id === focusBookingId);
+    if (past) {
+      setActiveSubTab('history');
+      if (onShowToast) onShowToast(`This consultation is ${past.status === 'Cancelled' ? 'cancelled' : 'finished'}.`);
+      if (clearFocusBooking) clearFocusBooking();
+    }
+  }, [focusBookingId, appointments, history]);
+
+  // ...and if it is in neither list after loading (deleted, or not this user's), say so instead of waiting.
+  useEffect(() => {
+    if (!focusBookingId) return undefined;
+    const t = setTimeout(() => {
+      if (onShowToast) onShowToast('This consultation is no longer available.');
+      if (clearFocusBooking) clearFocusBooking();
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [focusBookingId]);
+
   // Measure the server clock once per load (one call, not one per booking).
   useEffect(() => {
     if (appointments.length === 0) return;
@@ -860,23 +889,28 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     return msg || 'Could not join the meeting. Please try again.';
   };
 
-  const handleLeaveCall = async () => {
+  // Leaving never completes a consultation; only the expert's "End consultation" does (server rule, migration 12).
+  const handleLeaveCall = async ({ end = false } = {}) => {
     if (!callSession) return;
-    setLeavingCall(true);
     const { meeting } = callSession;
-    const { error } = await supabase.rpc('complete_consultation', { p_booking_id: meeting.id });
-    setLeavingCall(false);
+    if (end) {
+      setLeavingCall(true);
+      const { error } = await supabase.rpc('complete_consultation', { p_booking_id: meeting.id });
+      setLeavingCall(false);
+      if (error) {
+        if (onShowToast) onShowToast(/before its scheduled start/.test(error.message)
+          ? 'The consultation can be ended after its scheduled start.' : error.message);
+        return;   // stay in the room
+      }
+      setCallSession(null);
+      fetchData();
+      setActiveSubTab('upcoming');
+      if (onShowToast) onShowToast('Consultation completed. The farmer has been asked for a review.');
+      return;
+    }
     setCallSession(null);
     fetchData();
-    if (!error) {
-      setActiveSubTab('history');
-      if (onShowToast) onShowToast(isCurrentExpert ? 'Consultation completed.' : 'Consultation completed. Please leave a review!');
-    } else if (onShowToast) {
-      // e.g. left before the start time or before the expert arrived: the booking stays in Upcoming
-      onShowToast(`You left the room. ${/before its scheduled start/.test(error.message)
-        ? 'The meeting can be completed after it starts.'
-        : /expert has not joined/.test(error.message) ? 'It stays open until the expert joins.' : error.message}`);
-    }
+    if (onShowToast) onShowToast('You left the room. You can rejoin until the session ends.');
   };
 
   const handleOpenReviewDialog = (item) => {
@@ -931,21 +965,31 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     setOfferedSlots(offeredSlots.filter((_, idx) => idx !== index));
   };
 
+  // Join through the video-room-token function: it runs the server checks (participant, ban, status, join window
+  // on the database clock), records attendance and — when a video provider is configured — returns a short-lived
+  // room token for this user only. Nothing is shown as joined unless the server accepted the join.
   const handleServerValidatedJoin = async (meeting) => {
     if (joiningId) return;
     setJoiningId(meeting.id);
     try {
-      // The server checks participant, status, ban and the join window (its own clock), records attendance and
-      // returns the room. Nothing is shown as joined unless this call succeeds.
-      const { data, error } = await supabase.rpc('join_consultation', { p_booking_id: meeting.id });
+      const { data, error } = await supabase.functions.invoke('video-room-token', { body: { booking_id: meeting.id } });
+      let body = data;
       if (error) {
-        alert(joinErrorText(error));
+        try { body = await error.context.json(); } catch { body = null; }
+        // accepted by the server, but no video provider (yet) or the provider is down: honest room without video
+        if (body?.code === 'video_not_configured' || body?.code === 'provider_unavailable' || body?.code === 'provider_misconfigured') {
+          setSelectedMeetingDetail(null);
+          if (body.server_now) setClockOffsetMs(Date.parse(body.server_now) - Date.now());
+          setCallSession({ meeting, session: body, videoState: body.code === 'video_not_configured' ? 'not_configured' : 'unavailable' });
+          return;
+        }
+        alert(joinErrorText(body?.error ? { message: body.error } : error));
         fetchData();
         return;
       }
       setSelectedMeetingDetail(null);
-      if (data?.server_now) setClockOffsetMs(Date.parse(data.server_now) - Date.now());
-      setCallSession({ meeting, session: data });
+      if (body?.server_now) setClockOffsetMs(Date.parse(body.server_now) - Date.now());
+      setCallSession({ meeting, session: body, videoState: 'ready' });
     } catch (err) {
       alert(joinErrorText(err));
     } finally {
@@ -1147,8 +1191,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       <MeetingRoom
         meeting={callSession.meeting}
         session={callSession.session}
+        videoState={callSession.videoState}
+        isExpert={isCurrentExpert}
         clockOffsetMs={clockOffsetMs}
-        onLeave={handleLeaveCall}
+        onLeave={() => handleLeaveCall({ end: false })}
+        onEnd={() => handleLeaveCall({ end: true })}
+        onRetry={() => { const m = callSession.meeting; setCallSession(null); handleServerValidatedJoin(m); }}
         leaving={leavingCall}
       />
     );

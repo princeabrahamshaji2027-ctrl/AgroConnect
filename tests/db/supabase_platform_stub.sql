@@ -39,3 +39,14 @@ create publication supabase_realtime;
 grant usage on schema public, auth, storage to anon, authenticated, service_role;
 grant select, insert, update, delete on storage.objects to anon, authenticated;
 grant select on storage.buckets to anon, authenticated;
+
+-- Vault + pgcrypto stand-ins (test only): enough for create_secret / decrypted_secrets / gen_random_bytes.
+create schema if not exists vault;
+create table if not exists vault.secrets (id uuid primary key default gen_random_uuid(), name text unique, secret text, description text);
+create or replace view vault.decrypted_secrets as select id, name, secret as decrypted_secret, description from vault.secrets;
+create or replace function vault.create_secret(new_secret text, new_name text default null, new_description text default '')
+returns uuid language sql as $$ insert into vault.secrets (name, secret, description) values (new_name, new_secret, new_description) returning id $$;
+create schema if not exists extensions;
+create or replace function extensions.gen_random_bytes(n integer) returns bytea language sql volatile as $$
+  select decode(substr(string_agg(md5(random()::text), ''), 1, n * 2), 'hex') from generate_series(1, (n / 16) + 1)
+$$;

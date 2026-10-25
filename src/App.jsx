@@ -20,6 +20,7 @@ import './index.css';
 import { supabase, RECOVERY_FLAG } from './supabase';
 import { completeNativeAuthCallback } from './utils/googleAuth';
 import ForgotPassword from './pages/ForgotPassword';
+import { initPushListeners, enablePushForSignedInUser, disablePushForThisDevice } from './utils/push';
 import ResetPassword from './pages/ResetPassword';
 
 export default function App() {
@@ -28,6 +29,8 @@ export default function App() {
   const [subScreen, setSubScreen] = useState(null); // null | 'editProfile' | 'createPost' | 'notifications' | 'settings' | 'peaAI'
   const [viewingProfileId, setViewingProfileId] = useState(null); // null or user ID
   const [connectInitialBooking, setConnectInitialBooking] = useState(null);
+  const [focusBookingId, setFocusBookingId] = useState(null); // opened from a push notification
+  const [pendingPushTap, setPendingPushTap] = useState(null);  // tap that arrived before sign-in finished
 
   // Toast Notifications States
   const [toastMessage, setToastMessage] = useState(null);
@@ -150,6 +153,23 @@ export default function App() {
     };
   }, [subScreen, viewingProfileId, activeTab]);
 
+  // Push notifications: listeners first (a tap can cold-start the app), registration once signed in.
+  useEffect(() => {
+    initPushListeners((tap) => setPendingPushTap(tap));
+  }, []);
+  useEffect(() => {
+    if (screen !== 'appLayout') return;
+    enablePushForSignedInUser();
+    if (pendingPushTap?.kind === 'booking') {
+      // the booking is re-read with the user's own permissions in Catch Up (RLS); nothing private is in the tap
+      setSubScreen(null);
+      setViewingProfileId(null);
+      setActiveTab('connect');
+      setFocusBookingId(pendingPushTap.bookingId);
+      setPendingPushTap(null);
+    }
+  }, [screen, pendingPushTap]);
+
   // Android: Google sign-in and password-reset links come back through <applicationId>://auth-callback.
   useEffect(() => {
     if (!window.Capacitor?.isNativePlatform?.()) return;
@@ -239,6 +259,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try { sessionStorage.removeItem(RECOVERY_FLAG); } catch { /* ignore */ }
+    await disablePushForThisDevice();   // this phone stops receiving this account's pushes
     try {
       await supabase.auth.signOut();
     } catch (err) {
@@ -376,6 +397,8 @@ export default function App() {
             onShowToast={showToastNotification}
             initialBooking={connectInitialBooking}
             clearInitialBooking={() => setConnectInitialBooking(null)}
+            focusBookingId={focusBookingId}
+            clearFocusBooking={() => setFocusBookingId(null)}
           />
         );
       case 'chat':

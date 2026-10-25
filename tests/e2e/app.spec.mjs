@@ -283,12 +283,13 @@ test.describe('Catch Up meetings (staging)', () => {
     const join = soon.getByRole('button', { name: 'Join Meeting' });
     await expect(join).toBeEnabled({ timeout: 20_000 });
     await join.click();
-    await expect(page.getByText('Consultation room')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Consultation with Dr. Ramesh Expert')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Video not connected')).toBeVisible();
     await expect(page.getByText(/You are checked in for this consultation/)).toBeVisible();
     await expect(page.getByText(/Audio Connected|Local Camera Active/)).toHaveCount(0);
-    await page.getByRole('button', { name: /Leave room/ }).click();
-    await expect(page.getByText(/You left the room\..*(after it starts|until the expert joins)/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'End consultation' })).toHaveCount(0);   // farmers cannot end it
+    await page.getByRole('button', { name: 'Leave room' }).click();
+    await expect(page.getByText('You left the room. You can rejoin until the session ends.')).toBeVisible({ timeout: 15_000 });
   });
 
   test('the farmer sees the booking confirmation in Notifications', async ({ page }) => {
@@ -384,5 +385,66 @@ test.describe('account recovery (staging)', () => {
     await page.getByText(/Privacy/).first().click();
     await expect(page.getByText(/You sign in with Google, so your account has no AgroConnect password/)).toBeVisible();
     await expect(page.getByLabel('Current password')).toHaveCount(0);
+  });
+});
+
+// Video room (2026-10-25). The Daily provider is not configured on staging: the real function answers
+// "video_not_configured"; the two MOCKED tests replace the function's answer to exercise the call UI states.
+test.describe('video room (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  let farmer; let expert; let expertId; const slots = []; const bookings = [];
+  const ist = (min) => { const d = new Date(Math.ceil((Date.now() + min * 60000) / 60000) * 60000 + 330 * 60000); return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) }; };
+  const plus30 = (t) => { const [h, m] = t.split(':').map(Number); const x = (h * 60 + m + 30) % 1440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
+  test.beforeAll(async () => {
+    farmer = mk(); expert = mk();
+    await farmer.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
+    const e = await expert.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
+    expertId = (await expert.from('experts').select('id').eq('user_id', e.data.user.id).single()).data.id;
+    const at = ist(3);
+    const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
+    slots.push(s.data.id);
+    bookings.push((await farmer.rpc('book_consultation_slot', { p_slot_id: s.data.id, p_issue: 'E2E video room' })).data);
+  });
+  test.afterAll(async () => {
+    for (const id of bookings) await farmer.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'E2E cleanup', p_offered_slots: [] });
+    for (const id of slots) await expert.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
+  });
+  const openRoom = async (page, who) => {
+    await login(page, fx(who));
+    await nav(page, 'Catch Up').click();
+    if (who === 'user1') await page.getByRole('button', { name: /^Upcoming/ }).click();
+    const card = page.locator('.card', { hasText: who === 'user1' ? 'E2E video room' : 'Test User 1 (Farmer)' }).first();
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    if (who !== 'user1') await card.click();
+    await page.getByRole('button', { name: /Join Meeting/ }).first().click();
+  };
+
+  test('expert gets "End consultation" (refused before the start, stays in the room); real function says video not configured', async ({ page }) => {
+    await openRoom(page, 'expert1');
+    await expect(page.getByText('Consultation with Test User 1 (Farmer)')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/Video calling is not set up/)).toBeVisible();
+    await page.getByRole('button', { name: 'End consultation' }).click();
+    await expect(page.getByText('The consultation can be ended after its scheduled start.')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Leave room' })).toBeVisible();
+  });
+
+  test('MOCKED provider down: honest "not reachable" room with Try again', async ({ page }) => {
+    await page.route('**/functions/v1/video-room-token', (route) => route.fulfill({ status: 502, contentType: 'application/json',
+      body: JSON.stringify({ code: 'provider_unavailable', error: 'down', role: 'farmer', ends_at: new Date(Date.now() + 1800000).toISOString(), server_now: new Date().toISOString() }) }));
+    await openRoom(page, 'user1');
+    await expect(page.getByText(/video service is not reachable right now/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Try video again' })).toBeVisible();
+  });
+
+  test('MOCKED room + token that cannot connect: "Not connected" and Rejoin, never shown as connected', async ({ page }) => {
+    await page.route('**/functions/v1/video-room-token', (route) => route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ provider: 'daily', room_url: 'https://agroconnect-invalid-test.daily.co/agro-none', token: 'not-a-real-token', role: 'farmer',
+        ends_at: new Date(Date.now() + 1800000).toISOString(), server_now: new Date().toISOString() }) }));
+    await openRoom(page, 'user1');
+    await expect(page.getByText('Consultation with Dr. Ramesh Expert')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Not connected')).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole('button', { name: 'Rejoin' })).toBeVisible();
+    await expect(page.getByText(/^Connected with/)).toHaveCount(0);
   });
 });

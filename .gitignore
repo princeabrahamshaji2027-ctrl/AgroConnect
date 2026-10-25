@@ -34,3 +34,4 @@ page_source.xml
 test-results/
 playwright-report/
 dist-staging
+android/app/google-services.json

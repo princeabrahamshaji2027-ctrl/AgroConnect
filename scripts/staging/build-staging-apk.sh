@@ -14,7 +14,10 @@ PROD_REF=mgreapakfchcxcrauheq
 grep -q "^VITE_SUPABASE_URL=https://$STAGING_REF.supabase.co$" .env.staging || { echo ".env.staging does not point at staging" >&2; exit 1; }
 
 # 1. staging web bundle
-npx vite build --mode staging --outDir dist-staging >/dev/null
+# push notifications only when Firebase is configured for this app id (registering without it crashes the plugin)
+PUSH=0; [ -f android/app/google-services.json ] && grep -q '"com.agroconnect.app.staging"' android/app/google-services.json && PUSH=1
+echo "push notifications in this build: $([ $PUSH = 1 ] && echo enabled || echo 'disabled (no google-services.json for com.agroconnect.app.staging)')"
+VITE_PUSH_ENABLED=$PUSH npx vite build --mode staging --outDir dist-staging >/dev/null
 grep -lq "$STAGING_REF" dist-staging/assets/*.js || { echo "staging bundle lacks staging ref" >&2; exit 1; }
 if grep -lq "$PROD_REF" dist-staging/assets/*.js; then echo "staging bundle references production" >&2; exit 1; fi
 

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { pushSupported, pushPreference, setPushPreference } from '../utils/push';
 import Header from '../components/Header';
 import { Button } from '../components/Button';
 import './pages.css';
@@ -70,6 +71,9 @@ export default function Settings({ onLogout, onGoBack, onNavigate }) {
                 <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
               </div>
 
+              {/* Push notifications — only in builds where push is configured (Firebase) */}
+              {pushSupported() && <PushToggle />}
+
               {/* Privacy & Security */}
               <div 
                 onClick={() => onNavigate && onNavigate('privacy')}
@@ -116,6 +120,30 @@ export default function Settings({ onLogout, onGoBack, onNavigate }) {
         )}
 
       </div>
+    </div>
+  );
+}
+
+function PushToggle() {
+  const [on, setOn] = React.useState(pushPreference());
+  const [note, setNote] = React.useState('');
+  const toggle = async () => {
+    const next = !on;
+    setOn(next);
+    const r = await setPushPreference(next);
+    setNote(r === 'denied' ? 'Notifications are blocked for AgroConnect in your phone settings.' : '');
+  };
+  return (
+    <div onClick={toggle} role="switch" aria-checked={on} aria-label="Consultation push notifications"
+      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', backgroundColor: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>notifications_active</span>
+        <div>
+          <div style={{ fontSize: '15px' }}>Push notifications</div>
+          <div style={{ fontSize: '12px', color: note ? 'var(--error)' : 'var(--text-secondary)', marginTop: '2px' }}>{note || 'Bookings and meeting reminders'}</div>
+        </div>
+      </div>
+      <input type="checkbox" readOnly checked={on} style={{ accentColor: 'var(--primary-green)', width: '20px', height: '20px' }} />
     </div>
   );
 }
