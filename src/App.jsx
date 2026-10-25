@@ -18,6 +18,7 @@ import { FAB } from './components/Button';
 import './index.css';
 
 import { supabase } from './supabase';
+import { completeNativeGoogleSignIn } from './utils/googleAuth';
 
 export default function App() {
   const [screen, setScreen] = useState('splash'); // 'splash' | 'login' | 'register' | 'adminDashboard' | 'appLayout'
@@ -147,9 +148,34 @@ export default function App() {
     };
   }, [subScreen, viewingProfileId, activeTab]);
 
+  // Android: Google sign-in comes back through the <applicationId>://auth-callback deep link.
+  useEffect(() => {
+    if (!window.Capacitor?.isNativePlatform?.()) return;
+    let handle;
+    import('@capacitor/app').then(({ App: CapApp }) => {
+      handle = CapApp.addListener('appUrlOpen', async ({ url }) => {
+        try {
+          if (await completeNativeGoogleSignIn(url)) {
+            await handleSplashFinish();
+            showToastNotification('🔓 Signed in with Google');
+          }
+        } catch (err) {
+          showToastNotification(`Google sign-in failed: ${err.message}`);
+        }
+      });
+    });
+    return () => { Promise.resolve(handle).then((h) => h?.remove()); };
+  }, []);
+
   // Handlers for main flow
   const handleSplashFinish = async () => {
     const { data: { session } } = await supabase.auth.getSession();
+    // Web: back from Google with ?code=... (supabase-js has exchanged it by now); keep the address bar clean.
+    if (/[?&](code|error)=/.test(window.location.search)) {
+      const err = new URLSearchParams(window.location.search).get('error_description');
+      window.history.replaceState(null, '', window.location.pathname);
+      if (err) showToastNotification(`Google sign-in failed: ${err}`);
+    }
     if (session) {
       const { data: profile } = await supabase
         .from('profiles')
@@ -212,6 +238,21 @@ export default function App() {
     showToastNotification('🔌 Logged out safely');
   };
 
+  // Opening a profile from anywhere (post avatar, expert card, chat, search...). The signed-in user's own id goes
+  // to the Profile tab, so they never see themselves as "another user" with a Connect button.
+  const openProfile = async (id) => {
+    if (!id) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && id === user.id) {
+      setViewingProfileId(null);
+      setSubScreen(null);
+      setActiveTab('profile');
+      return;
+    }
+    setSubScreen(null);
+    setViewingProfileId(id);
+  };
+
   const handlePublishPost = (newPost) => {
     setSubScreen(null);
     showToastNotification('📝 Post published to Community Feed!');
@@ -244,10 +285,7 @@ export default function App() {
       return (
         <Notifications 
           onGoBack={() => setSubScreen(null)} 
-          onProfileClick={(id) => {
-            setSubScreen(null);
-            setViewingProfileId(id);
-          }}
+          onProfileClick={openProfile}
         />
       );
     }
@@ -284,7 +322,7 @@ export default function App() {
           userId={viewingProfileId}
           onEditProfileClick={() => setSubScreen('editProfile')}
           onSettingsClick={() => setSubScreen('settings')}
-          onProfileClick={(id) => setViewingProfileId(id)}
+          onProfileClick={openProfile}
           onCancelView={() => setViewingProfileId(null)}
           onPeaAIClick={() => setSubScreen('peaAI')}
           onLogout={handleLogout}
@@ -299,7 +337,7 @@ export default function App() {
           <Feed 
             onNotificationClick={() => setSubScreen('notifications')}
             onSearchClick={() => setActiveTab('search')}
-            onProfileClick={(id) => setViewingProfileId(id)}
+            onProfileClick={openProfile}
             onCreatePostClick={() => setSubScreen('createPost')}
             onPeaAIClick={() => setSubScreen('peaAI')}
             onShowToast={showToastNotification}
@@ -308,7 +346,7 @@ export default function App() {
       case 'search':
         return (
           <Search 
-            onProfileClick={(id) => setViewingProfileId(id)}
+            onProfileClick={openProfile}
             onPostCommentClick={(post) => {
               setActiveTab('feed');
               // Trigger commenting layout
@@ -318,6 +356,7 @@ export default function App() {
       case 'connect':
         return (
           <Connect 
+            onProfileClick={openProfile}
             onPeaAIClick={() => setSubScreen('peaAI')}
             onShowToast={showToastNotification}
             initialBooking={connectInitialBooking}
@@ -327,6 +366,7 @@ export default function App() {
       case 'chat':
         return (
           <Chat 
+            onProfileClick={openProfile}
             onNavigateToBooking={(bookingData) => {
               setConnectInitialBooking(bookingData);
               setActiveTab('connect');
@@ -339,7 +379,7 @@ export default function App() {
             userId="user1" 
             onEditProfileClick={() => setSubScreen('editProfile')}
             onSettingsClick={() => setSubScreen('settings')}
-            onProfileClick={(id) => setViewingProfileId(id)}
+            onProfileClick={openProfile}
             onPeaAIClick={() => setSubScreen('peaAI')}
             onLogout={handleLogout}
             onShowToast={showToastNotification}

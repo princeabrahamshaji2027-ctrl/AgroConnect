@@ -67,13 +67,18 @@ export default function TopNav({ userProfile, onMenuClick, sidebarOpen, onProfil
     <>
       <header className={`fixed top-0 right-0 h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-6 z-40 transition-all duration-300 ${sidebarOpen ? 'w-[calc(100%-260px)]' : 'w-full'}`}>
         <div className="flex items-center">
-          <span
-            className="material-symbols-outlined text-on-surface-variant cursor-pointer mr-4 hover:text-primary transition-colors select-none"
-            onClick={onMenuClick}
-            title="Toggle Sidebar"
-          >
-            menu
-          </span>
+          {/* only while the menu is hidden; the open menu has its own hide button */}
+          {!sidebarOpen && (
+            <span
+              className="material-symbols-outlined text-on-surface-variant cursor-pointer mr-4 hover:text-primary transition-colors select-none"
+              onClick={onMenuClick}
+              title="Show menu"
+              aria-label="Show menu"
+              role="button"
+            >
+              menu
+            </span>
+          )}
         </div>
 
         <div

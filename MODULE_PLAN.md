@@ -93,3 +93,36 @@ P1..P5
 ## 3. Out of scope until asked
 No module above will be implemented without an explicit go-ahead naming it; production changes keep needing separate
 approval.
+
+## Next implementation (recommended 2026-10-25): finish A — password reset
+
+**Actual status (checked in code, not assumed):** Google sign-in/sign-up is done and verified on staging (phone, new and
+existing accounts). Password reset does **not** exist: `Login.jsx` "Forgot Password?" is a `<span>` without a handler;
+no `resetPasswordForEmail`, no recovery screen in the app or the admin site. "Change password" exists
+(`PrivacySecurity.jsx`) but never checks the current password it asks for. "Remember me" is an unbound checkbox.
+
+**Requirements**
+1. "Forgot Password?" → enter email → always the same neutral confirmation (no "account exists" leak), with the
+   Supabase rate-limit error shown politely.
+2. The reset email link opens the app (`<applicationId>://auth-callback?next=reset`, the callback already used for
+   Google; web: the site origin) → **Set new password** screen (same rules as sign-up, `validatePassword`) → signed in.
+3. Expired, reused or other-device links → a friendly message and a way to request a new email (also replaces the raw
+   "PKCE code verifier not found …" text seen in the Google error test).
+4. Change password checks the current password first (re-sign-in) and, for Google-only accounts, says "Set a password"
+   instead of asking for one they never had.
+
+**Files:** `src/pages/Login.jsx` (link → forgot screen), new `src/pages/ForgotPassword.jsx` and
+`src/pages/ResetPassword.jsx`, `src/utils/googleAuth.js` → general auth-link handling (`next=reset`, friendly errors),
+`src/App.jsx` (route to Reset Password after a recovery link), `src/pages/PrivacySecurity.jsx` (current-password check),
+tests in `tests/e2e/app.spec.mjs` + `scripts/staging/device-smoke.py`.
+**Database:** none. **Owner config (staging only):** allow `com.agroconnect.app.staging://auth-callback**` (wildcard so
+`?next=reset` matches) in Redirect URLs; keep the default mailer for testing (≈2 emails/hour) or add SMTP.
+
+**Staging test plan**
+* Unit: link parsing (`code`, `next`, `error`, unrelated links) and error-message mapping.
+* Playwright (staging build): forgot screen validates input, shows the same message for a known and an unknown address;
+  reset screen rejects weak/mismatched passwords; change password rejects a wrong current password.
+* Phone (owner's own address on a staging email account — fixture addresses are not real mailboxes): request → open the
+  email on the phone → app opens on Set new password → sign in with the new password; reuse the same link → friendly
+  "link expired"; request on phone A, open on another device → friendly message; Google account → "Set a password".
+* Regression: full `npm test`, `npm run test:staging`, Playwright, `device-smoke.py`.

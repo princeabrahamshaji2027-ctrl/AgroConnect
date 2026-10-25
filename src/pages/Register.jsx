@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
+import GoogleButton from '../components/GoogleButton';
 import PasswordRequirements from '../components/PasswordRequirements';
 import {
   validatePassword,
@@ -340,11 +341,7 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
         <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }}></div>
       </div>
 
-      {/* "google" is not a Material Symbols icon (it rendered as the word GOOGLE). No official Google mark is in the
-          repo, so the button shows text only until the branded asset is added with real Google sign-in. */}
-      <Button variant="secondary" style={{ display: 'flex', justifyContent: 'center' }}>
-        Continue with Google
-      </Button>
+      <GoogleButton onError={setError} />
 
       <div className="auth-footer" style={{ paddingBottom: '24px' }}>
         <p>Already have an account? <span className="auth-link" onClick={onGoToLogin}>Log In</span></p>

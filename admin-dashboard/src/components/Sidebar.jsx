@@ -1,7 +1,7 @@
 import React from 'react';
 import logoImg from '../assets/logo.png';
 
-export default function Sidebar({ activeTab, onTabChange, onLogout, isOpen = true }) {
+export default function Sidebar({ activeTab, onTabChange, onLogout, onClose, isOpen = true }) {
   const menuGroups = [
     {
       title: "User Management",
@@ -30,9 +30,8 @@ export default function Sidebar({ activeTab, onTabChange, onLogout, isOpen = tru
     {
       title: "Consultations",
       items: [
-        { id: "appointments", label: "Appointments", icon: "event" },
-        { id: "meetings", label: "Meetings", icon: "groups" },
-        { id: "reviews", label: "Reviews", icon: "star" }
+        // Appointments and Reviews are part of Meetings (filters + meeting details)
+        { id: "meetings", label: "Meetings", icon: "groups" }
       ]
     },
     {
@@ -45,11 +44,21 @@ export default function Sidebar({ activeTab, onTabChange, onLogout, isOpen = tru
 
   return (
     <aside className={`fixed left-0 top-0 h-full w-[260px] bg-surface border-r border-outline-variant flex flex-col z-50 transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-      <div className="h-16 flex items-center px-6 border-b border-outline-variant">
+      <div className="h-16 flex items-center justify-between px-6 border-b border-outline-variant">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => onTabChange("dashboard")}>
           <img src={logoImg} alt="AgroConnect" className="w-8 h-8 rounded-lg object-contain" />
           <span className="font-headline-lg text-on-surface font-bold">Agro Connect</span>
         </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="text-on-surface-variant hover:text-primary transition-colors cursor-pointer flex"
+            title="Hide menu"
+            aria-label="Hide menu"
+          >
+            <span className="material-symbols-outlined">menu_open</span>
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">

@@ -275,3 +275,34 @@ rotation settings (also on SIGTERM), reads logcat from its start time instead of
 | Playwright vs staging builds (`E2E_STAGING=1`) | — | **10/10 PASS** |
 | Scheduler (pg_cron) no-show | PASS (≈6.2 min) | PASS (≈6.2 min); `cron.job_run_details`: 90 runs, 0 failures |
 | Post-run integrity (staging SQL) | — | 15 realtime-test bookings, 0 left open; 0 double bookings; 3 slot/booking "mismatches" are all `Completed` consultations, which keep their slot booked by design |
+
+## Change request 2026-10-25 (`changes.pdf`) + Google sign-in
+Item-by-item status: `CHANGE_REQUEST_2026-10-25.md`. Everything below ran against **staging** or locally; production
+is unchanged.
+
+| Suite | Result | Notes |
+|---|---|---|
+| `npm test` (validation 27, regression 14, DB 41 incl. 11 new for `09`) | **PASS** | 09 tests also reproduce the old bug (demote deleted the expert's bookings) and found one real flaw in the first draft: a client could submit an application/resignation already "Approved" (definer trigger saw the owner role) — fixed before applying |
+| `09` applied to staging + Edge Function `admin-delete-user` deployed (staging) | done | target re-confirmed with `get_project` before the write |
+| `staging-workflows`: expert application → no second request while expert → no self-demotion → leave request → admin reject (expert stays) → new request → admin approve (Farmer, record inactive) | PASS | user3, fixtures restored |
+| `staging-workflows`: admin deletes a throwaway signup through the function; non-admin 403; self 400; deleted user cannot sign in; profile gone | PASS | one failure in a full parallel run: staging-api signs user1 out globally, so user1 got 401 not 403 — test now uses user2 |
+| Full `npm run test:staging` after the fix | **22/22 PASS** | incl. realtime and the pg_cron no-show (auto-cancelled ≈5.5 min) |
+| Playwright vs staging builds | **19/19 PASS** | + Google button message, icons-only bar, ☰ profile menu, Catch Up dates/calendar/times, expert card → profile, own avatar → own profile (temporary post, removed), expert leave dialog, admin ☰ behaviour, Meetings filters/details/review, Remove expert, Reports leave tab |
+| Staging APK rebuilt | PASS | `com.agroconnect.app.staging`, staging ref only, deep link `com.agroconnect.app.staging://auth-callback`, `@capacitor/browser` included |
+| **Phone** (Nothing Phone 2, Android 16), new staging APK, `device-smoke.py` | **11/11 PASS** | base checks (farmer, session, rotation/back, expert tools, admin refused) + Google button message on Log In/Sign Up, icons-only bar, profile ☰ menu (farmer and expert), Catch Up dates → calendar on Book → date → that day's times (date not editable), expert card → expert profile, own avatar on own post → own profile (temporary post via API, deleted), expert "Leave being an expert" reason dialog (not submitted); production app unchanged (1.0, 2026-09-16 09:31:07); no crash; screenshots `appium-results/2026-10-25_staging_device/10…20` |
+| Script fixes during the phone run | — | matcher added a trailing space; Python certificate store missing (API calls now via curl); one lost Log In tap (one retry, stops on any app answer); icon names merged into row text on this WebView. **Incident:** one failure message included the text of the password field (this device exposes it to UI Automator) — the staging fixture password appeared in the tool output once. Fixed: password fields are never read and every message is redacted. Rotating the staging fixture password is recommended |
+| Staging after the phone run | clean | 0 leftover test posts, 0 pending leave requests, expert1 still Expert |
+| Google sign-in end to end | **not possible yet** | provider disabled on both projects (checked `/auth/v1/settings`); owner setup in `CHANGE_REQUEST_2026-10-25.md` |
+
+## Google sign-in on staging — 2026-10-25 (provider enabled by the owner; production still off)
+| Check | Result | Notes |
+|---|---|---|
+| Provider status (`/auth/v1/settings`) | staging **on**, production **off** | |
+| Phone, **existing** Google account (owner picked the account): sign in → Farmer profile → menu without expert tools → force-stop + relaunch keeps session → Log Out → relaunch stays signed out | **7/7 PASS** | no duplicate account: still 1 Google user, new sign-in time |
+| Phone, **new** Google account: same 7 checks | **7/7 PASS** | created once, role Farmer, no role in signup metadata, 1 identity, no expert row |
+| Self-promotion as each Google user (staging SQL, always rolled back): set role Admin / Expert, insert own experts row, application sent as "Approved", approve own application, `is_admin()` | all **refused**; application stored as Pending; role stays Farmer | nothing kept |
+| `handle_new_user` on staging | always Farmer, never reads a role from signup data | |
+| Callback handling on the phone: error callback, invalid code, unrelated deep link, no crash | **5/5 PASS** | the invalid-code message is Supabase's raw developer text (PKCE verifier …) — needs a friendly message |
+| Installed staging APK | identical to the verified artifact; staging ref only; only the `anon` key | |
+| Test tools | staging-anon/api/workflows refuse the production ref; create-test-accounts and device-smoke allow only the staging ref; build script refuses a production ref in the bundle/APK | Playwright has **no** guard of its own (tests whatever build is served on :4173/:4174) |
+| Leftover | 1 throwaway `deltest` account from the earlier failed full run (assertion before the delete) | test now deletes in `finally`; account left for owner approval |

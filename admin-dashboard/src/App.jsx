@@ -11,9 +11,7 @@ import Sellers from './pages/Sellers';
 import Posts from './pages/Posts';
 import Comments from './pages/Comments';
 import Reports from './pages/Reports';
-import Appointments from './pages/Appointments';
 import Meetings from './pages/Meetings';
-import Reviews from './pages/Reviews';
 import Broadcasts from './pages/Broadcasts';
 
 function App() {
@@ -129,12 +127,8 @@ function App() {
         return <ComingSoon feature="Marketplace Orders Management" />;
       case 'categories':
         return <ComingSoon feature="Marketplace Categories Management" />;
-      case 'appointments':
-        return <Appointments />;
       case 'meetings':
         return <Meetings />;
-      case 'reviews':
-        return <Reviews />;
       case 'broadcasts':
         return <Broadcasts />;
       default:
@@ -148,6 +142,7 @@ function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onLogout={handleLogout}
+        onClose={() => setSidebarOpen(false)}
         isOpen={sidebarOpen}
       />
       <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-[260px]' : 'ml-0'}`}>

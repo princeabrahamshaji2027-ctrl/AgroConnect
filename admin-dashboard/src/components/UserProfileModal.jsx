@@ -108,36 +108,18 @@ export default function UserProfileModal({ userId, onClose, onRefresh }) {
     }
   };
 
-  const handleDeleteUser = async (mode) => {
-    // mode: 'soft' (anonymize + ban) or 'hard' (delete row)
+  // Full delete on the server (Edge Function admin-delete-user): login account, profile and everything that
+  // belongs to the user (posts, comments, expert record, bookings, ...). Only admins can call it.
+  const handleDeleteUser = async () => {
     setActionLoading(true);
     try {
-      if (mode === 'soft') {
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            full_name: 'Anonymized User',
-            bio: 'This account has been deleted by an administrator.',
-            is_banned: true,
-            ban_reason: 'Account deleted by admin (anonymized)'
-          })
-          .eq('id', userId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('profiles')
-          .delete()
-          .eq('id', userId);
-        if (error) throw error;
+      const { data, error } = await supabase.functions.invoke('admin-delete-user', { body: { user_id: userId } });
+      if (error) {
+        let message = error.message;
+        try { message = (await error.context.json()).error || message; } catch { /* keep generic message */ }
+        throw new Error(message);
       }
-
-      await supabase.from('admin_audit_log').insert({
-        admin_id: (await supabase.auth.getUser()).data.user?.id,
-        action: mode === 'soft' ? 'anonymize_delete_user' : 'hard_delete_user',
-        target_table: 'profiles',
-        target_id: userId
-      });
-
+      if (!data?.deleted) throw new Error('The server did not confirm the deletion.');
       setShowDeleteModal(false);
       if (onRefresh) onRefresh();
       onClose();
@@ -317,46 +299,21 @@ export default function UserProfileModal({ userId, onClose, onRefresh }) {
             <div className="max-w-md w-full card-bg rounded-xl border border-outline-variant p-6 flex flex-col gap-4 shadow-2xl">
               <div className="flex items-center gap-2 text-error">
                 <span className="material-symbols-outlined text-[28px]">warning</span>
-                <h3 className="font-headline-lg-mobile font-bold text-on-surface">Delete Account Options</h3>
+                <h3 className="font-headline-lg-mobile font-bold text-on-surface">Delete user</h3>
               </div>
               
-              {hasAttachedHistory ? (
-                <div className="flex flex-col gap-3">
-                  <p className="text-body-sm text-on-surface-variant leading-relaxed">
-                    This user has active attached history (<strong className="text-on-surface">{userStats.posts} posts, {userStats.orders} orders, {userStats.reviews} reviews</strong>).
-                  </p>
-                  <div className="bg-error-container/20 border border-error/30 p-3 rounded-lg text-[12px] text-on-surface-variant">
-                    <strong className="text-error block mb-1">Recommended Action: Anonymize & Soft Delete</strong>
-                    Hard deleting will permanently break order history, reviews, and post references across the platform. Anonymizing replaces personal data while preserving data integrity.
-                  </div>
-                  <div className="flex flex-col gap-2 mt-2">
-                    <button
-                      onClick={() => handleDeleteUser('soft')}
-                      disabled={actionLoading}
-                      className="bg-primary-container text-on-primary-container font-semibold py-2.5 px-4 rounded-lg font-label-md transition-colors text-center cursor-pointer"
-                    >
-                      Anonymize & Deactivate (Recommended)
-                    </button>
-                    <button
-                      onClick={() => handleDeleteUser('hard')}
-                      disabled={actionLoading}
-                      className="bg-error/20 hover:bg-error/30 text-error border border-error/40 py-2 px-4 rounded-lg font-label-md transition-colors text-center cursor-pointer"
-                    >
-                      Force Hard Delete (Cascades & Destroys History)
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <p className="text-body-sm text-on-surface-variant">
-                    This user has no attached posts, orders, or reviews. You can safely hard-delete their account profile row.
-                  </p>
-                  <div className="flex justify-end gap-3 mt-2">
-                    <button onClick={() => setShowDeleteModal(false)} className="bg-surface-variant text-on-surface px-4 py-2 rounded-lg font-label-md">Cancel</button>
-                    <button onClick={() => handleDeleteUser('hard')} disabled={actionLoading} className="bg-error text-on-error font-semibold px-4 py-2 rounded-lg font-label-md">Confirm Hard Delete</button>
-                  </div>
-                </div>
-              )}
+              <p className="text-body-sm text-on-surface-variant leading-relaxed">
+                Permanently delete <strong className="text-on-surface">{userProfile?.full_name || 'this user'}</strong>?
+                Their login, profile{userProfile?.role === 'Expert' ? ', expert record' : ''} and everything they created
+                {hasAttachedHistory ? <> (<strong className="text-on-surface">{userStats.posts} posts, {userStats.orders} orders, {userStats.reviews} reviews</strong>)</> : null} are removed.
+                This cannot be undone.
+              </p>
+              <div className="flex justify-end gap-3 mt-2">
+                <button onClick={() => setShowDeleteModal(false)} disabled={actionLoading} className="bg-surface-variant text-on-surface px-4 py-2 rounded-lg font-label-md cursor-pointer">Cancel</button>
+                <button onClick={handleDeleteUser} disabled={actionLoading} className="bg-error text-on-error font-semibold px-4 py-2 rounded-lg font-label-md cursor-pointer disabled:opacity-50">
+                  {actionLoading ? 'Deleting…' : 'Delete permanently'}
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -24,11 +24,12 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 | Session persistence | yes | PASS (reload) | PASS (force-stop + relaunch, phone) | PASS (refresh) | STG | app.spec, admin.spec, device-smoke | — | — |
 | "Remember me" | **checkbox only** | STUB | STUB | — | — | `Login.jsx`: unbound checkbox; sessions always persist | misleading control | wire it or remove it |
 | Sign-out ends access | yes | UNTESTED (UI) | UNTESTED | UNTESTED | STG | staging-api (API level) | — | UI sign-out check |
-| Google sign-in | button only | STUB | STUB | — | — | `Login.jsx`: "Continue with Google" has no handler | dead button shown to users | hide button or implement OAuth (Task 4) |
+| Google sign-in / sign-up | yes (2026-10-25) | PASS (button; "not available yet" while the provider is off) | code + deep link in staging APK; untested end to end | — | STG | Playwright; APK manifest has `com.agroconnect.app.staging://auth-callback` | Google provider is **off** on staging and production | owner: Google OAuth client + enable provider + redirect URLs (CHANGE_REQUEST_2026-10-25.md) |
 | Password reset | **link only** | STUB | STUB (seen on phone) | — | — | `Login.jsx`: "Forgot Password?" is a `<span>` with no handler; no reset code anywhere | users cannot recover accounts; dead link | implement (MODULE_PLAN A, priority) |
 | Role separation (farmer / expert / admin) | yes | PASS | PASS (phone) | PASS | STG + LOCAL | app.spec, admin.spec, staging-api (no self-promotion), DB tests | — | — |
 | Admin blocked from mobile app | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke screenshot 08 | after the refusal the admin's email and (masked) password stay in the form | clear the form on refusal (minor) |
 | Ban / unban | yes | — | — | API PASS, UI UNTESTED | STG + LOCAL | staging-workflows (ban), DB tests | — | Users-page ban click E2E |
+| Delete user (full) | yes (2026-10-25) | — | — | API PASS (Edge Function) | STG | staging-workflows: admin-only, self refused, account + profile gone | production needs `09` + function deploy | release |
 
 ## Feed, posts, profiles, search
 
@@ -51,15 +52,16 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 | Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
 |---|---|---|---|---|---|---|---|---|
 | Expert directory (Catch Up) | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke | — | — |
-| Expert application (apply → approve/reject) | yes | UNTESTED (UI) | UNTESTED | API PASS | STG + LOCAL | staging-workflows (no self-approval, admin approves/demotes), staging-api | UI submission never driven | UI E2E: apply as user, approve in admin |
+| Expert application (apply → approve/reject) | yes | UNTESTED (UI) | UNTESTED | API PASS; one row per user | STG + LOCAL | staging-workflows, DB tests (09: one open request, no request while expert) | — | UI E2E: apply as user, approve in admin |
+| Remove expert / leave expert mode | yes (2026-10-25) | PASS (menu + dialog) | UNTESTED on device | API PASS; Remove button + Reports tab PASS | STG + LOCAL | DB tests 09; staging-workflows (request → reject → request → approve); Playwright | production needs `09` | phone test |
 | Expert availability editor | yes | PASS | PASS (phone, view only) | — | STG | app.spec, device-smoke | — | — |
 | Booking a slot | yes | UNTESTED (UI) | UNTESTED | — | STG + LOCAL | staging-api, staging-workflows (race: exactly one winner) | — | UI booking E2E |
 | Cancel booking + refund flag | yes | UNTESTED (UI) | UNTESTED | API PASS | STG | staging-api (refund Pending, slot freed), admin cancel RPC | refunds are only a status; no money moves | payments module (Task 4) |
 | Join window / completion / review | yes | UNTESTED (UI) | UNTESTED | — | STG | staging-workflows | — | — |
 | Scheduler (no-show auto-cancel, pg_cron) | yes (server) | — | — | — | STG | staging-workflows: auto-cancelled ≈6.2 min, refund Pending, one notice; pg_cron 0 failures | **production**: 05 + pg_cron not applied (owner decision) | apply with the app release |
 | Video consultation | **simulated** | STUB | STUB | — | — | `Connect.jsx` "Video call simulation states"; no WebRTC/SDK | no real call; leaving marks completion | choose a video provider (Task 4) |
-| Admin: appointments / meetings | yes | — | — | UNTESTED (UI); RPC PASS | STG | staging-workflows (admin cancel frees slot) | — | admin UI E2E |
-| Admin: reviews | yes | — | — | UNTESTED | — | none | — | — |
+| Admin: meetings (filters, details, review) | yes | — | — | PASS | STG | Playwright (All/Upcoming/History, details dialog with review) | Appointments/Reviews pages removed (merged) | — |
+| Admin: reviews | merged into Meetings details | — | — | PASS | STG | Playwright | — | — |
 
 ## Messaging and notifications
 

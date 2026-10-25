@@ -36,7 +36,7 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
             <div className="post-card-username" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
               <span>{post.userName}</span>
               {((JSON.parse(localStorage.getItem('users_db') || '[]').find(u => u.name === post.userName)?.role === 'Agronomist') || 
-                post.userRole === 'Agronomist' || post.userRole === 'Distributor') && (
+                post.userRole === 'Expert' || post.userRole === 'Agronomist' || post.userRole === 'Distributor') && (
                 <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
               )}
               <span className="badge-role">{post.userRole}</span>

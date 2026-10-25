@@ -76,3 +76,48 @@ test.describe('authenticated (staging)', () => {
     await expect(page.getByText('Total Users')).toHaveCount(0);
   });
 });
+
+test.describe('change list 2026-10-25 (staging)', () => {
+  test.skip(!staging, 'set E2E_STAGING=1, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD and build against staging');
+
+  const signIn = async (page) => {
+    await page.goto('/');
+    await page.getByPlaceholder('admin@agroconnect.com').fill(process.env.E2E_ADMIN_EMAIL);
+    await page.locator('input[type=password]').fill(process.env.E2E_ADMIN_PASSWORD);
+    await page.getByText('Sign In to Dashboard').click();
+    await expect(page.getByText('Total Users')).toBeVisible({ timeout: 20_000 });
+  };
+
+  test('menu: ☰ only while hidden; Appointments and Reviews are gone (part of Meetings)', async ({ page }) => {
+    await signIn(page);
+    await expect(page.getByRole('button', { name: 'Show menu' })).toHaveCount(0);
+    await expect(page.getByText('Appointments', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Reviews', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Hide menu' }).click();
+    await expect(page.getByRole('button', { name: 'Show menu' })).toBeVisible();
+    await page.getByRole('button', { name: 'Show menu' }).click();
+    await expect(page.getByRole('button', { name: 'Hide menu' })).toBeVisible();
+  });
+
+  test('meetings: All / Upcoming / History filters and a details view with the review', async ({ page }) => {
+    await signIn(page);
+    await page.getByText('Meetings', { exact: true }).first().click();
+    for (const f of ['All', 'Upcoming', 'History']) await expect(page.getByRole('tab', { name: new RegExp(`^${f} \\(`) })).toBeVisible();
+    await page.getByRole('tab', { name: /^History \(/ }).click();
+    const rows = page.locator('tbody tr[title="View meeting details"]');
+    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    await rows.first().click();
+    await expect(page.getByRole('dialog', { name: 'Meeting details' })).toBeVisible();
+    await expect(page.getByText("Farmer's review")).toBeVisible();
+  });
+
+  test('experts: verified experts have a Remove expert action; reports has the expert leave requests tab', async ({ page }) => {
+    await signIn(page);
+    await page.getByText('Experts', { exact: true }).first().click();
+    await page.getByText(/^Verified Experts/).click();
+    await expect(page.getByRole('button', { name: 'Remove expert' }).first()).toBeVisible({ timeout: 15_000 });
+    await page.getByText('Reports', { exact: true }).first().click();
+    await page.getByRole('tab', { name: /Expert leave requests/ }).click();
+    await expect(page.getByText('Reason for leaving')).toBeVisible();
+  });
+});

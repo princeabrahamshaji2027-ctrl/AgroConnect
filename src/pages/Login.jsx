@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import InputField from '../components/InputField';
 import { Button } from '../components/Button';
+import GoogleButton from '../components/GoogleButton';
 import './pages.css';
 
 import { supabase } from '../supabase';
@@ -122,11 +123,7 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
         <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }}></div>
       </div>
 
-      {/* "google" is not a Material Symbols icon (it rendered as the word GOOGLE). No official Google mark is in the
-          repo, so the button shows text only until the branded asset is added with real Google sign-in. */}
-      <Button variant="secondary" style={{ display: 'flex', justifyContent: 'center' }}>
-        Continue with Google
-      </Button>
+      <GoogleButton onError={setError} />
 
       <div className="auth-footer">
         <p>Don't have an account? <span className="auth-link" onClick={onGoToRegister}>Sign Up</span></p>

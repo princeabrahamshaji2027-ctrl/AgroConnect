@@ -22,11 +22,16 @@ export default function Experts() {
           .select('*, profiles(full_name, phone, profile_image_path, email:id)')
           .order('created_at', { ascending: false });
         if (error) throw error;
-        setApplications(data || []);
+        // One row per applicant: their latest request. Older repeats (e.g. sent before the one-request rule) are
+        // history, not separate applicants.
+        const latest = new Map();
+        for (const a of data || []) if (!latest.has(a.user_id)) latest.set(a.user_id, a);
+        setApplications([...latest.values()]);
       } else {
         const { data, error } = await supabase
           .from('experts')
           .select('*, profiles:user_id(full_name, phone, profile_image_path, location)')
+          .eq('is_active', true)
           .order('verified_date', { ascending: false });
         if (error) throw error;
         setVerifiedExperts(data || []);
@@ -71,6 +76,14 @@ export default function Experts() {
     } catch (err) {
       alert(err.message || 'Error rejecting application');
     }
+  };
+
+  const handleRemoveExpert = async (exp) => {
+    const name = exp.profiles?.full_name || 'this expert';
+    if (!window.confirm(`Remove ${name} as an expert?\n\nThe green tick and all expert tools are removed and the account becomes a normal user. Upcoming meetings are cancelled with a full refund and the farmers are notified. Past meetings and reviews are kept.`)) return;
+    const { error } = await supabase.rpc('demote_expert', { p_user_id: exp.user_id });
+    if (error) { alert(error.message || 'Error removing expert'); return; }
+    fetchData();
   };
 
   const handleViewResume = async (path) => {
@@ -234,8 +247,13 @@ export default function Experts() {
                         <span>{parseFloat(exp.rating || 0).toFixed(1)} / 5.0</span>
                       </span>
                     </td>
-                    <td className="p-4 text-right text-on-surface-variant/40">
-                      <span>No actions available</span>
+                    <td className="p-4 text-right">
+                      <button
+                        onClick={() => handleRemoveExpert(exp)}
+                        className="bg-error/10 text-error hover:bg-error/20 border border-error/30 px-3 py-1.5 rounded font-label-sm transition-colors cursor-pointer"
+                      >
+                        Remove expert
+                      </button>
                     </td>
                   </tr>
                 ))

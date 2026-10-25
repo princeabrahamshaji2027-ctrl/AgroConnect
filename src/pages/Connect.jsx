@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import Dialog from '../components/Dialog';
 import BottomSheet from '../components/BottomSheet';
 import ExpertMenuSheet from '../components/ExpertMenuSheet';
+import LeaveExpertDialog from '../components/LeaveExpertDialog';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -36,6 +37,16 @@ function formatDateYYYYMMDD(d) {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// Open and still in the future (slots are stored as the expert's local date + time, same as this device).
+function isBookableSlot(s) {
+  if (s.is_booked) return false;
+  const now = new Date();
+  const today = formatDateYYYYMMDD(now);
+  if (s.slot_date !== today) return s.slot_date > today;
+  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  return (s.start_time || '').slice(0, 5) > hhmm;
 }
 
 function addOneHour(timeStr) {
@@ -236,7 +247,7 @@ function InlineCalendarPicker({ year, month, onPrevMonth, onNextMonth, onSelectD
   );
 }
 
-export default function Connect({ onPeaAIClick, onShowToast, initialBooking, clearInitialBooking }) {
+export default function Connect({ onPeaAIClick, onShowToast, initialBooking, clearInitialBooking, onProfileClick }) {
   const [activeSubTab, setActiveSubTab] = useState('book'); // 'book' | 'upcoming' | 'history' | 'lobby' | 'reviews' | 'marketplace' | 'availability'
   
   // Book Consultation States
@@ -249,6 +260,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
   // Expert Slot Management & Identity States
   const [isCurrentExpert, setIsCurrentExpert] = useState(false);
+  // role says Expert but there is no active expert record (e.g. an approval made outside the app): show why
+  const [expertRecordMissing, setExpertRecordMissing] = useState(false);
   const [currentExpertId, setCurrentExpertId] = useState(null);
   const [currentExpertProfile, setCurrentExpertProfile] = useState(null);
   const [mySlots, setMySlots] = useState([]);
@@ -256,8 +269,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   // Expert Menu & Leave Expert Mode states
   const [isMenuSheetOpen, setIsMenuSheetOpen] = useState(false);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [leaveReason, setLeaveReason] = useState('');
-  const [leavingExpertMode, setLeavingExpertMode] = useState(false);
 
   // Meeting Detail Sheet & Cancellation states
   const [selectedMeetingDetail, setSelectedMeetingDetail] = useState(null);
@@ -400,6 +411,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         setIsCurrentExpert(false);
         setCurrentExpertId(null);
         setCurrentExpertProfile(null);
+        const { data: me } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        setExpertRecordMissing(me?.role === 'Expert');
       }
 
       // 1a. Fetch reviews per expert count
@@ -427,18 +440,14 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       }
       setAllExpertSlotsMap(slotsGrouped);
 
-      // 1c. Fetch experts with 7-day availability check and self-booking exclusion
-      const todayStr = formatDateYYYYMMDD(new Date());
-      const weekAheadStr = formatDateYYYYMMDD(new Date(Date.now() + 6 * 24 * 60 * 60 * 1000));
-      const hasUpcomingAvailability = (expertId) =>
-        (slotsGrouped[expertId] || []).some(s =>
-          !s.is_booked && s.slot_date >= todayStr && s.slot_date <= weekAheadStr
-        );
+      // 1c. Only experts with at least one open future slot are listed (no empty calendars); never yourself
+      const hasUpcomingAvailability = (expertId) => (slotsGrouped[expertId] || []).some(isBookableSlot);
 
       const { data: expertsData } = await supabase
         .from('experts')
         .select(`
           id,
+          user_id,
           rating,
           is_active,
           profiles:user_id (
@@ -454,6 +463,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             .filter(exp => exp.is_active !== false && exp.id !== activeExpertId && hasUpcomingAvailability(exp.id))
             .map(exp => ({
               id: exp.id,
+              userId: exp.user_id,
               name: exp.profiles?.full_name || 'Expert',
               avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
               role: exp.profiles?.role || 'Expert',
@@ -586,6 +596,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           }).map(h => ({
             id: h.id,
             expertId: h.experts?.id,
+            expertUserId: h.experts?.user_id,
             expertName: h.experts?.profiles?.full_name || 'Expert',
             expertAvatar: h.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
             topic: h.issue_description || '',
@@ -606,6 +617,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           id,
           rating,
           comment,
+          reviewer_id,
           reviewer:reviewer_id (
             full_name,
             profile_image_path
@@ -621,6 +633,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       if (revsData) {
         setReviews(revsData.map(r => ({
           id: r.id,
+          authorId: r.reviewer_id,
           authorName: r.reviewer?.full_name || 'Farmer',
           authorAvatar: r.reviewer?.profile_image_path || '/profile-placeholder.png',
           expertName: r.experts?.profiles?.full_name || 'Expert',
@@ -660,7 +673,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       .order('slot_date', { ascending: true })
       .order('start_time', { ascending: true });
 
-    const allSlots = slots || [];
+    const allSlots = (slots || []).filter(isBookableSlot);
     if (targetDate) {
       setAvailableSlots(allSlots.filter(s => s.slot_date === targetDate));
     } else {
@@ -1086,45 +1099,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     }
   };
 
-  const handleConfirmLeaveExpertMode = async () => {
-    if (!leaveReason.trim()) {
-      alert("Please provide a mandatory reason for leaving expert mode.");
-      return;
-    }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !currentExpertId) return;
-
-    setLeavingExpertMode(true);
-    try {
-      await supabase
-        .from('experts')
-        .update({ is_active: false })
-        .eq('id', currentExpertId);
-
-      await supabase
-        .from('profiles')
-        .update({ role: 'Farmer' })
-        .eq('id', user.id);
-
-      setIsCurrentExpert(false);
-      setCurrentExpertId(null);
-      setCurrentExpertProfile(null);
-      setIsLeaveModalOpen(false);
-      setLeaveReason('');
-      setActiveSubTab('book');
-
-      if (onShowToast) {
-        onShowToast("Reverted account to normal user.");
-      }
-      fetchData();
-
-    } catch (err) {
-      alert(`Failed to leave expert mode: ${err.message}`);
-    } finally {
-      setLeavingExpertMode(false);
-    }
-  };
-
   const handleSaveExpertProfileEdit = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user || !currentExpertId) return;
@@ -1321,7 +1295,18 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         {/* ================= BOOK CONSULTATION ================= */}
         {activeSubTab === 'book' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
+            {expertRecordMissing && (
+              <div className="card" style={{ border: '1px solid #FFA726', color: '#FFA726', fontSize: '13px', lineHeight: '1.5' }}>
+                Your account is marked as an expert, but your expert record is not set up yet, so expert tools cannot be
+                shown. Please contact the AgroConnect admin.
+              </div>
+            )}
             <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Available Verified Experts</h3>
+            {expertsList.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                No expert has open dates right now. Please check again later.
+              </div>
+            )}
             
             {expertsList.map((exp) => {
               const expertSlots = allExpertSlotsMap[exp.id] || [];
@@ -1337,8 +1322,13 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                   style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
                 >
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <img src={exp.avatar} alt={exp.name} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
-                    <div style={{ flex: 1 }}>
+                    <img
+                      src={exp.avatar}
+                      alt={exp.name}
+                      onClick={() => onProfileClick && onProfileClick(exp.userId)}
+                      style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => onProfileClick && onProfileClick(exp.userId)}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <span style={{ fontWeight: '600', fontSize: '15px' }}>{exp.name}</span>
                         <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
@@ -1355,6 +1345,21 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     {exp.bio || 'Verified agricultural expert specialized in seed selection, crop diagnostics, and soil management.'}
                   </p>
 
+                  {(() => {
+                    const dates = [...new Set(expertSlots.filter(isBookableSlot).map(s => s.slot_date))].sort();
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Available:</span>
+                        {dates.slice(0, 4).map(d => (
+                          <span key={d} style={{ fontSize: '11px', fontWeight: '600', color: 'var(--primary-green)', border: '1px solid rgba(136, 217, 130, 0.4)', borderRadius: '10px', padding: '2px 8px' }}>
+                            {new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                          </span>
+                        ))}
+                        {dates.length > 4 && <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>+{dates.length - 4} more</span>}
+                      </div>
+                    );
+                  })()}
+
                   <div style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border-color)', paddingTop: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
                       <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#FFA726' }}>star</span>
@@ -1363,7 +1368,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     
                     {expandedExpertId !== exp.id && (
                       <Button 
-                        onClick={() => setExpandedExpertId(exp.id)} 
+                        onClick={() => {
+                          // jump to the first month with an open slot, so the calendar never opens empty
+                          const first = expertSlots.filter(isBookableSlot).map(s => s.slot_date).sort()[0];
+                          if (first) {
+                            setCalYear(Number(first.slice(0, 4)));
+                            setCalMonth(Number(first.slice(5, 7)) - 1);
+                          }
+                          setExpandedExpertId(exp.id);
+                        }} 
                         variant="primary" 
                         style={{ padding: '8px 16px', borderRadius: '12px', fontSize: '12px' }}
                       >
@@ -1424,7 +1437,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                           }
 
                           const dateSlots = expertSlots.filter(s => s.slot_date === cell.dateStr);
-                          const unbookedOnDate = dateSlots.filter(s => !s.is_booked);
+                          const unbookedOnDate = dateSlots.filter(isBookableSlot);
                           const hasAvailableSlots = unbookedOnDate.length > 0;
                           const minDateRate = hasAvailableSlots 
                             ? Math.min(...unbookedOnDate.map(s => Number(s.rate) || 500))
@@ -1465,7 +1478,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '12px' }}>
                         <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>info</span>
-                        <span>You can select any available date to book a session.</span>
+                        <span>Tap a highlighted date to see that day's times.</span>
                       </div>
                     </div>
                   )}
@@ -1995,7 +2008,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                            <img src={appt.farmerAvatar} alt={appt.farmerName} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--primary-green)' }} />
+                            <img src={appt.farmerAvatar} alt={appt.farmerName} onClick={(e) => { if (onProfileClick && appt.farmerUserId) { e.stopPropagation(); onProfileClick(appt.farmerUserId); } }} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--primary-green)', cursor: 'pointer' }} />
                             <div>
                               <div style={{ fontWeight: '700', fontSize: '14px', color: 'var(--text-primary)' }}>{appt.farmerName}</div>
                               <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Farmer Consultation</div>
@@ -2035,7 +2048,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                        <img src={appt.expertAvatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                        <img src={appt.expertAvatar} alt="" onClick={(e) => { if (onProfileClick && appt.expertUserId) { e.stopPropagation(); onProfileClick(appt.expertUserId); } }} style={{ width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer' }} />
                         <div>
                           <div style={{ fontWeight: '600', fontSize: '14px' }}>{appt.expertName}</div>
                           <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Consultation Session</div>
@@ -2094,7 +2107,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               <div key={hist.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <img src={hist.expertAvatar} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%' }} />
+                    <img src={hist.expertAvatar} alt="" onClick={() => onProfileClick && hist.expertUserId && onProfileClick(hist.expertUserId)} style={{ width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer' }} />
                     <div>
                       <div style={{ fontWeight: '600', fontSize: '13px' }}>{hist.expertName}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{hist.date}</div>
@@ -2152,7 +2165,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               <div key={rev.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <img src={rev.authorAvatar} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%' }} />
+                    <img src={rev.authorAvatar} alt="" onClick={() => onProfileClick && rev.authorId && onProfileClick(rev.authorId)} style={{ width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }} />
                     <div>
                       <div style={{ fontWeight: '600', fontSize: '13px' }}>{rev.authorName}</div>
                       <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Reviewed: {rev.expertName}</div>
@@ -2231,18 +2244,21 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         {selectedExpert && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '12px 0' }}>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
-              <img src={selectedExpert.avatar} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+              <img src={selectedExpert.avatar} alt="" onClick={() => { const id = selectedExpert.userId; setSelectedExpert(null); if (onProfileClick && id) onProfileClick(id); }} style={{ width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer' }} />
               <div>
                 <div style={{ fontWeight: '600', fontSize: '14px' }}>{selectedExpert.name}</div>
                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  {bookingDate ? `Selected Date: ${bookingDate}` : 'Select a slot below'}
+                  {bookingDate
+                    ? `Date: ${new Date(`${bookingDate}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}`
+                    : 'Pick a date in the calendar'}
+                  {selectedSlot ? ` · ${formatTime12h(selectedSlot.start_time)}` : ''}
                 </div>
               </div>
             </div>
 
             {availableSlots.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label className="form-label">Select Available Time Slot *</label>
+                <label className="form-label">Choose a time *</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
                   {availableSlots.map(slot => (
                     <div
@@ -2549,35 +2565,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         </div>
       </BottomSheet>
 
-      {/* ── Leave Expert Mode Confirmation Dialog ───────────────── */}
-      <Dialog
+      {/* ── Leave expert mode: request goes to the admin ───────── */}
+      <LeaveExpertDialog
         isOpen={isLeaveModalOpen}
-        title="Leave Expert Mode"
-        confirmText={leavingExpertMode ? "Leaving..." : "Leave Expert Mode"}
-        onConfirm={handleConfirmLeaveExpertMode}
-        onCancel={() => setIsLeaveModalOpen(false)}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '12px 0' }}>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-            Are you sure you want to revert your account to a standard user? Your expert verification tick will be removed, but your meeting history will be preserved.
-          </p>
-
-          <div className="form-group">
-            <label className="form-label">Mandatory Reason for Leaving *</label>
-            <div className="input-container" style={{ padding: '8px 16px' }}>
-              <textarea
-                className="input-field"
-                rows="3"
-                value={leaveReason}
-                onChange={(e) => setLeaveReason(e.target.value)}
-                placeholder="State your reason for leaving expert status..."
-                style={{ resize: 'none', height: '70px' }}
-                required
-              />
-            </div>
-          </div>
-        </div>
-      </Dialog>
+        onClose={() => setIsLeaveModalOpen(false)}
+        onShowToast={onShowToast}
+      />
 
       {/* ── Expert Profile Edit Dialog ───────────────────────────── */}
       <Dialog

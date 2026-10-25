@@ -5,6 +5,8 @@ import { Button } from '../components/Button';
 import InputField from '../components/InputField';
 import Dialog from '../components/Dialog';
 import ComingSoon from '../components/ComingSoon';
+import BottomSheet from '../components/BottomSheet';
+import LeaveExpertDialog from '../components/LeaveExpertDialog';
 import { validatePdfFile, validateRequiredText } from '../utils/validation';
 import { supabase } from '../supabase';
 import './pages.css';
@@ -30,6 +32,9 @@ export default function UserProfile({
   // Expert application state
   const [expertAppStatus, setExpertAppStatus] = useState(null);
   const [sellerStatus, setSellerStatus] = useState(null);
+  const [resignationPending, setResignationPending] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLeaveOpen, setIsLeaveOpen] = useState(false);
 
   // KYC Expert Dialog states
   const [isKycOpen, setIsKycOpen] = useState(false);
@@ -138,6 +143,14 @@ export default function UserProfile({
           .eq('user_id', authUser.id)
           .maybeSingle();
         setSellerStatus(sellerData?.verification_status || null);
+
+        const { data: resignation } = await supabase
+          .from('expert_resignations')
+          .select('id')
+          .eq('user_id', authUser.id)
+          .eq('status', 'Pending')
+          .maybeSingle();
+        setResignationPending(!!resignation);
       }
     } catch (err) {
       console.error(err);
@@ -317,15 +330,6 @@ export default function UserProfile({
     }
   };
 
-  const rightActions = (
-    <button
-      className="feed-header-icon"
-      onClick={onSettingsClick}
-      aria-label="Settings"
-    >
-      <span className="material-symbols-outlined">settings</span>
-    </button>
-  );
 
   if (loading || !user) {
     return (
@@ -338,54 +342,50 @@ export default function UserProfile({
   const isExpert = user.role === 'Agronomist' || user.role === 'Expert' || user.role === 'Distributor';
   const isOwnProfile = userId === 'user1';
 
-  const ExpertStatusBadge = () => {
-    if (isExpert) return null;
-    if (!isOwnProfile) return null;
-    if (expertAppStatus === 'Pending') return (
-      <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: '#FFA726', backgroundColor: 'rgba(255, 167, 38, 0.1)', border: '1px solid rgba(255, 167, 38, 0.25)', fontWeight: '600' }}>
-        ⏳ Expert Application Pending Admin Approval
-      </div>
-    );
-    if (expertAppStatus === 'Approved') return (
-      <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: 'var(--primary-green)', backgroundColor: 'rgba(136, 217, 130, 0.1)', border: '1px solid rgba(136, 217, 130, 0.25)', fontWeight: '600' }}>
-        ✅ Expert Application Approved
-      </div>
-    );
-    if (expertAppStatus === 'Rejected') return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: 'var(--error)', backgroundColor: 'rgba(231, 76, 60, 0.1)', border: '1px solid rgba(231, 76, 60, 0.25)', fontWeight: '600' }}>
-          ❌ Expert Application Rejected
-        </div>
-        <Button variant="secondary" onClick={handleBecomeExpertClick} style={{ width: '100%', fontSize: '12px', borderRadius: '14px', borderColor: 'var(--primary-green)', color: 'var(--primary-green)' }}>
-          Reapply as Expert
-        </Button>
-      </div>
-    );
-    return (
-      <Button variant="secondary" onClick={handleBecomeExpertClick} style={{ width: '100%', padding: '10px 16px', borderRadius: '14px', fontSize: '13px', borderColor: 'var(--primary-green)', color: 'var(--primary-green)' }}>
-        Become Verified Expert
-      </Button>
-    );
-  };
+  // Own profile: everything except Edit Profile lives in the ☰ menu (top right).
+  const rightActions = isOwnProfile ? (
+    <button className="feed-header-icon" onClick={() => setIsMenuOpen(true)} aria-label="Profile menu">
+      <span className="material-symbols-outlined">menu</span>
+    </button>
+  ) : null;
 
-  const SellerStatusBadge = () => {
-    if (!isOwnProfile) return null;
-    if (sellerStatus === 'Pending') return (
-      <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: '#FFA726', backgroundColor: 'rgba(255, 167, 38, 0.1)', border: '1px solid rgba(255, 167, 38, 0.25)', fontWeight: '600' }}>
-        ⏳ Seller Application Pending Admin Approval
+  const MenuRow = ({ icon, label, hint, onClick, danger, disabled }) => (
+    <div
+      role="button"
+      aria-disabled={disabled || undefined}
+      onClick={() => { if (disabled) return; setIsMenuOpen(false); onClick(); }}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: disabled ? 'default' : 'pointer', border: '1px solid var(--border-color)', opacity: disabled ? 0.6 : 1 }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span className="material-symbols-outlined" style={{ color: danger ? 'var(--error)' : 'var(--primary-green)' }}>{icon}</span>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={{ fontSize: '14px', fontWeight: '600', color: danger ? 'var(--error)' : 'var(--text-primary)' }}>{label}</span>
+          {hint && <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{hint}</span>}
+        </div>
       </div>
-    );
-    if (sellerStatus === 'Verified') return (
-      <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: 'var(--primary-green)', backgroundColor: 'rgba(136, 217, 130, 0.1)', border: '1px solid rgba(136, 217, 130, 0.25)', fontWeight: '600' }}>
-        🏪 Verified Seller
-      </div>
-    );
-    return (
-      <Button variant="secondary" onClick={handleBecomeSellerClick} style={{ width: '100%', padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
-        Become a Seller
-      </Button>
-    );
-  };
+      {!disabled && <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>}
+    </div>
+  );
+
+  const expertMenuRow = isExpert ? (
+    <MenuRow icon="logout" label="Leave being an expert"
+      hint={resignationPending ? 'Request sent — waiting for admin approval' : 'Send a request to the admin'}
+      disabled={resignationPending} onClick={() => setIsLeaveOpen(true)} />
+  ) : expertAppStatus === 'Pending' ? (
+    <MenuRow icon="hourglass_top" label="Become a Verified Expert" hint="Application pending admin approval" disabled onClick={() => {}} />
+  ) : expertAppStatus === 'Rejected' ? (
+    <MenuRow icon="verified" label="Reapply as Expert" hint="Your last application was rejected" onClick={handleBecomeExpertClick} />
+  ) : (
+    <MenuRow icon="verified" label="Become a Verified Expert" onClick={handleBecomeExpertClick} />
+  );
+
+  const sellerMenuRow = sellerStatus === 'Verified' ? (
+    <MenuRow icon="storefront" label="Verified Seller" disabled onClick={() => {}} />
+  ) : sellerStatus === 'Pending' ? (
+    <MenuRow icon="storefront" label="Become a Seller" hint="Application pending admin approval" disabled onClick={() => {}} />
+  ) : (
+    <MenuRow icon="storefront" label="Become a Seller" onClick={handleBecomeSellerClick} />
+  );
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -432,26 +432,9 @@ export default function UserProfile({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', padding: '0 16px' }}>
             {isOwnProfile ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
-                <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
-                  <Button variant="primary" onClick={onEditProfileClick} style={{ flex: 1, padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
-                    Edit Profile
-                  </Button>
-                  <Button variant="secondary" onClick={onSettingsClick} style={{ flex: 1, padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
-                    Settings
-                  </Button>
-                </div>
-                {onLogout && (
-                  <Button
-                    variant="secondary"
-                    onClick={onLogout}
-                    icon="logout"
-                    style={{ width: '100%', padding: '10px 16px', borderRadius: '14px', fontSize: '13px', borderColor: 'var(--error)', color: 'var(--error)' }}
-                  >
-                    Log Out
-                  </Button>
-                )}
-              </div>
+              <Button variant="primary" onClick={onEditProfileClick} style={{ width: '100%', padding: '10px 16px', borderRadius: '14px', fontSize: '13px' }}>
+                Edit Profile
+              </Button>
             ) : (
               <Button
                 variant={isConnected ? "secondary" : "primary"}
@@ -462,8 +445,11 @@ export default function UserProfile({
               </Button>
             )}
 
-            <ExpertStatusBadge />
-            <SellerStatusBadge />
+            {isOwnProfile && resignationPending && (
+              <div style={{ textAlign: 'center', padding: '10px 16px', borderRadius: '14px', fontSize: '12px', color: '#FFA726', backgroundColor: 'rgba(255, 167, 38, 0.1)', border: '1px solid rgba(255, 167, 38, 0.25)', fontWeight: '600' }}>
+                ⏳ Request to leave expert mode is waiting for admin approval
+              </div>
+            )}
           </div>
         </div>
 
@@ -497,6 +483,24 @@ export default function UserProfile({
         accept="application/pdf"
         style={{ display: 'none' }}
         onChange={handleCvFileChange}
+      />
+
+      {/* Profile ☰ menu */}
+      <BottomSheet isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 8px 4px' }}>Menu</h3>
+          <MenuRow icon="settings" label="Settings" onClick={onSettingsClick} />
+          {expertMenuRow}
+          {sellerMenuRow}
+          {onLogout && <MenuRow icon="logout" label="Log Out" danger onClick={onLogout} />}
+        </div>
+      </BottomSheet>
+
+      <LeaveExpertDialog
+        isOpen={isLeaveOpen}
+        onClose={() => setIsLeaveOpen(false)}
+        onSubmitted={() => setResignationPending(true)}
+        onShowToast={onShowToast}
       />
 
       {/* KYC Expert Verification Dialog */}

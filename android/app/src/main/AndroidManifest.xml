@@ -22,6 +22,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Google sign-in returns here: <applicationId>://auth-callback (src/utils/googleAuth.js).
+                 Uses the app id, so the staging and production apps each get their own callback. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" android:host="auth-callback" />
+            </intent-filter>
+
         </activity>
 
         <provider

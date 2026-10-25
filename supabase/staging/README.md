@@ -15,6 +15,7 @@ Built 2026-10-25 through the Supabase connector. Every write was preceded by a `
 | 11 | `remediation_04_reconcile_drift` | held for production |
 | 12–13 | `remediation_05a_lifecycle_functions`, `05b_refunds_guards_grants` | `05_…sql` without the pg_cron block |
 | 14 | `remediation_05c_scheduler_pg_cron` | 05's scheduler block — **owner-approved 2026-10-25**: `pg_cron` 1.6.4 installed, job `consultation-lifecycle` (`* * * * *`, as `postgres`) |
+| 15 | `remediation_09_expert_lifecycle_and_user_deletion` | `supabase/proposed/09_…sql` (2026-10-25 change request); plus Edge Function `admin-delete-user` v1 (verify_jwt on) |
 
 Not applied: `supabase/migrations/20260814_profiles_rls_fix.sql` (known destructive), `06` (needs the test accounts).
 Pre-setup state: `supabase/backups/20261025_staging_pre_setup_state.sql`.

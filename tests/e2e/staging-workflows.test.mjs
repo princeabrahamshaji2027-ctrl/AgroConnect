@@ -67,10 +67,56 @@ describe('roles and admin', { skip }, () => {
     assert.ifError(ok.error);
     const prof = await A.user3.c.from('profiles').select('role').eq('id', A.user3.uid).single();
     assert.equal(prof.data.role, 'Expert');
-    // restore fixture: demote and remove the application
-    assert.ifError((await A.admin.c.rpc('demote_expert', { p_user_id: A.user3.uid })).error);
-    assert.ifError((await A.admin.c.from('expert_applications').delete().eq('id', app.data.id)).error);
+    // 09: an active expert cannot send another request
+    const again = await A.user3.c.from('expert_applications')
+      .insert({ user_id: A.user3.uid, qualification: 'B.Sc', experience: '3 years' });
+    assert.ok(again.error, 'second request accepted');
+
+    // 09: leaving expert mode needs a reason and an admin decision; the expert cannot demote themselves
+    assert.ok((await A.user3.c.from('profiles').update({ role: 'Farmer' }).eq('id', A.user3.uid)).error, 'self-demotion allowed');
+    const r1 = await A.user3.c.from('expert_resignations').insert({ user_id: A.user3.uid, reason: 'Moving abroad' }).select('id, status').single();
+    assert.ifError(r1.error);
+    assert.equal(r1.data.status, 'Pending');
+    assert.ok((await A.user3.c.from('expert_resignations').insert({ user_id: A.user3.uid, reason: 'Again please' })).error, 'duplicate resignation');
+    assert.ok((await A.user3.c.rpc('approve_expert_resignation', { p_resignation_id: r1.data.id })).error, 'expert approved own resignation');
+    assert.ifError((await A.admin.c.rpc('reject_expert_resignation', { p_resignation_id: r1.data.id, p_notes: 'staging test' })).error);
+    assert.equal((await A.user3.c.from('profiles').select('role').eq('id', A.user3.uid).single()).data.role, 'Expert');
+    const r2 = await A.user3.c.from('expert_resignations').insert({ user_id: A.user3.uid, reason: 'Retiring now' }).select('id').single();
+    assert.ifError(r2.error);
+    assert.ifError((await A.admin.c.rpc('approve_expert_resignation', { p_resignation_id: r2.data.id })).error);
     assert.equal((await A.user3.c.from('profiles').select('role').eq('id', A.user3.uid).single()).data.role, 'Farmer');
+    const e = await A.admin.c.from('experts').select('is_active').eq('user_id', A.user3.uid).single();
+    assert.equal(e.data.is_active, false, 'experts row kept, inactive');
+
+    // restore fixture: remove the request rows (user3 is already back to Farmer)
+    assert.ifError((await A.admin.c.from('expert_applications').delete().eq('id', app.data.id)).error);
+    await A.admin.c.from('expert_resignations').delete().eq('user_id', A.user3.uid);
+  });
+
+  test('admin deletes a user completely through the admin-delete-user function; others are refused', async () => {
+    const fn = (c, body) => c.functions.invoke('admin-delete-user', { body });
+    // a throwaway account made through the normal signup (same naming scheme as the fixtures)
+    const email = `agroconnect-stg-deltest${Date.now()}-${env.FIXTURE_EMAIL_TOKEN}@${env.FIXTURE_EMAIL_DOMAIN}`;
+    const tmp = createClient(URL_, env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const su = await tmp.auth.signUp({ email, password: env.FIXTURE_PASSWORD, options: { data: { full_name: 'Delete Me (staging test)' } } });
+    assert.ifError(su.error);
+    const uid = su.data.user.id;
+    try {
+      // user2, not user1: staging-api.test.mjs (run in parallel) signs user1 out everywhere, which turns this into a 401
+      const denied = await fn(A.user2.c, { user_id: uid });
+      assert.equal(denied.error?.context?.status, 403, 'non-admin allowed');
+      const self = await fn(A.admin.c, { user_id: A.admin.uid });
+      assert.equal(self.error?.context?.status, 400, 'admin deleted itself');
+
+      const ok = await fn(A.admin.c, { user_id: uid });
+      assert.ifError(ok.error);
+      assert.equal((await A.admin.c.from('profiles').select('id').eq('id', uid)).data.length, 0, 'profile still there');
+      const again = await tmp.auth.signInWithPassword({ email, password: env.FIXTURE_PASSWORD });
+      assert.ok(again.error, 'deleted account can still sign in');
+    } finally {
+      // never leave the throwaway account behind, even when an assertion above fails
+      await fn(A.admin.c, { user_id: uid });
+    }
   });
 });
 

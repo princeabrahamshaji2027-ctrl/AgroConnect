@@ -29,7 +29,7 @@ const formatTime12h = (timeStr) => {
   return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
 };
 
-export default function Chat({ onNavigateToBooking }) {
+export default function Chat({ onNavigateToBooking, onProfileClick }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
@@ -224,7 +224,12 @@ export default function Chat({ onNavigateToBooking }) {
                     className="chat-thread-item"
                     onClick={() => openConversation(conv)}
                   >
-                    <img src={conv.avatar} alt={conv.name} className="chat-thread-avatar" />
+                    <img
+                      src={conv.avatar}
+                      alt={conv.name}
+                      className="chat-thread-avatar"
+                      onClick={(e) => { if (onProfileClick && conv.otherUserId) { e.stopPropagation(); onProfileClick(conv.otherUserId); } }}
+                    />
                     <div className="chat-thread-details">
                       <div className="chat-thread-name-row">
                         <span className="chat-thread-name">{conv.name}</span>
@@ -249,7 +254,8 @@ export default function Chat({ onNavigateToBooking }) {
               <img
                 src={activeConv.avatar}
                 alt={activeConv.name}
-                style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
+                onClick={() => onProfileClick && activeConv.otherUserId && onProfileClick(activeConv.otherUserId)}
+                style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', cursor: 'pointer' }}
               />
             }
           />
