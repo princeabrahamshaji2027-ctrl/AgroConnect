@@ -17,7 +17,9 @@ const fx = (name) => `agroconnect-stg-${name}-${env.FIXTURE_EMAIL_TOKEN}@${env.F
 async function signIn(name) {
   const c = createClient(URL_, env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   const password = name === 'admin' ? env.E2E_ADMIN_PASSWORD : env.FIXTURE_PASSWORD;
-  const { data, error } = await c.auth.signInWithPassword({ email: fx(name), password });
+  let { data, error } = await c.auth.signInWithPassword({ email: fx(name), password });
+  // one retry for a network-level failure only (seen once: "fetch failed"); Auth errors are never retried
+  if (error && /fetch failed/i.test(error.message)) ({ data, error } = await c.auth.signInWithPassword({ email: fx(name), password }));
   if (error) throw new Error(`sign-in ${name}: ${error.message}`);
   return { c, uid: data.user.id };
 }
@@ -144,28 +146,59 @@ describe('consultations', { skip }, () => {
   });
 });
 
+// Realtime readiness has two steps: the channel join ('SUBSCRIBED') and, ~1-3 s later, the server's postgres_changes
+// listener ('system' message status 'ok', "Subscribed to PostgreSQL"). An INSERT made between the two is never
+// delivered, which is what made the first cold run of this test time out. Each phase gets its own deadline and error,
+// and the trigger only fires once the listener is ready; there is no retry of the delivery itself.
+const RT = { subscribeMs: 20000, listenerMs: 20000, eventMs: 30000 };
+const phase = (ms, what) => { let t; const p = new Promise((_, rej) => { t = setTimeout(() => rej(new Error(`realtime: ${what} within ${ms / 1000} s`)), ms); }); return [p, () => clearTimeout(t)]; };
+
 describe('realtime', { skip }, () => {
-  test('farmer receives a server-created booking notification over realtime', async () => {
+  test('farmer receives a server-created booking notification over realtime', { timeout: 120000 }, async () => {
     const { data: slots } = await A.user1.c.from('consultation_slots').select('id').eq('expert_id', A.expertId).eq('is_booked', false)
       .gt('slot_date', istFromNow(0).date).order('slot_date', { ascending: false }).limit(1);
-    const booking = (await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slots[0].id, p_issue: 'realtime test' })).data;
-    await A.user1.c.realtime.setAuth((await A.user1.c.auth.getSession()).data.session.access_token);
-    const received = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('no realtime event within 20 s')), 20000);
-      A.user1.c.channel('stg-notif').on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${A.user1.uid}` },
-        (p) => { if (p.new.related_id === booking) { clearTimeout(timer); resolve(p.new); } })
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            A.expert1.c.rpc('cancel_consultation_booking', {
-              p_booking_id: booking, p_reason: 'realtime test', p_offered_slots: [{ date: '2026-12-01', time: '10:00' }],
-            }).then((r) => { if (r.error) reject(r.error); });
-          }
-        });
-    });
-    const n = await received;
-    assert.equal(n.type, 'booking');
-    await A.user1.c.removeAllChannels();
+    assert.ok(slots?.length, 'no free future expert1 slot to book');
+    const booked = await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slots[0].id, p_issue: 'realtime test' });
+    assert.ifError(booked.error);
+    const booking = booked.data;
+    const c = A.user1.c;
+    await c.realtime.setAuth((await c.auth.getSession()).data.session.access_token);
+    let onEvent, onListener, onStatus;
+    const event = new Promise((r) => { onEvent = r; });
+    const listener = new Promise((res, rej) => { onListener = { res, rej }; });
+    const joined = new Promise((res, rej) => { onStatus = { res, rej }; });
+    const ch = c.channel(`stg-notif-${Date.now()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${A.user1.uid}` },
+        (p) => { if (p.new.related_id === booking) onEvent(p.new); })
+      .on('system', {}, (p) => {
+        if (p.extension !== 'postgres_changes') return;
+        if (p.status === 'ok') onListener.res(); else onListener.rej(new Error(`realtime: postgres_changes listener failed: ${p.message}`));
+      })
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') onStatus.res();
+        else onStatus.rej(new Error(`realtime: channel ${status}${err ? `: ${err.message}` : ''}`)); // CHANNEL_ERROR / TIMED_OUT / CLOSED
+      });
+    try {
+      const [t1, c1] = phase(RT.subscribeMs, 'channel not SUBSCRIBED');
+      await Promise.race([joined, t1]).finally(c1);
+      const [t2, c2] = phase(RT.listenerMs, 'postgres_changes listener not ready');
+      await Promise.race([listener, t2]).finally(c2);
+      const cancel = await A.expert1.c.rpc('cancel_consultation_booking', {
+        p_booking_id: booking, p_reason: 'realtime test', p_offered_slots: [{ date: '2026-12-01', time: '10:00' }],
+      });
+      assert.ifError(cancel.error);
+      const [t3, c3] = phase(RT.eventMs, 'notification INSERT not delivered');
+      const n = await Promise.race([event, t3]).catch(async (e) => {
+        // tell "never written" apart from "written but not pushed": both are failures, with different causes
+        const row = await c.from('notifications').select('id').eq('related_id', booking).eq('user_id', A.user1.uid);
+        throw new Error(`${e.message} (notification row ${row.data?.length ? 'exists in the table' : 'was NOT written'})`);
+      }).finally(c3);
+      assert.equal(n.type, 'booking');
+    } finally {
+      await c.removeChannel(ch);
+      const b = await A.admin.c.from('consultation_bookings').select('status').eq('id', booking).single();
+      if (b.data?.status === 'Booked') await A.admin.c.rpc('admin_update_booking_status', { p_booking_id: booking, p_new_status: 'Cancelled', p_cancellation_reason: 'realtime test cleanup' });
+    }
   });
 });
 

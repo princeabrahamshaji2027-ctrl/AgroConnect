@@ -1,0 +1,91 @@
+# AgroConnect feature matrix — 2026-10-25
+
+Evidence-based status of every module. **Code existing is not counted as working**: a cell says PASS only where a test
+or a recorded manual run exercised it, and says which environment.
+
+Legend — **PASS** exercised and correct · **FAIL** exercised and wrong · **UNTESTED** code exists, nothing exercised it ·
+**STUB** UI that does not do the real thing · **—** not applicable / no UI there · **NONE** no code at all.
+Env — **STG** staging project `ahkgvuewgbjyahbiehrx` (real Supabase) · **LOCAL** PGlite copy of the real schema
+(`npm run test:db`) or local unit tests · **PROD-RO** read-only checks on production.
+Surfaces — **Web** app build in Chrome (Playwright) · **Android** staging APK on a physical phone (Nothing Phone 2,
+Android 16, `device-smoke.py` 7/7 on 2026-10-25, screenshots `appium-results/2026-10-25_staging_device/`) and/or the emulator · **Admin** admin dashboard (Playwright).
+
+Test sources: `npm run test:db` (30), `npm test` (validation 27, regression 14), `tests/e2e/staging-anon` (5),
+`staging-api` (8), `staging-workflows` (8 incl. realtime + pg_cron), Playwright `app.spec`/`admin.spec` against staging
+builds (10), `scripts/staging/device-smoke.py` on the phone.
+
+## Accounts and roles
+
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| Email/password login | yes | PASS | PASS (phone; emulator earlier) | PASS | STG | app.spec, admin.spec, device-smoke | — | — |
+| Wrong credentials rejected | yes | PASS | UNTESTED | PASS | STG | app.spec, admin.spec | — | add to device smoke |
+| Registration + validation | yes | PASS (validation only) | UNTESTED | — | STG + LOCAL | app.spec (form), signup API used to create fixtures; DB test: signup cannot pick `Admin` | live signup was exercised via API, not via the form | form signup E2E on staging (needs disposable address strategy) |
+| Session persistence | yes | PASS (reload) | PASS (force-stop + relaunch, phone) | PASS (refresh) | STG | app.spec, admin.spec, device-smoke | — | — |
+| "Remember me" | **checkbox only** | STUB | STUB | — | — | `Login.jsx`: unbound checkbox; sessions always persist | misleading control | wire it or remove it |
+| Sign-out ends access | yes | UNTESTED (UI) | UNTESTED | UNTESTED | STG | staging-api (API level) | — | UI sign-out check |
+| Google sign-in | button only | STUB | STUB | — | — | `Login.jsx`: "Continue with Google" has no handler | dead button shown to users | hide button or implement OAuth (Task 4) |
+| Password reset | **link only** | STUB | STUB (seen on phone) | — | — | `Login.jsx`: "Forgot Password?" is a `<span>` with no handler; no reset code anywhere | users cannot recover accounts; dead link | implement (MODULE_PLAN A, priority) |
+| Role separation (farmer / expert / admin) | yes | PASS | PASS (phone) | PASS | STG + LOCAL | app.spec, admin.spec, staging-api (no self-promotion), DB tests | — | — |
+| Admin blocked from mobile app | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke screenshot 08 | after the refusal the admin's email and (masked) password stay in the form | clear the form on refusal (minor) |
+| Ban / unban | yes | — | — | API PASS, UI UNTESTED | STG + LOCAL | staging-workflows (ban), DB tests | — | Users-page ban click E2E |
+
+## Feed, posts, profiles, search
+
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| Feed renders | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke screenshots | staging has no posts, so only the empty state is exercised | seed synthetic posts on staging |
+| Create post (text/image, camera) | yes | UNTESTED | UNTESTED | — | — | none | camera plugin path never run on a device | staging E2E: create, see in feed, delete |
+| Likes / comments | yes | UNTESTED | UNTESTED | — | — | none (RLS covered by DB tests) | — | staging E2E |
+| Follow / followers | yes | UNTESTED | UNTESTED | — | — | none | — | staging E2E |
+| Own profile view | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke | — | — |
+| Edit profile + avatar upload | yes | UNTESTED (UI) | UNTESTED | — | STG | staging-api: profile edit persists (API) | avatar upload never exercised | UI + storage E2E |
+| View another user's profile | yes | UNTESTED | UNTESTED | PASS (modal opens via Users) | STG | admin.spec visits Users | — | — |
+| Search (users, posts, communities) | yes | UNTESTED | UNTESTED | — | — | none | — | staging E2E with seeded data |
+| Communities | page exists, **not routed** | — | — | — | — | `Community.jsx` is never imported by `App.jsx` | unreachable code; tables exist | product decision: route or remove (Task 4) |
+| News / announcements | admin page exists, **not routed**; no app UI | — | — | — | — | `admin/News.jsx` not in the admin switch; app never reads `news` | unreachable | product decision |
+| Banners | table only | NONE | NONE | NONE | — | `banners` not referenced | — | — |
+
+## Experts and consultations
+
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| Expert directory (Catch Up) | yes | PASS | PASS (phone) | — | STG | app.spec, device-smoke | — | — |
+| Expert application (apply → approve/reject) | yes | UNTESTED (UI) | UNTESTED | API PASS | STG + LOCAL | staging-workflows (no self-approval, admin approves/demotes), staging-api | UI submission never driven | UI E2E: apply as user, approve in admin |
+| Expert availability editor | yes | PASS | PASS (phone, view only) | — | STG | app.spec, device-smoke | — | — |
+| Booking a slot | yes | UNTESTED (UI) | UNTESTED | — | STG + LOCAL | staging-api, staging-workflows (race: exactly one winner) | — | UI booking E2E |
+| Cancel booking + refund flag | yes | UNTESTED (UI) | UNTESTED | API PASS | STG | staging-api (refund Pending, slot freed), admin cancel RPC | refunds are only a status; no money moves | payments module (Task 4) |
+| Join window / completion / review | yes | UNTESTED (UI) | UNTESTED | — | STG | staging-workflows | — | — |
+| Scheduler (no-show auto-cancel, pg_cron) | yes (server) | — | — | — | STG | staging-workflows: auto-cancelled ≈6.2 min, refund Pending, one notice; pg_cron 0 failures | **production**: 05 + pg_cron not applied (owner decision) | apply with the app release |
+| Video consultation | **simulated** | STUB | STUB | — | — | `Connect.jsx` "Video call simulation states"; no WebRTC/SDK | no real call; leaving marks completion | choose a video provider (Task 4) |
+| Admin: appointments / meetings | yes | — | — | UNTESTED (UI); RPC PASS | STG | staging-workflows (admin cancel frees slot) | — | admin UI E2E |
+| Admin: reviews | yes | — | — | UNTESTED | — | none | — | — |
+
+## Messaging and notifications
+
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| 1:1 chat (conversations, messages, realtime) | yes | UNTESTED | UNTESTED | — | — | none; RLS reviewed in audit only | — | staging E2E: two users exchange messages |
+| In-app notifications (realtime) | yes | UNTESTED (UI) | UNTESTED | — | STG | staging-workflows realtime: 10/11 runs PASS, 1 network failure before the test | — | UI badge check |
+| Push notifications (FCM) | NONE | — | — | — | — | no push plugin in `package.json` | users only see notices while the app is open | Task 4 |
+| Admin broadcasts | yes | — | — | UNTESTED | LOCAL | DB tests cover `send_broadcast` gating | — | admin E2E |
+| Reports / moderation | yes | UNTESTED (report) | UNTESTED | UNTESTED | LOCAL | DB tests (`resolve_report` admin-only) | — | E2E: user reports, admin resolves |
+
+## Marketplace, AI, disease detection, IoT
+
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| Seller registration | handler exists, **button shows Coming Soon** | STUB | STUB | Sellers page UNTESTED | — | `UserProfile.jsx` `handleBecomeSellerClick` opens Coming Soon | AUD-047 RLS gap on marketplace tables | Task 4 |
+| Products / orders / categories | admin pages exist, **routed to Coming Soon** | NONE | NONE | STUB | — | admin `App.jsx` products/orders/categories → `ComingSoon` | tables exist (`products`, `orders`, `order_items`, `payments`) unused | Task 4 |
+| Pea AI assistant | UI only | STUB | STUB | — | — | `PeaAI.jsx` returns canned text after `setTimeout` 1.5 s; `ai_chat_logs` unused | no model behind it | Task 4 |
+| Crop disease detection | **table only** | NONE | NONE | NONE | — | `crop_disease_detections` not referenced anywhere | — | Task 4 |
+| IoT / sensors | NONE | NONE | NONE | NONE | — | no code, no tables | — | Task 4 (needs hardware decision) |
+
+## Platform
+
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| No service-role key shipped | — | PASS | PASS | PASS | STG builds | admin.spec scans bundles; build script checks the APK | — | — |
+| Staging/production separation | yes | PASS | PASS | PASS | STG | bundles + APK contain only the staging ref; staging APK installs as `com.agroconnect.app.staging` next to production | — | — |
+| Rotation / back button | — | — | PASS (phone) | — | STG | device-smoke: landscape renders signed-in UI; one back press keeps the app in front | — | — |
+| Admin SPA deep-link refresh | yes | — | — | PASS (vite preview) | LOCAL | admin.spec | Render needs a rewrite rule | configure on Render (owner) |

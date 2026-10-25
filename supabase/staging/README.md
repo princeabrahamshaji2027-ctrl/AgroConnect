@@ -33,14 +33,18 @@ Pre-setup state: `supabase/backups/20261025_staging_pre_setup_state.sql`.
   **public** anon key, plus locally generated test-account passwords (never printed). Build with
   `npx vite build --mode staging --outDir dist-staging` (also git-ignored). Verified: staging bundles reference only
   `ahkgvuewgbjyahbiehrx`, never production. The default `npm run build` is unchanged (production).
-* Android: no staging APK was built or installed (it would replace the production app id `com.agroconnect.app`).
+* Android: opt-in staging build, `scripts/staging/build-staging-apk.sh` (→ `android/app/build/staging-apk/app-staging-debug.apk`).
+  `-PagroStaging` gives app id `com.agroconnect.app.staging`, label "AgroConnect Staging", version `1.0-staging`, and
+  packages the staging web bundle from `android/app/build/staging-assets`. Without the property the Gradle build is the
+  production configuration (verified: `com.agroconnect.app`, label AgroConnect, production ref only). The script
+  refuses to finish if the APK contains the production ref. Installs side by side with the production app.
+  Device check: `ANDROID_SERIAL=<serial> python3 -I scripts/staging/device-smoke.py` (safe on a personal phone: never
+  opens the production app, restores rotation settings, does not clear logcat).
 
 ## Rebuild from scratch
 Apply the files in the table above in order (or re-run them: every remediation script is idempotent).
 
-## Blocked: test accounts
-The normal signup API rejected `*@agroconnect.local` (`email_address_invalid`) and, with email confirmation on, the
-built-in mailer hit `over_email_send_rate_limit`. No account was created (0 users). Owner action needed — see
-`REMEDIATION_STATUS.md` → "Staging". Then: `node scripts/staging/create-test-accounts.mjs`, apply `06`, promote the
-staging admin (`update public.profiles set role = 'Admin' where id = (select id from auth.users where email = …)`, a
-public-table update), and run `node --test tests/e2e/staging-api.test.mjs` and the Playwright suite with `E2E_STAGING=1`.
+## Test accounts
+Six synthetic accounts `agroconnect-stg-<role>-<FIXTURE_EMAIL_TOKEN>@<FIXTURE_EMAIL_DOMAIN>` (admin, expert1, user1–4)
+were created through the public signup API on 2026-10-25 with "Confirm email" off (`scripts/staging/create-test-accounts.mjs`),
+admin promoted via `profiles`, then `06` applied. Passwords live only in `.env.staging`.

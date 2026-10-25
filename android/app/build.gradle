@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+// Opt-in staging build: ./gradlew assembleDebug -PagroStaging (see scripts/staging/build-staging-apk.sh).
+// Without the property the build is exactly the production configuration.
+def agroStaging = project.hasProperty('agroStaging')
+
 android {
     namespace = "com.agroconnect.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -10,10 +14,24 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders = [appLabel: "@string/app_name", activityLabel: "@string/title_activity_main"]
+        if (agroStaging) {
+            applicationIdSuffix ".staging"
+            versionNameSuffix "-staging"
+            manifestPlaceholders = [appLabel: "AgroConnect Staging", activityLabel: "AgroConnect Staging"]
+        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    sourceSets {
+        main {
+            if (agroStaging) {
+                // staging web bundle prepared by scripts/staging/build-staging-apk.sh (git-ignored build dir)
+                assets.srcDirs = ['build/staging-assets']
+            }
         }
     }
     buildTypes {

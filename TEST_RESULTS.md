@@ -235,5 +235,43 @@ created as **Farmer** (01's signup fix verified end to end). Admin promoted via 
 | pg_cron health | PASS | 21 runs, 0 failures |
 | Playwright vs staging builds (admin + app, signed in) | **10/10 PASS** | admin dashboard/Users/Experts + refresh; non-admin refused; farmer feed/profile/Catch Up; **expert1 expert mode + availability**; admin redirected from app |
 | Screenshots | — | `appium-results/2026-10-25_staging/` (admin dashboard/experts, user feed/profile/Catch Up, expert Catch Up/availability) |
-| Android device scenario on staging | **BLOCKED** | a staging APK would replace the production app id `com.agroconnect.app`; needs an approved staging app-id variant |
+| Android device scenario on staging | superseded | see "Android staging app" below (opt-in `com.agroconnect.app.staging` build) |
 | Post-test integrity | PASS | fixtures restored, 0 double bookings, 0 booking/slot mismatches |
+
+## Android staging app, realtime fix and staging reruns — 2026-10-25
+
+### Android staging app (`com.agroconnect.app.staging`)
+Built with `scripts/staging/build-staging-apk.sh` (opt-in `-PagroStaging`; see `supabase/staging/README.md`).
+| Check | Result | Notes |
+|---|---|---|
+| Normal `assembleDebug` unchanged | PASS | `com.agroconnect.app`, 1.0, label AgroConnect, production ref only |
+| Staging APK identity + backend | PASS | `com.agroconnect.app.staging`, 1.0-staging, "AgroConnect Staging", staging ref only (script fails otherwise) |
+| Emulator (API 36.1): installs next to production | PASS | production `lastUpdateTime` unchanged |
+| Emulator: signed-in smoke | **NOT VALID** | the emulator's `system_server` kept raising "isn't responding" dialogs (load avg 24–30, Play Store updates); first run's two passes were false (they only checked the login text was absent). Script hardened; run moved to a physical phone |
+| **Physical phone** (Nothing Phone 2, Android 16), `device-smoke.py` | **7/7 PASS** | farmer login → feed → profile → Catch Up lists Dr. Ramesh Expert, no expert tools; session survives force-stop + relaunch; landscape renders signed-in UI, one back press keeps the app in front; expert1 Catch Up in expert mode + Manage Availability; admin signed out with "Administrators must log in via the Admin Panel website"; production app not replaced (1.0, lastUpdateTime 2026-09-16 09:31:07 before and after); no FATAL EXCEPTION; 0 ANR dialogs |
+| Screenshots | — | `appium-results/2026-10-25_staging_device/01…08` (staging app only; the production app is never opened) |
+
+The smoke script is safe on a personal phone: it never opens, clears or screenshots the production app, restores the
+rotation settings (also on SIGTERM), reads logcat from its start time instead of clearing it, and declines system
+"save password" offers.
+
+### Realtime test — root cause and fix
+* **Cause:** realtime readiness has two steps. `SUBSCRIBED` (channel join) arrives first; the `postgres_changes` listener
+  is confirmed ~1–3 s later by a `system` message (`"Subscribed to PostgreSQL"`; probe: 2.2 s then 4.1 s). The old test
+  fired the trigger at `SUBSCRIBED`, so on a cold project the INSERT could land before the listener existed and was
+  never delivered → the first-run 20 s timeout.
+* **Fix** (`tests/e2e/staging-workflows.test.mjs`): wait for `SUBSCRIBED` (20 s) and then the listener `ok` (20 s),
+  each with its own error (`CHANNEL_ERROR`/`TIMED_OUT`/`CLOSED` and listener errors are reported, not swallowed); only
+  then trigger; event deadline 30 s. On a missed event the error says whether the notification row **was written**,
+  separating "not pushed" from "never created" — both still fail. No retry of delivery. The booking is cleaned up in
+  `finally`. Sign-in retries once **only** on a network-level `fetch failed`.
+* **Reproducibility:** 16 runs today — 15 PASS (1.4–14.8 s), 1 failed before the test body (`sign-in admin: fetch failed`,
+  staging health endpoint answered 200 seconds later).
+
+### Staging reruns
+| Suite | Run during emulator reboot (network saturated) | Rerun, quiet network |
+|---|---|---|
+| `npm run test:staging` (anon 5 + api 8 + workflows 8) | 16/21 — the 5 failures were all `fetch failed` / `ConnectTimeoutError` to the Supabase edge (not counted as passes) | **21/21 PASS** |
+| Playwright vs staging builds (`E2E_STAGING=1`) | — | **10/10 PASS** |
+| Scheduler (pg_cron) no-show | PASS (≈6.2 min) | PASS (≈6.2 min); `cron.job_run_details`: 90 runs, 0 failures |
+| Post-run integrity (staging SQL) | — | 15 realtime-test bookings, 0 left open; 0 double bookings; 3 slot/booking "mismatches" are all `Completed` consultations, which keep their slot booked by design |
