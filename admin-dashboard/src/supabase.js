@@ -3,8 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 // Build-time override for staging/E2E (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY); defaults to production.
 // The default is the project's PUBLISHABLE key (sb_publishable_…): public by design and independent of the legacy
 // JWT keys, so turning the legacy anon key off in Supabase no longer breaks sign-in ("Invalid API key").
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mgreapakfchcxcrauheq.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_JbBPE8eek75KWPjpViDa_A_K4hCuTyZ';
+const PROD_URL = 'https://mgreapakfchcxcrauheq.supabase.co';
+const PROD_PUBLISHABLE_KEY = 'sb_publishable_JbBPE8eek75KWPjpViDa_A_K4hCuTyZ';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || PROD_URL;
+// Production always uses the publishable key, even when the host (Render) still injects the legacy JWT anon key as
+// VITE_SUPABASE_ANON_KEY: production logs showed that legacy key being refused ("Invalid API key") whenever legacy
+// keys were switched off in Supabase. Other projects (staging/E2E) keep the key they are given.
+const configuredKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseAnonKey = supabaseUrl === PROD_URL && (!configuredKey || configuredKey.startsWith('eyJ'))
+  ? PROD_PUBLISHABLE_KEY
+  : configuredKey;
 
 // Refuse a privileged key in the browser (never print it).
 const jwtRole = (k) => { try { return JSON.parse(atob(k.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role; } catch { return null; } };

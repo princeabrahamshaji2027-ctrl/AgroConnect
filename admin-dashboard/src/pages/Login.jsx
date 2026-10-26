@@ -24,6 +24,8 @@ export default function Login({ authError: externalError, notice }) {
     if (err) {
       setError(err.status === 429 || /rate limit/i.test(err.message || '')
         ? 'Too many reset emails were requested. Please wait a few minutes and try again.'
+        : /invalid api key/i.test(err.message || '')
+        ? 'The admin website could not connect to the AgroConnect server (API key refused). Please try again later.'
         : 'The reset email could not be sent. Please try again later.');
       return;
     }
@@ -57,7 +59,11 @@ export default function Login({ authError: externalError, notice }) {
       // automatically process the session, verify admin role, and render the dashboard.
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.message || 'An error occurred during login.');
+      setError(/invalid api key/i.test(err.message || '')
+        ? 'The admin website could not connect to the AgroConnect server (API key refused). Please try again in a minute; if it continues, check the Supabase API key settings (see docs/AGROCONNECT_HANDOVER.md).'
+        : /failed to fetch|network/i.test(err.message || '')
+          ? 'No connection to the server. Please check your internet connection and try again.'
+          : err.message || 'An error occurred during login.');
       setLoading(false);
     }
   };
