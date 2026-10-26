@@ -29,7 +29,22 @@ test('splash leads to an empty login form; register validates', async ({ page })
   await expect(page.getByRole('heading', { name: 'Create Account' })).toBeVisible();
   await page.evaluate(() => document.querySelectorAll('form [required]').forEach((e) => e.removeAttribute('required')));
   await page.locator('form button[type=submit]').click();
-  await expect(page.getByText('Full Name is required.')).toBeVisible();
+  // inline validation (2026-10-26): the reason under the field, the first invalid field focused, no popup
+  await expect(page.getByText('Please enter your full name.')).toBeVisible();
+  await expect(page.getByLabel(/Full name/i).first()).toBeFocused();
+  await expect(page.getByLabel(/Full name/i).first()).toHaveAttribute('aria-invalid', 'true');
+});
+
+test('login: empty submit shows inline errors under the fields and no popup', async ({ page }) => {
+  page.on('dialog', (d) => { throw new Error(`unexpected popup: ${d.message()}`); });
+  await toLogin(page);
+  await page.getByRole('button', { name: 'Log In' }).click();
+  await expect(page.getByText('Please enter your email or username.')).toBeVisible();
+  await expect(page.getByText('Please enter your password.')).toBeVisible();
+  await expect(page.getByPlaceholder('Enter your email or username')).toBeFocused();
+  await page.getByPlaceholder('Enter your email or username').fill('someone@example.com');
+  await page.getByPlaceholder('Enter your email or username').blur();
+  await expect(page.getByText('Please enter your email or username.')).toHaveCount(0);   // cleared as soon as it is fixed
 });
 
 test('wrong credentials show an error', async ({ page }) => {
@@ -244,8 +259,12 @@ test.describe('Catch Up meetings (staging)', () => {
   const ist = (min) => { const d = new Date(Math.ceil((Date.now() + min * 60000) / 60000) * 60000 + 330 * 60000); return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) }; };
   const plus30 = (t) => { const [h, m] = t.split(':').map(Number); const x = (h * 60 + m + 30) % 1440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
   const bookIn = async (min, topic) => {
-    const at = ist(min);
-    const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
+    let s;
+    for (let m = min; m < min + 4; m++) {   // another test's slot may hold this minute (unique_expert_slot): take the next one
+      const at = ist(m);
+      s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
+      if (s.error?.code !== '23505') break;
+    }
     if (s.error) throw s.error;
     slots.push(s.data.id);
     const r = await demoBook(farmer, s.data.id, topic);
@@ -615,5 +634,111 @@ test.describe('expert fee, checkout + Google Meet links (staging)', () => {
     const notes = (await farmer.from('notifications').select('message').eq('related_id', b.data)).data.map((n) => n.message);
     expect(notes.filter((m) => /added the Google Meet link/.test(m))).toHaveLength(1);
     expect(notes.join(' ')).not.toContain('meet.google.com');
+  });
+});
+
+// Owner decisions 2026-10-26: cancellation & refund rules, messaging with message requests.
+test.describe('cancellation & messaging 2026-10-26 (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  test.describe.configure({ mode: 'serial' });
+  const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  const C = {}; const slots = []; const bookings = [];
+  const ist = (min) => { const d = new Date(Math.ceil((Date.now() + min * 60000) / 60000) * 60000 + 330 * 60000); return { date: d.toISOString().slice(0, 10), time: d.toISOString().slice(11, 16) }; };
+  const plus30 = (t) => { const [h, m] = t.split(':').map(Number); const x = (h * 60 + m + 30) % 1440; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
+  test.beforeAll(async () => {
+    for (const n of ['expert1', 'user1', 'user2', 'user3', 'user4']) {
+      C[n] = mk();
+      const r = await C[n].auth.signInWithPassword({ email: fx(n), password: process.env.FIXTURE_PASSWORD });
+      C[`${n}Id`] = r.data.user.id;
+    }
+    C.expertId = (await C.expert1.from('experts').select('id').eq('user_id', C.expert1Id).single()).data.id;
+  });
+  test.afterAll(async () => {
+    for (const id of bookings) await C.user1.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'E2E cleanup', p_offered_slots: [] });
+    for (const id of slots) await C.expert1.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
+  });
+
+  test('farmer cancels inside 14 h: terms show the split before confirming; empty reason is an inline error; booking cancelled', async ({ page }) => {
+    let s;
+    for (let m = 95; m < 101; m++) {
+      const at = ist(m);
+      s = await C.expert1.from('consultation_slots').insert({ expert_id: C.expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate: 300 }).select('id').single();
+      if (s.error?.code !== '23505') break;
+    }
+    expect(s.error).toBeNull();
+    slots.push(s.data.id);
+    const topic = `E2E late cancel ${Date.now() % 100000}`;
+    const b = await demoBook(C.user1, s.data.id, topic);
+    expect(b.error).toBeNull();
+    bookings.push(b.data);
+    page.on('dialog', (d) => { throw new Error(`unexpected popup: ${d.message()}`); });
+    await login(page, fx('user1'));
+    await nav(page, 'Catch Up').click();
+    await page.getByRole('button', { name: /^Upcoming/ }).click();
+    await page.locator('.card', { hasText: topic }).first().click();
+    const terms = page.getByTestId('cancellation-terms').first();
+    await expect(terms).toContainText('less than 14 hours', { timeout: 15_000 });
+    await expect(terms).toContainText('goes to the expert');
+    await page.getByRole('button', { name: 'Cancel Meeting' }).click();
+    await page.getByRole('button', { name: 'Yes, cancel meeting' }).click();
+    await expect(page.getByText('Please enter a cancellation reason.')).toBeVisible();
+    await page.getByLabel(/Cancellation reason/).fill('Cannot attend, sorry');
+    await page.getByRole('button', { name: 'Yes, cancel meeting' }).click();
+    await expect.poll(async () => (await C.user1.from('consultation_bookings').select('status, cancellation_rule').eq('id', b.data).single()).data,
+      { timeout: 20_000 }).toEqual({ status: 'Cancelled', cancellation_rule: 'farmer_late' });
+    await expect(page.locator('.card', { hasText: topic })).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test('Message button on an expert profile opens a normal chat; the message is sent once', async ({ page }) => {
+    await login(page, fx('user1'));
+    await nav(page, 'Catch Up').click();
+    await page.getByRole('img', { name: 'Dr. Ramesh Expert' }).first().click();
+    await page.getByRole('button', { name: 'Message' }).click();
+    await expect(page.getByLabel('Message', { exact: true })).toBeVisible({ timeout: 15_000 });   // the chat screen
+    await expect(page.getByRole('heading', { name: 'Dr. Ramesh Expert', exact: true })).toBeVisible();
+    await expect(page.getByText(/will see your messages as a request/)).toHaveCount(0);   // they share a booking
+    const text = `E2E hello ${Date.now()}`;
+    await page.getByLabel('Message', { exact: true }).fill(text);
+    await page.getByRole('button', { name: 'Send message' }).click();
+    await expect(page.locator('.chat-bubble.sent', { hasText: text })).toBeVisible();
+    await expect(page.locator('.chat-bubble.sent', { hasText: text }).getByText('Sending…')).toHaveCount(0, { timeout: 15_000 });
+    const conv = (await C.expert1.rpc('get_or_create_conversation', { p_other: C.user1Id })).data;
+    const msgs = (await C.expert1.rpc('get_messages', { p_conversation_id: conv.conversation_id, p_limit: 50 })).data;
+    expect(msgs.filter((m) => m.content === text)).toHaveLength(1);
+  });
+
+  test('message request: blue dot on the requests icon, request listed, Accept/Decline shown, reply accepts', async ({ page }, info) => {
+    // conversations are kept as records, so each farmer pair shows the request flow once (staging-cancel-messaging uses them too)
+    const pairs = [['user2', 'user1'], ['user3', 'user1'], ['user3', 'user2'], ['user4', 'user3'], ['user4', 'user2'], ['user1', 'user4']];
+    let pair = null;
+    for (const [a, b] of pairs) {
+      let used = false;
+      for (const [x, y] of [[a, b], [b, a]]) for (const box of ['inbox', 'requests']) {
+        if ((await C[x].rpc('list_conversations', { p_box: box, p_limit: 200 })).data.some((r) => r.other_user_id === C[`${y}Id`])) used = true;
+      }
+      if (!used) { pair = [a, b]; break; }
+    }
+    info.skip(!pair, 'every farmer pair already has a conversation on staging');
+    const [a, b] = pair;
+    const conv = (await C[a].rpc('get_or_create_conversation', { p_other: C[`${b}Id`] })).data;
+    expect(conv.state).toBe('request_outgoing');
+    expect((await C[a].rpc('send_message', { p_conversation_id: conv.conversation_id, p_content: 'E2E request hello', p_client_id: crypto.randomUUID() })).error).toBeNull();
+    const senderName = (await C[b].from('profiles').select('full_name').eq('id', C[`${a}Id`]).single()).data.full_name;
+
+    await login(page, fx(b));
+    await nav(page, 'Chat').click();
+    await expect(page.getByTestId('requests-dot')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.chat-thread-item', { hasText: 'E2E request hello' })).toHaveCount(0);   // not in the inbox
+    await page.getByRole('button', { name: /Message requests/ }).click();
+    await expect(page.getByRole('heading', { name: 'Message requests' })).toBeVisible();
+    await page.locator('.chat-thread-item', { hasText: senderName }).first().click();
+    await expect(page.getByText('E2E request hello')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Accept' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Decline' })).toBeVisible();
+    await page.getByLabel('Message', { exact: true }).fill('E2E reply accepts');
+    await page.getByRole('button', { name: 'Send message' }).click();
+    await expect(page.getByRole('button', { name: 'Accept' })).toHaveCount(0, { timeout: 15_000 });
+    const st = (await C[b].rpc('list_conversations', { p_box: 'inbox', p_limit: 200 })).data.find((r) => r.conversation_id === conv.conversation_id);
+    expect(st?.state).toBe('normal');
   });
 });

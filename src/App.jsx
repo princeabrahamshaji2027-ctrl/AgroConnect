@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Splash from './pages/Splash';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -32,6 +32,9 @@ export default function App() {
   const [connectInitialBooking, setConnectInitialBooking] = useState(null);
   const [focusBookingId, setFocusBookingId] = useState(null); // opened from a push notification
   const [pendingPushTap, setPendingPushTap] = useState(null);  // tap that arrived before sign-in finished
+  const [focusConversation, setFocusConversation] = useState(null); // { id, otherUserId?, name?, avatar?, state? } to open in Chat
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
 
   // Toast Notifications States
   const [toastMessage, setToastMessage] = useState(null);
@@ -78,6 +81,8 @@ export default function App() {
                   return;
                 }
               }
+              // the Messages screen shows new messages itself; no toast on top of the conversation
+              if (payload.new.type === 'message' && activeTabRef.current === 'chat') return;
               if (!payload.new.is_read) {
                 showToastNotification(payload.new.message || '🔔 New notification');
               }
@@ -167,6 +172,10 @@ export default function App() {
       setViewingProfileId(null);
       setActiveTab('connect');
       setFocusBookingId(pendingPushTap.bookingId);
+      setPendingPushTap(null);
+    } else if (pendingPushTap?.kind === 'message') {
+      // the conversation is re-read with the user's own permissions in Chat
+      openChat({ id: pendingPushTap.conversationId });
       setPendingPushTap(null);
     }
   }, [screen, pendingPushTap]);
@@ -272,6 +281,7 @@ export default function App() {
     setActiveTab('feed');
     setSubScreen(null);
     setViewingProfileId(null);
+    setFocusConversation(null);
     showToastNotification('🔌 Logged out safely');
   };
 
@@ -288,6 +298,15 @@ export default function App() {
     }
     setSubScreen(null);
     setViewingProfileId(id);
+  };
+
+  // Opening a conversation from a profile's Message button, a push or a notification row.
+  const openChat = (conv) => {
+    if (!conv?.id) return;
+    setSubScreen(null);
+    setViewingProfileId(null);
+    setActiveTab('chat');
+    setFocusConversation(conv);
   };
 
   const handlePublishPost = (newPost) => {
@@ -320,9 +339,16 @@ export default function App() {
 
     if (subScreen === 'notifications') {
       return (
-        <Notifications 
-          onGoBack={() => setSubScreen(null)} 
+        <Notifications
+          onGoBack={() => setSubScreen(null)}
           onProfileClick={openProfile}
+          onOpenChat={openChat}
+          onOpenBooking={(bookingId) => {
+            setSubScreen(null);
+            setViewingProfileId(null);
+            setActiveTab('connect');
+            setFocusBookingId(bookingId);
+          }}
         />
       );
     }
@@ -368,6 +394,7 @@ export default function App() {
           onPeaAIClick={() => setSubScreen('peaAI')}
           onLogout={handleLogout}
           onShowToast={showToastNotification}
+          onOpenChat={openChat}
         />
       );
     }
@@ -408,8 +435,11 @@ export default function App() {
         );
       case 'chat':
         return (
-          <Chat 
+          <Chat
             onProfileClick={openProfile}
+            onShowToast={showToastNotification}
+            focusConversation={focusConversation}
+            clearFocusConversation={() => setFocusConversation(null)}
             onNavigateToBooking={(bookingData) => {
               setConnectInitialBooking(bookingData);
               setActiveTab('connect');
@@ -426,6 +456,7 @@ export default function App() {
             onPeaAIClick={() => setSubScreen('peaAI')}
             onLogout={handleLogout}
             onShowToast={showToastNotification}
+            onOpenChat={openChat}
           />
         );
       default:

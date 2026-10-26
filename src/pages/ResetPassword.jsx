@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import InputField from '../components/InputField';
+import InputField, { FormMessage } from '../components/InputField';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import { Button } from '../components/Button';
 import PasswordRequirements from '../components/PasswordRequirements';
 import { validatePassword } from '../utils/validation';
@@ -24,12 +26,20 @@ export default function ResetPassword({ onDone, onCancel }) {
     });
   }, []);
 
-  const policy = validatePassword(password, email);
-  const canSubmit = hasSession && policy.isValid && password === confirm && !saving;
+  const values = { password, confirm, email };
+  const v = useFormValidation({
+    password: (val) => {
+      if (!val) return 'Please enter a new password.';
+      const res = validatePassword(val, email);
+      return res.isValid ? null : res.errors[0];
+    },
+    confirm: rules.confirmPassword('password'),
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!hasSession || saving) return;
+    if (!v.validateAll(values)) return;
     setSaving(true);
     setError('');
     const { error: err } = await supabase.auth.updateUser({ password });
@@ -53,16 +63,16 @@ export default function ResetPassword({ onDone, onCancel }) {
           <Button type="button" variant="primary" onClick={onCancel}>Back to Log In</Button>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {error && (
-            <div role="alert" style={{ backgroundColor: 'rgba(231, 76, 60, 0.15)', color: '#ff6b6b', padding: '12px 16px', borderRadius: '12px', fontSize: '13px', border: '1px solid rgba(231, 76, 60, 0.3)' }}>
-              {error}
-            </div>
-          )}
-          <InputField label="New password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} icon="lock" autoComplete="new-password" required />
-          <InputField label="Confirm new password" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} icon="lock" autoComplete="new-password" required />
+        <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <FormMessage>{error}</FormMessage>
+          <InputField label="New password" type="password" value={password}
+            onChange={(e) => { setPassword(e.target.value); v.changed('password', { ...values, password: e.target.value }); }}
+            icon="lock" autoComplete="new-password" {...v.field('password', values)} />
+          <InputField label="Confirm new password" type="password" value={confirm}
+            onChange={(e) => { setConfirm(e.target.value); v.changed('confirm', { ...values, confirm: e.target.value }); }}
+            icon="lock" autoComplete="new-password" {...v.field('confirm', values)} />
           <PasswordRequirements password={password} confirmPassword={confirm} />
-          <Button type="submit" variant="primary" disabled={!canSubmit}>
+          <Button type="submit" variant="primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save new password'}
           </Button>
           <Button type="button" variant="text" onClick={onCancel} disabled={saving}>Cancel</Button>

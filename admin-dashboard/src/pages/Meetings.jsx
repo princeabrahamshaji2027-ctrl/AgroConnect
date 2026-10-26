@@ -32,7 +32,30 @@ const Stars = ({ value }) => (
   </span>
 );
 
-const EMPTY = { from_date: '', to_date: '', q: '', status: '', payment: '', link: '', completion: '', review: '' };
+const RULE_TEXT = {
+  farmer_early: 'Farmer cancelled 14 h or more before — full refund',
+  farmer_late: 'Farmer cancelled less than 14 h before — 50% to expert, 2% commission kept',
+  expert_cancel: 'Expert cancelled — full refund',
+  admin_cancel: 'Admin cancelled — full refund',
+  no_show: 'Nobody joined — full refund',
+};
+const ROLE_TEXT = { farmer: 'Farmer', expert: 'Expert', admin: 'Admin', system: 'System (automatic)' };
+
+// Non-blocking message instead of alert(): stays until dismissed or replaced.
+function InlineNotice({ notice, onClose }) {
+  if (!notice) return null;
+  const tone = notice.type === 'error' ? 'border-error/40 bg-error/10 text-error' : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300';
+  return (
+    <div role={notice.type === 'error' ? 'alert' : 'status'} className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-body-sm ${tone}`}>
+      <span>{notice.text}</span>
+      <button type="button" onClick={onClose} aria-label="Dismiss" className="cursor-pointer opacity-80 hover:opacity-100">
+        <span className="material-symbols-outlined text-[16px]">close</span>
+      </button>
+    </div>
+  );
+}
+
+const EMPTY = { from_date: '', to_date: '', q: '', status: '', payment: '', link: '', completion: '', review: '', cancellation_rule: '' };
 const clean = (f) => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v != null));
 
 function Select({ label, value, onChange, options }) {
@@ -58,6 +81,10 @@ export default function Meetings() {
   const [error, setError] = useState(null);
   const [detail, setDetail] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [notice, setNotice] = useState(null);            // page-level { type, text }
+  const [detailNotice, setDetailNotice] = useState(null); // inside the detail dialog
+  const [cancelForm, setCancelForm] = useState(null);     // { reason, error } while the admin cancel form is open
+  const [confirmComplete, setConfirmComplete] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,21 +105,49 @@ export default function Meetings() {
 
   const openDetail = async (id) => {
     const { data, error: err } = await supabase.rpc('admin_consultation_detail', { p_booking_id: id });
-    if (err) { alert(err.message); return; }
+    if (err) { setNotice({ type: 'error', text: `Could not open the consultation: ${err.message}` }); return; }
+    setDetailNotice(null);
+    setCancelForm(null);
+    setConfirmComplete(false);
     setDetail(data);
   };
 
-  // existing admin actions (server-side authorised and audit-logged); accounting fields are never edited here
-  const updateStatus = async (id, newStatus) => {
-    if (!window.confirm(`Mark this consultation as ${newStatus}? The agreed fee and commission stay as recorded.`)) return;
+  const closeDetail = () => {
+    if (actionLoading) return;
+    setDetail(null);
+    setCancelForm(null);
+    setConfirmComplete(false);
+    setDetailNotice(null);
+  };
+
+  // server-side authorised and audit-logged; accounting fields are never edited here
+  const markCompleted = async (id) => {
     setActionLoading(true);
     const { error: err } = await supabase.rpc('admin_update_booking_status', {
-      p_booking_id: id, p_new_status: newStatus,
-      p_cancellation_reason: newStatus === 'Cancelled' ? 'Cancelled by Administrator' : null,
+      p_booking_id: id, p_new_status: 'Completed', p_cancellation_reason: null,
     });
     setActionLoading(false);
-    if (err) { alert(`Action failed: ${err.message}`); return; }
+    if (err) { setDetailNotice({ type: 'error', text: `Action failed: ${err.message}` }); return; }
     setDetail(null);
+    setConfirmComplete(false);
+    setNotice({ type: 'success', text: 'Consultation marked as completed.' });
+    load();
+  };
+
+  // Admin cancellation: always a full refund to the farmer; the reason is stored and written to the audit log.
+  const cancelBooking = async (id) => {
+    const reason = (cancelForm?.reason || '').trim();
+    if (!reason) { setCancelForm({ ...cancelForm, error: 'Please enter a cancellation reason.' }); return; }
+    if (reason.length > 500) { setCancelForm({ ...cancelForm, error: 'Please keep the reason under 500 characters.' }); return; }
+    setActionLoading(true);
+    const { data, error: err } = await supabase.rpc('admin_cancel_booking', { p_booking_id: id, p_reason: reason });
+    setActionLoading(false);
+    if (err) { setDetailNotice({ type: 'error', text: `Cancellation failed: ${err.message}` }); return; }
+    setDetail(null);
+    setCancelForm(null);
+    setNotice({ type: 'success', text: data?.has_payment
+      ? `Consultation cancelled. Full refund recorded (simulated): ${inr(data.refund_paise)}. Farmer and expert were notified.`
+      : 'Consultation cancelled. There was no payment to refund. Farmer and expert were notified.' });
     load();
   };
 
@@ -108,6 +163,9 @@ export default function Meetings() {
     ['Agreed consultation value', inr(summary.value_paise)],
     ['Platform commission (2%) recorded', inr(summary.commission_paise)],
     ['Expert share recorded', inr(summary.expert_share_paise)],
+    ['Refunds recorded (simulated)', inr(summary.refunds_paise)],
+    ['Net platform commission', inr(summary.net_commission_paise)],
+    ['Net expert share', inr(summary.net_expert_share_paise)],
   ] : [];
 
   return (
@@ -134,7 +192,9 @@ export default function Meetings() {
       {summary && (
         <p className="text-[12px] text-on-surface-variant -mt-3">
           Value, commission and expert share count confirmed bookings that are not cancelled (status Booked or Completed) in the
-          current filter. Cancelled bookings' agreed value: {inr(summary.cancelled_value_paise)}. Checkouts in progress are not bookings.
+          current filter. Cancelled bookings' agreed value: {inr(summary.cancelled_value_paise)}. Net figures subtract refunds: a late
+          farmer cancellation keeps 50% for the expert and the 2% commission; every other cancellation is a full refund. Checkouts in
+          progress are not bookings.
         </p>
       )}
 
@@ -164,12 +224,16 @@ export default function Meetings() {
           options={[['', 'All'], ['open', 'Open'], ['expert', 'By expert'], ['admin', 'By admin'], ['slot_ended', 'Closed after slot']]} />
         <Select label="Review" value={filters.review} onChange={(v) => setFilters({ ...filters, review: v })}
           options={[['', 'All'], ['reviewed', 'Reviewed'], ['not_reviewed', 'Not reviewed']]} />
+        <Select label="Cancellation" value={filters.cancellation_rule} onChange={(v) => setFilters({ ...filters, cancellation_rule: v })}
+          options={[['', 'All'], ['farmer_early', 'Farmer, 14 h+ before'], ['farmer_late', 'Farmer, under 14 h'], ['expert_cancel', 'By expert'],
+            ['admin_cancel', 'By admin'], ['no_show', 'Nobody joined']]} />
         <div className="flex gap-2 md:col-span-2">
           <button type="submit" className="bg-primary-container text-on-primary-container px-4 py-2 rounded-lg font-bold text-[13px] cursor-pointer">Apply filters</button>
           <button type="button" onClick={reset} className="border border-outline-variant text-on-surface-variant px-4 py-2 rounded-lg text-[13px] cursor-pointer">Reset</button>
         </div>
       </form>
 
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
       {error && <div role="alert" className="text-error text-body-sm">Could not load consultations: {error}</div>}
 
       <div className="card-bg rounded-xl overflow-x-auto border border-outline-variant min-w-0 max-w-full">
@@ -239,12 +303,12 @@ export default function Meetings() {
           </div>
         );
         return (
-          <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setDetail(null)}>
+          <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={closeDetail}>
             <div className="max-w-2xl w-full card-bg rounded-2xl border border-outline-variant p-6 flex flex-col gap-4 shadow-2xl max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Consultation details">
               <div className="flex justify-between items-center border-b border-outline-variant/30 pb-3">
                 <h2 className="font-headline-lg text-on-surface">Consultation {d.booking_id.slice(0, 8)}</h2>
-                <button onClick={() => setDetail(null)} className="text-on-surface-variant hover:text-on-surface cursor-pointer" aria-label="Close">
+                <button onClick={closeDetail} className="text-on-surface-variant hover:text-on-surface cursor-pointer" aria-label="Close">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
@@ -277,9 +341,20 @@ export default function Meetings() {
                 <Row k="Farmer opened Meet from the app" v={when(d.farmer_opened_at)} />
                 <Row k="Completion" v={completionText(d)} />
                 <Row k="Last update" v={when(d.updated_at)} />
-                {d.cancellation_reason && <Row k="Cancellation reason" v={d.cancellation_reason} />}
-                {d.refund_status && d.refund_status !== 'None' && <Row k="Refund (simulated)" v={`₹${Number(d.refund_amount || 0)} · ${d.refund_status}`} />}
               </div>
+
+              {d.status === 'Cancelled' && (
+                <div className="rounded-xl border border-error/30 p-4" data-testid="cancellation-detail">
+                  <div className="text-[11px] uppercase tracking-wider text-on-surface-variant font-bold mb-1">Cancellation &amp; refund (simulated)</div>
+                  <Row k="Cancelled at" v={when(d.cancelled_at)} />
+                  <Row k="Cancelled by" v={ROLE_TEXT[d.cancelled_by_role] || '—'} />
+                  <Row k="Rule applied" v={RULE_TEXT[d.cancellation_rule] || '—'} />
+                  <Row k="Reason" v={d.cancellation_reason || '—'} />
+                  <Row k="Refund to farmer" v={d.refund_paise != null ? inr(d.refund_paise) : '—'} />
+                  <Row k="Commission reversed" v={d.refund_commission_reversal_paise != null ? inr(d.refund_commission_reversal_paise) : '—'} />
+                  <Row k="Expert share reversed" v={d.refund_expert_share_reversal_paise != null ? inr(d.refund_expert_share_reversal_paise) : '—'} />
+                </div>
+              )}
 
               <div className="rounded-xl border border-outline-variant p-4 flex flex-col gap-2">
                 <div className="text-[11px] uppercase tracking-wider text-on-surface-variant font-bold">Farmer's review</div>
@@ -304,17 +379,60 @@ export default function Meetings() {
                 </ul>
               </div>
 
-              {d.status === 'Booked' && (
-                <div className="flex justify-end gap-2 border-t border-outline-variant/30 pt-3">
-                  <button disabled={actionLoading} onClick={() => updateStatus(d.booking_id, 'Completed')}
-                    className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded text-[12px] font-bold cursor-pointer disabled:opacity-50">
-                    Mark completed
-                  </button>
-                  <button disabled={actionLoading} onClick={() => updateStatus(d.booking_id, 'Cancelled')}
-                    className="bg-error/10 hover:bg-error/20 text-error border border-error/30 px-3 py-1.5 rounded text-[12px] font-bold cursor-pointer disabled:opacity-50">
-                    Cancel consultation
-                  </button>
+              <InlineNotice notice={detailNotice} onClose={() => setDetailNotice(null)} />
+
+              {d.status === 'Booked' && !cancelForm && (
+                <div className="flex justify-end items-center gap-2 border-t border-outline-variant/30 pt-3 flex-wrap">
+                  {confirmComplete ? (
+                    <>
+                      <span className="text-[12px] text-on-surface-variant mr-auto">Mark as completed? The agreed fee and commission stay as recorded.</span>
+                      <button disabled={actionLoading} onClick={() => setConfirmComplete(false)}
+                        className="border border-outline-variant text-on-surface-variant px-3 py-1.5 rounded text-[12px] cursor-pointer disabled:opacity-50">Back</button>
+                      <button disabled={actionLoading} onClick={() => markCompleted(d.booking_id)}
+                        className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1.5 rounded text-[12px] font-bold cursor-pointer disabled:opacity-50">
+                        {actionLoading ? 'Saving…' : 'Yes, mark completed'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button disabled={actionLoading} onClick={() => setConfirmComplete(true)}
+                        className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded text-[12px] font-bold cursor-pointer disabled:opacity-50">
+                        Mark completed
+                      </button>
+                      <button disabled={actionLoading} onClick={() => { setConfirmComplete(false); setCancelForm({ reason: '', error: null }); }}
+                        className="bg-error/10 hover:bg-error/20 text-error border border-error/30 px-3 py-1.5 rounded text-[12px] font-bold cursor-pointer disabled:opacity-50">
+                        Cancel consultation
+                      </button>
+                    </>
+                  )}
                 </div>
+              )}
+
+              {d.status === 'Booked' && cancelForm && (
+                <form noValidate onSubmit={(e) => { e.preventDefault(); cancelBooking(d.booking_id); }}
+                  className="flex flex-col gap-2 border-t border-outline-variant/30 pt-3" aria-label="Cancel consultation">
+                  <p className="text-[12px] text-on-surface-variant">
+                    An admin cancellation always gives the farmer a full refund
+                    {d.amount_paise != null && d.payment_id ? ` (${inr(d.amount_paise)}, simulated)` : ''}. Farmer and expert are notified and the
+                    reason is written to the audit log.
+                  </p>
+                  <label htmlFor="admin-cancel-reason" className="text-[11px] uppercase tracking-wider text-on-surface-variant font-bold">Cancellation reason *</label>
+                  <textarea id="admin-cancel-reason" rows={3} maxLength={500} autoFocus
+                    value={cancelForm.reason}
+                    aria-invalid={cancelForm.error ? true : undefined}
+                    aria-describedby={cancelForm.error ? 'admin-cancel-reason-err' : undefined}
+                    onChange={(e) => setCancelForm({ reason: e.target.value, error: null })}
+                    className={`bg-surface-container border rounded-lg px-2 py-1.5 text-body-sm text-on-surface ${cancelForm.error ? 'border-error' : 'border-outline-variant'}`} />
+                  {cancelForm.error && <p id="admin-cancel-reason-err" role="alert" className="text-error text-[12px]">{cancelForm.error}</p>}
+                  <div className="flex justify-end gap-2">
+                    <button type="button" disabled={actionLoading} onClick={() => setCancelForm(null)}
+                      className="border border-outline-variant text-on-surface-variant px-3 py-1.5 rounded text-[12px] cursor-pointer disabled:opacity-50">Keep booking</button>
+                    <button type="submit" disabled={actionLoading}
+                      className="bg-error/20 text-error border border-error/40 px-3 py-1.5 rounded text-[12px] font-bold cursor-pointer disabled:opacity-50">
+                      {actionLoading ? 'Cancelling…' : 'Cancel with full refund'}
+                    </button>
+                  </div>
+                </form>
               )}
             </div>
           </div>

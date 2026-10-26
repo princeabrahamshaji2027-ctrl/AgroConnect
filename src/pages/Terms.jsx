@@ -41,8 +41,14 @@ export default function Terms({ onGoBack }) {
         <Section title="Meetings, cancellations and refunds">
           <p>Consultations take place in Google Meet. The expert adds the meeting link to the booking; you can join from
             Catch Up from 5 minutes before the start until the booked time ends.</p>
-          <p>If a farmer cancels a booking, half of the agreed fee is marked for refund. If the expert has not added a
-            meeting link 5 minutes after the start, the booking is cancelled and the full agreed fee is marked for refund.</p>
+          <p>Farmers and experts can cancel a booked consultation at any time before it is completed, with a reason.</p>
+          <p>If the farmer cancels 14 hours or more before the start, the full agreed fee is refunded. If the farmer cancels
+            less than 14 hours before the start, half of the fee goes to the expert, AgroConnect keeps its 2% commission and the
+            rest is refunded. Example: for a fee of ₹1,000.00, the expert keeps ₹500.00, the commission is ₹20.00 and the
+            farmer gets ₹480.00 back.</p>
+          <p>If the expert or AgroConnect cancels, or the expert has not added a meeting link 5 minutes after the start (the
+            booking is then cancelled automatically), the farmer gets the full agreed fee back.</p>
+          <p>Before you confirm a cancellation, Catch Up shows the exact refund for your booking.</p>
           <p>The expert marks a consultation as completed. After that, the farmer can rate and review it once.</p>
         </Section>
       </div>

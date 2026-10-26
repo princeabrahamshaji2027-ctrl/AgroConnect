@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { Button } from '../components/Button';
+import InputField, { FormMessage } from '../components/InputField';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import PasswordRequirements from '../components/PasswordRequirements';
 import { validatePassword } from '../utils/validation';
 import { accountSignInMethods, changePassword, requestPasswordReset } from '../utils/authRecovery';
@@ -28,39 +31,39 @@ export default function PrivacySecurity({ onGoBack }) {
     setBiometricAvailable(false);
   }, []);
 
+  const pwdValues = { currentPassword, newPassword, confirmPassword };
+  const v = useFormValidation({
+    currentPassword: rules.required('Please enter your current password.'),
+    newPassword: (val) => {
+      if (!val) return 'Please enter a new password.';
+      const res = validatePassword(val, methods?.user?.email || '');
+      return res.isValid ? null : res.errors[0];
+    },
+    confirmPassword: rules.confirmPassword('newPassword'),
+  });
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
     if (saving) return;
     setMessage(null);
-
-    if (!currentPassword) {
-      setMessage({ type: 'error', text: 'Please enter your current password.' });
-      return;
-    }
-    const pwdVal = validatePassword(newPassword, methods?.user?.email || '');
-    if (!pwdVal.isValid) {
-      setMessage({ type: 'error', text: pwdVal.errors[0] });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setMessage({ type: 'error', text: 'New passwords do not match.' });
-      return;
-    }
+    if (!v.validateAll(pwdValues)) return;
     setSaving(true);
     // Supabase Auth checks the current password (not this screen); only then is the new one saved.
     const res = await changePassword(currentPassword, newPassword);
     setSaving(false);
     setCurrentPassword('');
     if (!res.ok) {
-      setMessage({ type: 'error', text: res.error });
+      if (/current password/i.test(res.error || '')) v.setFieldError('currentPassword', res.error);
+      else if (/password/i.test(res.error || '') && !/network|connection/i.test(res.error || '')) v.setFieldError('newPassword', res.error);
+      else setMessage({ type: 'error', text: res.error });
       return;
     }
+    v.reset();
     setMessage({ type: 'success', text: 'Password updated successfully.' });
     setNewPassword('');
     setConfirmPassword('');
   };
 
-  // Google-only account that wants a password as well: same e-mailed link as "Forgot Password?".
   const handleSendSetPasswordLink = async () => {
     setResetSent('');
     const res = await requestPasswordReset(methods?.user?.email || '');
@@ -91,52 +94,23 @@ export default function PrivacySecurity({ onGoBack }) {
               {resetSent && <div role="status" style={{ color: 'var(--primary-green)' }}>{resetSent}</div>}
             </div>
           ) : (
-          <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-              placeholder="Current password"
-              aria-label="Current password"
-              autoComplete="current-password"
-              style={{ padding: '14px 16px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'white', fontSize: '14px', outline: 'none' }}
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              placeholder="New password"
-              aria-label="New password"
-              autoComplete="new-password"
-              style={{ padding: '14px 16px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'white', fontSize: '14px', outline: 'none' }}
-            />
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              placeholder="Confirm new password"
-              aria-label="Confirm new password"
-              autoComplete="new-password"
-              style={{ padding: '14px 16px', borderRadius: '14px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'white', fontSize: '14px', outline: 'none' }}
-            />
+          <form onSubmit={handleChangePassword} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <InputField label="Current password" type="password" value={currentPassword} autoComplete="current-password" icon="lock"
+              onChange={(e) => { setCurrentPassword(e.target.value); v.changed('currentPassword', { ...pwdValues, currentPassword: e.target.value }); }}
+              {...v.field('currentPassword', pwdValues)} />
+            <InputField label="New password" type="password" value={newPassword} autoComplete="new-password" icon="lock_reset"
+              onChange={(e) => { setNewPassword(e.target.value); v.changed('newPassword', { ...pwdValues, newPassword: e.target.value }); }}
+              {...v.field('newPassword', pwdValues)} />
+            <InputField label="Confirm new password" type="password" value={confirmPassword} autoComplete="new-password" icon="lock_reset"
+              onChange={(e) => { setConfirmPassword(e.target.value); v.changed('confirmPassword', { ...pwdValues, confirmPassword: e.target.value }); }}
+              {...v.field('confirmPassword', pwdValues)} />
 
             <PasswordRequirements
               password={newPassword}
               confirmPassword={confirmPassword}
             />
             
-            {message && (
-              <div style={{
-                padding: '12px 16px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                backgroundColor: message.type === 'success' ? 'rgba(46, 204, 113, 0.1)' : 'rgba(231, 76, 60, 0.1)',
-                color: message.type === 'success' ? 'var(--primary-green)' : 'var(--error)',
-                border: `1px solid ${message.type === 'success' ? 'rgba(46, 204, 113, 0.3)' : 'rgba(231, 76, 60, 0.3)'}`
-              }}>
-                {message.text}
-              </div>
-            )}
+            <FormMessage type={message?.type === 'success' ? 'success' : 'error'}>{message?.text}</FormMessage>
 
             <Button
               type="submit"

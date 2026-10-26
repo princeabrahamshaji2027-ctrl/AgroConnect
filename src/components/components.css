@@ -116,6 +116,47 @@
   box-shadow: 0 0 0 1px var(--primary-green);
 }
 
+/* Inline validation (shared by every form): red border + short message right under the field */
+.input-container.has-error,
+.input-container.has-error:focus-within {
+  border-color: var(--error);
+  box-shadow: 0 0 0 1px var(--error);
+}
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 4px 2px 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--error);
+}
+.field-error::before {
+  content: '!';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--error);
+  color: #121212;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+  margin-top: 1px;
+}
+.field-hint { margin: 4px 2px 0; font-size: 11.5px; color: var(--text-secondary); }
+/* Form-level, non-blocking message (network, server, permission) — not used for field validation */
+.form-message {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.form-message.error { color: var(--error); background: rgba(255, 90, 90, 0.1); border: 1px solid rgba(255, 90, 90, 0.35); }
+.form-message.success { color: var(--primary-green); background: rgba(136, 217, 130, 0.1); border: 1px solid rgba(136, 217, 130, 0.35); }
+.form-message.info { color: var(--text-secondary); background: #1e1e1e; border: 1px solid var(--border-color); }
+
 .input-field {
   flex: 1;
   background: transparent;

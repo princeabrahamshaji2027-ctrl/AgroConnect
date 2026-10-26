@@ -11,3 +11,12 @@ test('valid booking tap -> booking id; anything else ignored', () => {
     assert.equal(parsePushTap(bad), null, JSON.stringify(bad));
   }
 });
+
+test('valid message tap -> conversation id; malformed ids ignored', () => {
+  const id = '7a1c2e3f-4b5d-4e6f-8a9b-0c1d2e3f4a5b';
+  assert.deepEqual(parsePushTap({ kind: 'message', conversation_id: id }), { kind: 'message', conversationId: id });
+  for (const bad of [{ kind: 'message' }, { kind: 'message', conversation_id: '' }, { kind: 'message', booking_id: id },
+    { kind: 'message', conversation_id: `${id}; drop table messages` }, { kind: 'message', conversation_id: 'https://evil.example' }]) {
+    assert.equal(parsePushTap(bad), null, JSON.stringify(bad));
+  }
+});

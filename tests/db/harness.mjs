@@ -28,6 +28,7 @@ export const PROPOSED = {
   '16': 'supabase/proposed/16_message_notification_type.sql',
   '17': 'supabase/proposed/17_messaging.sql',
   '18': 'supabase/proposed/18_cancellation_and_refunds.sql',
+  '19': 'supabase/proposed/19_messaging_keep_normal_chats.sql',
   '99': 'supabase/proposed/99_rollback.sql',
 };
 export const ALL = ['01', '02', '03', '04', '05', '07', '08'];

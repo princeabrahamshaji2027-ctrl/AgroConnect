@@ -463,3 +463,20 @@ expert").
 
 **Not verified:** anything on the phone for this version (pending); push delivery (no Firebase); reset e-mail (no real inbox).
 Test runs that the computer slept through (5.5 h) were discarded, not counted.
+
+## 2026-10-26 — validation, cancellation & refunds, messaging (staging `ahkgvuewgbjyahbiehrx`)
+| Test | Result | Notes |
+|---|---|---|
+| `npm test` — unit + regression | PASS 31/31 | new: `form-rules.test.mjs`, push-tap message kind, no `alert()` in app pages/components, messaging/cancel via RPCs only, admin reports card, form values declared after their state |
+| `npm test` — DB (PGlite, real schema + 04–19) | PASS 105/105 | new: `cancellation.test.mjs` (10), `messaging.test.mjs` (9) |
+| `npm run test:staging` (serial, 8 files) | 50/51, then the failing test PASS on rerun | the failure was the test's own pair selection (it picked a pair that already had a request); fixed so it checks both people's inbox and requests |
+| `staging-cancel-messaging.test.mjs` | PASS 6/6 | late farmer cancel (quote = result, split, idempotent), early = full, expert inside 14 h = full + must offer a time, admin summary/filter, request flow, normal chat, double send stored once, outsiders/direct writes refused, admin sees no text |
+| Playwright (staging builds via `vite preview`, admin + app) | first run: **found a crash**; after the fix 37 passed + the 5 rerun = all PASS | **Catch Up crashed on open** in the built app (`cancelReason` used before declaration). Fixed; guard added. Other two failures were test issues (a slot minute already used by another test → retry added; a heading checked before the chat opened). |
+| Production builds (app + admin) | PASS | only the production ref, no staging ref, no `service_role` |
+| Staging builds + staging APK | PASS | APK `com.agroconnect.app.staging`, staging ref only, `windowSoftInputMode=adjustResize` present |
+| oxlint (root config) | 0 errors, 50 warnings | baseline 52 |
+| Catch Up load (desktop Chrome, staging, requests after tapping Catch Up until 1.5 s quiet) | farmer **7–8 requests, 1.2–2.4 s** (was 13, 2.4–2.6 s); expert **7 requests, 0.8–2.1 s** (was 11, 1.7–2.2 s) | slowest value is the first (cold) run each time |
+| Phone (installed APK) | **NOT RUN** | no device connected in this pass |
+
+Staging note: conversations are kept as records, so each pair of farmer accounts can show the "message request" flow only once
+on staging; all pairs are now used, and the browser/staging request tests skip themselves (the DB tests cover the flow every run).

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import InputField from '../components/InputField';
+import InputField, { FormMessage } from '../components/InputField';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import { Button } from '../components/Button';
 import { requestPasswordReset } from '../utils/authRecovery';
 import './pages.css';
@@ -11,11 +13,13 @@ export default function ForgotPassword({ onBackToLogin }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [sentMessage, setSentMessage] = useState('');
+  const v = useFormValidation({ email: rules.email });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (sending) return;
     setError('');
+    if (!v.validateAll({ email })) return;
     setSending(true);
     const res = await requestPasswordReset(email);
     setSending(false);
@@ -43,20 +47,16 @@ export default function ForgotPassword({ onBackToLogin }) {
         </div>
       ) : (
         <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {error && (
-            <div role="alert" style={{ backgroundColor: 'rgba(231, 76, 60, 0.15)', color: '#ff6b6b', padding: '12px 16px', borderRadius: '12px', fontSize: '13px', border: '1px solid rgba(231, 76, 60, 0.3)' }}>
-              {error}
-            </div>
-          )}
+          <FormMessage>{error}</FormMessage>
           <InputField
             label="Email address"
             type="email"
             placeholder="you@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => { setEmail(e.target.value); v.changed('email', { email: e.target.value }); }}
             icon="mail"
             autoComplete="email"
-            required
+            {...v.field('email', { email })}
           />
           <Button type="submit" variant="primary" disabled={sending} style={{ marginTop: '8px' }}>
             {sending ? 'Sending…' : 'Send reset link'}

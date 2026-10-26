@@ -18,6 +18,7 @@ export default function Dashboard({ onTabChange }) {
   const [recentApps, setRecentApps] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
+  const [chatStats, setChatStats] = useState(null); // counts only — admins never see message text
 
   const fetchDashboardData = async () => {
     try {
@@ -32,6 +33,7 @@ export default function Dashboard({ onTabChange }) {
         supabase.from('orders').select('*', { count: 'exact', head: true }),
         supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
         supabase.from('posts').select('user_id').gte('created_at', since30d),
+        supabase.rpc('admin_messaging_stats'),
       ]);
       const [
         { count: usersCount },
@@ -40,8 +42,10 @@ export default function Dashboard({ onTabChange }) {
         { count: ordersCount },
         { count: reportsCount },
         { data: recentPosters },
+        { data: messaging },
       ] = results;
-      setDbReachable(results.every(r => !r.error));
+      setChatStats(messaging || null);
+      setDbReachable(results.slice(0, 6).every(r => !r.error)); // messaging stats are optional
 
       setStats({
         totalUsers: usersCount || 0,
@@ -223,10 +227,17 @@ export default function Dashboard({ onTabChange }) {
             <span className="font-label-sm text-on-surface-variant">Expert Apps</span>
           </div>
           <div className="font-headline-xl text-on-surface">{stats.expertApps}</div>
-          <div className="flex items-center gap-1 font-label-sm text-primary-container">
-            <span className="material-symbols-outlined text-[14px]">pending_actions</span>
-            <span>Pending Review</span>
-          </div>
+          {stats.expertApps > 0 ? (
+            <div className="flex items-center gap-1 font-label-sm text-primary-container" data-testid="expert-apps-status">
+              <span className="material-symbols-outlined text-[14px]">pending_actions</span>
+              <span>Pending Review</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 font-label-sm text-on-surface-variant" data-testid="expert-apps-status">
+              <span className="material-symbols-outlined text-[14px]">check_circle</span>
+              <span>No applications waiting</span>
+            </div>
+          )}
         </div>
 
         {/* Total Orders */}
@@ -247,18 +258,44 @@ export default function Dashboard({ onTabChange }) {
         {/* Pending Reports */}
         <div className="card-bg rounded-xl p-4 flex flex-col gap-3 cursor-pointer" onClick={() => onTabChange("reports")}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#331c1e] flex items-center justify-center">
-              <span className="material-symbols-outlined text-[#e74c3c]" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
+            {/* red only while something is actually waiting for moderation */}
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${stats.pendingReports > 0 ? 'bg-[#331c1e]' : 'bg-[#1f2924]'}`}>
+              <span className={`material-symbols-outlined ${stats.pendingReports > 0 ? 'text-[#e74c3c]' : 'text-on-surface-variant'}`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                {stats.pendingReports > 0 ? 'warning' : 'verified_user'}
+              </span>
             </div>
             <span className="font-label-sm text-on-surface-variant">Pending Reports</span>
           </div>
           <div className="font-headline-xl text-on-surface">{stats.pendingReports}</div>
-          <div className="flex items-center gap-1 font-label-sm text-[#e74c3c]">
-            <span className="material-symbols-outlined text-[14px]">warning</span>
-            <span>Requires Moderation</span>
-          </div>
+          {stats.pendingReports > 0 ? (
+            <div className="flex items-center gap-1 font-label-sm text-[#e74c3c]" data-testid="reports-status">
+              <span className="material-symbols-outlined text-[14px]">warning</span>
+              <span>Requires Moderation</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 font-label-sm text-on-surface-variant" data-testid="reports-status">
+              <span className="material-symbols-outlined text-[14px]">check_circle</span>
+              <span>No pending reports</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {chatStats && (
+        <div className="card-bg rounded-xl p-4 flex flex-wrap items-center gap-x-8 gap-y-2" data-testid="messaging-stats">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[#2F80ED]" style={{ fontVariationSettings: "'FILL' 1" }}>chat</span>
+            <span className="font-label-sm text-on-surface-variant">Messaging (counts only)</span>
+          </div>
+          <span className="text-body-sm text-on-surface">Conversations: <strong>{chatStats.conversations}</strong></span>
+          <span className="text-body-sm text-on-surface">Messages, last 7 days: <strong>{chatStats.messages_7d}</strong></span>
+          <span className="text-body-sm text-on-surface">Requests waiting: <strong>{chatStats.pending_requests}</strong></span>
+          <span className="text-body-sm text-on-surface-variant">
+            Message pushes: {Object.keys(chatStats.message_pushes || {}).length === 0 ? 'none'
+              : Object.entries(chatStats.message_pushes).map(([k, v]) => `${k} ${v}`).join(' · ')}
+          </span>
+        </div>
+      )}
 
       {/* Middle Row — User Growth chart removed per fix 1.1d */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">

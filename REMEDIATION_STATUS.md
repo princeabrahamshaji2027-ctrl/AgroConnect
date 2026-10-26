@@ -252,3 +252,13 @@ Production order: see `RELEASE_CHECKLIST.md` (backup → 04 → 05 → 09 → 10
   accounting row; a trigger makes that snapshot immutable for everyone (service role included).
 * Admin reporting is read-only and admin-only (`is_admin()` in each function); the Meet link is returned only by the detail function.
 * Open risk: nothing stops an expert from setting an unreasonable (but in-range) fee; a business decision, not a defect.
+
+## 2026-10-26 — migrations 16–19 (staging)
+| Item | Status |
+|---|---|
+| 16 notification type `message` | applied to staging |
+| 17 messaging (RPC-only writes, participants-only reads, requests, admin counts only) | applied to staging; function bodies identical to the file |
+| 18 cancellation & refunds, refund ledger, admin cancel with reason, reporting, indexes | applied to staging; function bodies identical to the file |
+| 19 normal chats stay normal after a disconnect | applied to staging; body identical to the file |
+| Production | **not applied** (no production writes were made) |
+| Fixed during testing | Catch Up crashed on open in the built app ("Cannot access 'cancelReason' before initialization": a form-values object was declared before its state). Found by Playwright on the staging build, fixed, all forms scanned for the same pattern. |

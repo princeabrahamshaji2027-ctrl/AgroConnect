@@ -140,3 +140,54 @@ test('AUD-035/034: app fonts and icons are bundled; no broken "google" icon liga
   assert.match(main, /import '@fontsource-variable\/inter'/);
   for (const p of ['src/pages/Login.jsx', 'src/pages/Register.jsx']) assert.doesNotMatch(read(p), /icon="google"/, p);
 });
+
+test('inline validation: no blocking alert()/confirm() popups in the user app pages and components', () => {
+  for (const dir of ['src/pages', 'src/components']) {
+    for (const f of readdirSync(join(root, dir)).filter((n) => n.endsWith('.jsx'))) {
+      const src = read(`${dir}/${f}`).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      assert.doesNotMatch(src, /(^|[^.\w])(window\.)?alert\(/m, `${dir}/${f} uses alert()`);
+      // the only confirm() left is the deliberate "Delete comment permanently?" check before a destructive action
+      const confirms = src.match(/window\.confirm\(/g) || [];
+      assert.equal(confirms.length, f === 'Feed.jsx' ? 1 : 0, `${dir}/${f} uses confirm()`);
+    }
+  }
+});
+
+test('messaging and cancellation go through server functions (migrations 17/18), never direct table writes', () => {
+  const chat = read('src/pages/Chat.jsx');
+  assert.doesNotMatch(chat, /from\('messages'\)\s*\.(insert|update|delete)/);
+  assert.doesNotMatch(chat, /from\('conversations'\)/);
+  for (const fn of ['send_message', 'get_messages', 'list_conversations', 'chat_badges', 'mark_conversation_read', 'respond_to_message_request']) {
+    assert.match(chat, new RegExp(`rpc\\('${fn}'`), fn);
+  }
+  const connect = read('src/pages/Connect.jsx');
+  assert.doesNotMatch(connect, /from\('messages'\)/);
+  assert.match(connect, /rpc\('consultation_cancellation_quote'/);
+  const meetings = read('admin-dashboard/src/pages/Meetings.jsx');
+  assert.match(meetings, /rpc\('admin_cancel_booking'/);
+  assert.doesNotMatch(meetings, /p_new_status:\s*'Cancelled'/);
+});
+
+test('admin dashboard: Pending Reports is red only while something is pending', () => {
+  const src = read('admin-dashboard/src/pages/Dashboard.jsx');
+  assert.match(src, /stats\.pendingReports > 0 \? \(/);
+  assert.match(src, /No pending reports/);
+});
+
+test('forms: every `const xValues = { … }` uses state declared above it (a later one crashed Catch Up on render)', () => {
+  for (const dir of ['src/pages', 'src/components']) {
+    for (const f of readdirSync(join(root, dir)).filter((n) => n.endsWith('.jsx'))) {
+      const lines = read(`${dir}/${f}`).split('\n');
+      lines.forEach((l, i) => {
+        const m = l.match(/^\s*const (\w+Values) = \{(.*)\};/);
+        if (!m) return;
+        for (const part of m[2].split(',')) {
+          const name = part.split(':').pop().trim();
+          if (!/^\w+$/.test(name)) continue;
+          const decl = lines.findIndex((x) => new RegExp(`const \\[\\s*${name}\\b|const ${name}\\b`).test(x));
+          assert.ok(decl >= 0 && decl < i, `${dir}/${f}:${i + 1} ${m[1]} uses ${name} before it is declared`);
+        }
+      });
+    }
+  }
+});

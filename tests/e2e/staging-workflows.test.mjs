@@ -188,12 +188,20 @@ describe('consultations', { skip }, () => {
     assert.ok(Number(rating.data.rating) > 0, 'rating trigger did not update');
   });
 
-  test('admin consultation management: cancel via admin RPC frees the slot (previously broken in production)', async () => {
+  test('admin consultation management: admin_cancel_booking (reason required, full refund, audit) frees the slot', async () => {
     const { data: slots } = await A.user1.c.from('consultation_slots').select('id').eq('expert_id', A.expertId).eq('is_booked', false)
       .gt('slot_date', istFromNow(0).date).order('slot_date', { ascending: false }).limit(1);
     const booking = (await demoBook(A.user1.c, slots[0].id, 'admin cancel test')).data;
-    assert.ok((await A.user1.c.rpc('admin_update_booking_status', { p_booking_id: booking, p_new_status: 'Cancelled' })).error, 'farmer used admin RPC');
-    assert.ifError((await A.admin.c.rpc('admin_update_booking_status', { p_booking_id: booking, p_new_status: 'Cancelled', p_cancellation_reason: 'staging admin test' })).error);
+    assert.ok((await A.user1.c.rpc('admin_cancel_booking', { p_booking_id: booking, p_reason: 'x' })).error, 'farmer used admin RPC');
+    // migration 18: the generic status RPC no longer cancels (no refund/audit path there)
+    assert.match((await A.admin.c.rpc('admin_update_booking_status', { p_booking_id: booking, p_new_status: 'Cancelled', p_cancellation_reason: 'x' })).error?.message || '', /admin_cancel_booking/);
+    assert.match((await A.admin.c.rpc('admin_cancel_booking', { p_booking_id: booking, p_reason: '   ' })).error?.message || '', /reason/);
+    const res = await A.admin.c.rpc('admin_cancel_booking', { p_booking_id: booking, p_reason: 'staging admin test' });
+    assert.ifError(res.error);
+    assert.equal(res.data.full_refund, true);
+    const b = (await A.admin.c.from('consultation_bookings').select('status, cancelled_by_role, cancellation_rule, refund_paise').eq('id', booking).single()).data;
+    const fee = (await A.admin.c.from('demo_payments').select('amount_paise').eq('booking_id', booking).single()).data.amount_paise;
+    assert.deepEqual([b.status, b.cancelled_by_role, b.cancellation_rule, b.refund_paise], ['Cancelled', 'admin', 'admin_cancel', fee]);
     const s = await A.user1.c.from('consultation_slots').select('is_booked').eq('id', slots[0].id).single();
     assert.equal(s.data.is_booked, false);
   });
@@ -250,7 +258,7 @@ describe('realtime', { skip }, () => {
     } finally {
       await c.removeChannel(ch);
       const b = await A.admin.c.from('consultation_bookings').select('status').eq('id', booking).single();
-      if (b.data?.status === 'Booked') await A.admin.c.rpc('admin_update_booking_status', { p_booking_id: booking, p_new_status: 'Cancelled', p_cancellation_reason: 'realtime test cleanup' });
+      if (b.data?.status === 'Booked') await A.admin.c.rpc('admin_cancel_booking', { p_booking_id: booking, p_reason: 'realtime test cleanup' });
     }
   });
 });

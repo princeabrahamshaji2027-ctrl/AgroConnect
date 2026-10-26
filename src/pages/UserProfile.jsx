@@ -2,12 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import { PostCard } from '../components/Card';
 import { Button } from '../components/Button';
-import InputField from '../components/InputField';
+import InputField, { FieldError, FormMessage } from '../components/InputField';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import Dialog from '../components/Dialog';
 import ComingSoon from '../components/ComingSoon';
 import BottomSheet from '../components/BottomSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
 import { validatePdfFile, validateRequiredText } from '../utils/validation';
+import { ProfileSkeleton, LoadError } from '../components/Skeleton';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -22,12 +25,15 @@ export default function UserProfile({
   onProfileClick,
   onPeaAIClick,
   onLogout,
-  onShowToast
+  onShowToast,
+  onOpenChat
 }) {
   const [user, setUser] = useState(null);
   const [userPosts, setUserPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [openingChat, setOpeningChat] = useState(false);
 
   // Expert application state
   const [expertAppStatus, setExpertAppStatus] = useState(null);
@@ -58,6 +64,29 @@ export default function UserProfile({
   const [isSellerOpen, setIsSellerOpen] = useState(false);
   const [isComingSoonOpen, setIsComingSoonOpen] = useState(false);
   const [shopName, setShopName] = useState('');
+  // inline validation for the expert application (3 steps) and the seller form
+  const kycValues = { qualification, degree, experience, specialization, institution, expertBio, shopName };
+  const kyc1 = useFormValidation({
+    qualification: rules.required('Please enter your highest qualification.'),
+    degree: rules.required('Please enter your degree or major.'),
+    experience: (val) => {
+      if (!String(val ?? '').trim()) return 'Please enter your years of experience.';
+      const n = Number(val);
+      return Number.isInteger(n) && n >= 0 && n <= 70 ? null : 'Enter a whole number of years between 0 and 70.';
+    },
+    specialization: rules.required('Please enter your specialization.'),
+    institution: rules.required('Please enter your institution or university.'),
+  });
+  const kyc3 = useFormValidation({ expertBio: rules.required('Please enter your professional biography.') });
+  const sellerV = useFormValidation({ shopName: rules.required('Please enter your shop name.') });
+  const [cvError, setCvError] = useState(null);
+  const [kycFormError, setKycFormError] = useState(null);
+  const [sellerFormError, setSellerFormError] = useState(null);
+  const bindKyc = (v, key, setter) => ({
+    value: kycValues[key],
+    onChange: (e) => { setter(e.target.value); v.changed(key, { ...kycValues, [key]: e.target.value }); },
+    ...v.field(key, kycValues),
+  });
   const [sellerSubmitting, setSellerSubmitting] = useState(false);
   const [expertSubmitting, setExpertSubmitting] = useState(false);
 
@@ -68,11 +97,17 @@ export default function UserProfile({
       if (!targetUserId) return;
 
       // Fetch profile
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', targetUserId)
-        .single();
+        .maybeSingle();
+      if (profileError) throw profileError;
+      if (!profile) {
+        setLoadError('This profile is not available.');
+        return;
+      }
+      setLoadError(null);
 
       if (profile) {
         setUser({
@@ -154,6 +189,8 @@ export default function UserProfile({
       }
     } catch (err) {
       console.error(err);
+      // keep a profile that is already on screen; only the first load shows the error
+      setLoadError(/fetch|network/i.test(err?.message || '') ? 'No connection. Check your connection and try again.' : 'Could not load this profile.');
     } finally {
       setLoading(false);
     }
@@ -168,6 +205,19 @@ export default function UserProfile({
     document.addEventListener('visibilitychange', handleFocus);
     return () => document.removeEventListener('visibilitychange', handleFocus);
   }, [userId]);
+
+  // Anyone can message anyone: connected users chat normally, otherwise the first message is a message request.
+  const handleMessage = async () => {
+    if (!user || openingChat || !onOpenChat) return;
+    setOpeningChat(true);
+    const { data, error } = await supabase.rpc('get_or_create_conversation', { p_other: user.id });
+    setOpeningChat(false);
+    if (error) {
+      if (onShowToast) onShowToast(/fetch|network/i.test(error.message || '') ? 'No connection. Please try again.' : (error.message || 'Could not open the chat.'));
+      return;
+    }
+    onOpenChat({ id: data.conversation_id, otherUserId: user.id, name: user.name, avatar: user.avatar, state: data.state });
+  };
 
   const handleToggleConnect = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -194,7 +244,7 @@ export default function UserProfile({
         if (onShowToast) onShowToast(`🤝 Connected with ${user.name}!`);
       }
     } catch (err) {
-      alert(`Connect action failed: ${err.message}`);
+      if (onShowToast) onShowToast(/fetch|network/i.test(err.message || '') ? 'No connection. Please try again.' : `Could not update the connection: ${err.message}`);
     }
   };
 
@@ -206,14 +256,11 @@ export default function UserProfile({
 
   const handleNextKycStep = () => {
     if (kycStep === 1) {
-      if (!qualification || !degree || !experience || !specialization || !institution) {
-        alert('Please fill out all required professional details.');
-        return;
-      }
+      if (!kyc1.validateAll(kycValues)) return;
       setKycStep(2);
     } else if (kycStep === 2) {
       if (!cvFile) {
-        alert('Please upload your CV/Resume file.');
+        setCvError('Please upload your CV or resume (PDF).');
         return;
       }
       setKycStep(3);
@@ -224,8 +271,9 @@ export default function UserProfile({
     const file = e.target.files?.[0];
     if (!file) return;
     const pdfVal = await validatePdfFile(file, 5);
+    setCvError(null);
     if (!pdfVal.isValid) {
-      alert(pdfVal.error);
+      setCvError(pdfVal.error);
       setCvFile(null);
       setCvFileName('');
       if (cvInputRef.current) cvInputRef.current.value = '';
@@ -240,14 +288,10 @@ export default function UserProfile({
   };
 
   const handleKycSubmit = async () => {
-    if (!expertBio.trim()) {
-      alert('Please enter your professional biography.');
-      return;
-    }
-    if (!cvFile) {
-      alert('CV file is required.');
-      return;
-    }
+    if (expertSubmitting) return;
+    setKycFormError(null);
+    if (!kyc3.validateAll(kycValues)) return;
+    if (!cvFile) { setKycStep(2); setCvError('Please upload your CV or resume (PDF).'); return; }
 
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (!authUser) return;
@@ -282,7 +326,7 @@ export default function UserProfile({
       setIsKycOpen(false);
       if (onShowToast) onShowToast('📋 Expert application submitted! Awaiting Admin approval.');
     } catch (err) {
-      alert(`Submission failed: ${err.message}`);
+      setKycFormError(/fetch|network/i.test(err.message || '') ? 'No connection. Your application was not sent — please try again.' : err.message);
     } finally {
       setExpertSubmitting(false);
     }
@@ -294,10 +338,9 @@ export default function UserProfile({
   };
 
   const handleSellerSubmit = async () => {
-    if (!shopName.trim()) {
-      alert('Please enter your shop name.');
-      return;
-    }
+    if (sellerSubmitting) return;
+    setSellerFormError(null);
+    if (!sellerV.validateAll(kycValues)) return;
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (!authUser) return;
 
@@ -313,8 +356,7 @@ export default function UserProfile({
       
       if (error) {
         if (error.code === '23505' || error.message?.includes('unique') || error.message?.includes('duplicate')) {
-          alert("You've already applied to become a seller.");
-          setIsSellerOpen(false);
+          setSellerFormError("You've already applied to become a seller.");
           return;
         }
         throw error;
@@ -324,17 +366,22 @@ export default function UserProfile({
       setIsSellerOpen(false);
       if (onShowToast) onShowToast('🏪 Seller application submitted! Awaiting Admin approval.');
     } catch (err) {
-      alert(`Seller registration failed: ${err.message}`);
+      setSellerFormError(/fetch|network/i.test(err.message || '') ? 'No connection. Please try again.' : `Seller registration failed: ${err.message}`);
     } finally {
       setSellerSubmitting(false);
     }
   };
 
 
-  if (loading || !user) {
+  if (!user) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)' }}>
-        <span style={{ color: 'var(--primary-green)' }}>Loading profile...</span>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-dark)' }}>
+        {userId !== 'user1' && <Header title="Profile" showBack onBackClick={onCancelView} />}
+        {loading ? <ProfileSkeleton /> : (
+          <div style={{ padding: '24px 16px' }}>
+            <LoadError message={loadError || 'Could not load this profile.'} onRetry={() => { setLoading(true); fetchProfile(); }} />
+          </div>
+        )}
       </div>
     );
   }
@@ -436,13 +483,26 @@ export default function UserProfile({
                 Edit Profile
               </Button>
             ) : (
-              <Button
-                variant={isConnected ? "secondary" : "primary"}
-                onClick={handleToggleConnect}
-                style={{ width: '100%', padding: '12px', borderRadius: '14px', fontSize: '14px', fontWeight: '700' }}
-              >
-                {isConnected ? 'Connected ✓' : 'Connect'}
-              </Button>
+              <div className="profile-actions">
+                <Button
+                  variant={isConnected ? "secondary" : "primary"}
+                  onClick={handleToggleConnect}
+                  style={{ flex: 1, padding: '12px', borderRadius: '14px', fontSize: '14px', fontWeight: '700' }}
+                >
+                  {isConnected ? 'Connected ✓' : 'Connect'}
+                </Button>
+                {onOpenChat && !user.isBanned && (
+                  <Button
+                    variant="secondary"
+                    icon="chat"
+                    onClick={handleMessage}
+                    disabled={openingChat}
+                    style={{ flex: 1, padding: '12px', borderRadius: '14px', fontSize: '14px', fontWeight: '700' }}
+                  >
+                    {openingChat ? 'Opening…' : 'Message'}
+                  </Button>
+                )}
+              </div>
             )}
 
             {isOwnProfile && resignationPending && (
@@ -513,11 +573,11 @@ export default function UserProfile({
       >
         {kycStep === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '12px 0', maxHeight: '55vh', overflowY: 'auto', paddingRight: '4px' }}>
-            <InputField label="Highest Qualification" placeholder="e.g. M.Sc. in Agriculture" value={qualification} onChange={(e) => setQualification(e.target.value)} required />
-            <InputField label="Degree / Major" placeholder="e.g. Plant Pathology" value={degree} onChange={(e) => setDegree(e.target.value)} required />
-            <InputField label="Years of Experience" type="number" placeholder="e.g. 5" value={experience} onChange={(e) => setExperience(e.target.value)} required />
-            <InputField label="Specialization" placeholder="e.g. Soil health, Rice diseases" value={specialization} onChange={(e) => setSpecialization(e.target.value)} required />
-            <InputField label="Institution / University" placeholder="e.g. Punjab Agricultural University" value={institution} onChange={(e) => setInstitution(e.target.value)} required />
+            <InputField label="Highest Qualification" placeholder="e.g. M.Sc. in Agriculture" {...bindKyc(kyc1, 'qualification', setQualification)} />
+            <InputField label="Degree / Major" placeholder="e.g. Plant Pathology" {...bindKyc(kyc1, 'degree', setDegree)} />
+            <InputField label="Years of Experience" type="number" inputMode="numeric" placeholder="e.g. 5" {...bindKyc(kyc1, 'experience', setExperience)} />
+            <InputField label="Specialization" placeholder="e.g. Soil health, Rice diseases" {...bindKyc(kyc1, 'specialization', setSpecialization)} />
+            <InputField label="Institution / University" placeholder="e.g. Punjab Agricultural University" {...bindKyc(kyc1, 'institution', setInstitution)} />
             <InputField label="License No. (Optional)" placeholder="e.g. LIC-92019-IN" value={license} onChange={(e) => setLicense(e.target.value)} />
             <InputField label="LinkedIn URL (Optional)" placeholder="https://linkedin.com/in/username" value={linkedin} onChange={(e) => setLinkedin(e.target.value)} />
           </div>
@@ -544,26 +604,21 @@ export default function UserProfile({
                 </>
               )}
             </div>
+            <FieldError>{cvError}</FieldError>
             <Button onClick={() => setKycStep(1)} variant="text" style={{ fontSize: '12px', alignSelf: 'flex-start' }}>← Back</Button>
           </div>
         )}
 
         {kycStep === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '12px 0' }}>
-            <div className="form-group">
-              <label className="form-label">Professional Bio</label>
-              <div className="input-container" style={{ padding: '8px 16px' }}>
-                <textarea
-                  className="input-field"
-                  rows="4"
-                  value={expertBio}
-                  onChange={(e) => setExpertBio(e.target.value)}
-                  placeholder="Example: Agricultural scientist with 12 years of experience in rice diseases, organic farming and irrigation management."
-                  style={{ resize: 'none', height: '100px' }}
-                  required
-                />
-              </div>
-            </div>
+            <InputField
+              label="Professional Bio"
+              as="textarea"
+              rows={4}
+              placeholder="Example: Agricultural scientist with 12 years of experience in rice diseases, organic farming and irrigation management."
+              {...bindKyc(kyc3, 'expertBio', setExpertBio)}
+            />
+            <FormMessage>{kycFormError}</FormMessage>
             {expertSubmitting && <div style={{ color: 'var(--primary-green)', fontSize: '13px', textAlign: 'center' }}>⏳ Uploading CV and submitting...</div>}
             <Button onClick={() => setKycStep(2)} variant="text" style={{ fontSize: '12px', alignSelf: 'flex-start' }}>← Back</Button>
           </div>
@@ -585,11 +640,10 @@ export default function UserProfile({
           <InputField
             label="Shop Name *"
             placeholder="e.g. Ramesh Agro Supplies"
-            value={shopName}
-            onChange={(e) => setShopName(e.target.value)}
             icon="storefront"
-            required
+            {...bindKyc(sellerV, 'shopName', setShopName)}
           />
+          <FormMessage>{sellerFormError}</FormMessage>
           {sellerSubmitting && <div style={{ color: 'var(--primary-green)', fontSize: '13px', textAlign: 'center' }}>⏳ Submitting seller application...</div>}
         </div>
       </Dialog>

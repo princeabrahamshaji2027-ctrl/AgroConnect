@@ -163,6 +163,47 @@ test.describe('change list 2026-10-25 (staging)', () => {
     }
   });
 
+  test('dashboard: Pending Reports is red only when something is pending; messaging shows counts only', async ({ page }) => {
+    await signIn(page);
+    const status = page.getByTestId('reports-status');
+    await expect(status).toBeVisible();
+    const count = Number((await page.locator('div', { has: page.getByText('Pending Reports', { exact: true }) }).locator('.font-headline-xl').first().textContent()).trim());
+    if (count > 0) await expect(status).toHaveText(/Requires Moderation/);
+    else {
+      await expect(status).toHaveText(/No pending reports/);
+      await expect(status).not.toHaveClass(/e74c3c/);
+    }
+    await expect(page.getByTestId('messaging-stats')).toContainText('Conversations');
+  });
+
+  test('consultations: cancellation filter and refund cards; admin cancel needs a written reason (form only, nothing cancelled)', async ({ page }) => {
+    await signIn(page);
+    await page.getByText('Bookings & Payments', { exact: true }).first().click();
+    const summary = page.getByTestId('consultation-summary');
+    for (const label of ['Refunds recorded (simulated)', 'Net platform commission', 'Net expert share']) {
+      await expect(summary.getByText(label)).toBeVisible({ timeout: 15_000 });
+    }
+    await page.getByLabel('Cancellation').selectOption('farmer_late');
+    await page.getByRole('button', { name: 'Apply filters' }).click();
+    const rows = page.locator('tbody tr[title="Open details"]');
+    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    await rows.first().click();
+    const dialog = page.getByRole('dialog', { name: 'Consultation details' });
+    await expect(dialog.getByTestId('cancellation-detail')).toContainText('less than 14 h');
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await page.getByRole('button', { name: 'Reset' }).click();
+    await page.getByLabel('Booking status').selectOption('Booked');
+    await page.getByRole('button', { name: 'Apply filters' }).click();
+    const booked = page.locator('tbody tr[title="Open details"]');
+    if (await booked.count() === 0) return;
+    await booked.first().click();
+    await dialog.getByRole('button', { name: 'Cancel consultation' }).click();
+    await dialog.getByRole('button', { name: 'Cancel with full refund' }).click();
+    await expect(dialog.getByText('Please enter a cancellation reason.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Keep booking' }).click();
+    await expect(dialog.getByRole('button', { name: 'Cancel consultation' })).toBeVisible();
+  });
+
   test('experts: verified experts have a Remove expert action; reports has the expert leave requests tab', async ({ page }) => {
     await signIn(page);
     await page.getByText('Experts', { exact: true }).first().click();

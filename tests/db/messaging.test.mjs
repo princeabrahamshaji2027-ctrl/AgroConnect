@@ -10,7 +10,7 @@ import { createDb, as, ids, seed, addBookingStartingIn, rejects, ALL } from './h
 const one = async (db, sql, params) => (await db.query(sql, params)).rows[0];
 const count = async (db, sql, params) => Number((await db.query(sql, params)).rows[0].count);
 const setup = async () => {
-  const db = await createDb({ proposed: [...ALL, '09', '11', '12', '13', '14', '15', '16', '17', '18'] });
+  const db = await createDb({ proposed: [...ALL, '09', '11', '12', '13', '14', '15', '16', '17', '18', '19'] });
   await seed(db);
   return db;
 };
@@ -52,6 +52,20 @@ describe('17 — requests versus normal chats', () => {
     await send(db, ids.farmerA, c.conversation_id, 'hi');
     assert.equal((await list(db, ids.farmerB))[0].state, 'normal');
     assert.equal((await badges(db, ids.farmerB)).inbox_unread, 1);
+  });
+
+  test('19: a chat that was normal while connected stays normal after one side disconnects', async () => {
+    const db = await setup();
+    await follow(db, ids.farmerA, ids.farmerB); await follow(db, ids.farmerB, ids.farmerA);
+    const c = await open(db, ids.farmerA, ids.farmerB);
+    await send(db, ids.farmerA, c.conversation_id, 'hi friend');
+    await db.query('delete from public.followers where follower_id = $1 and following_id = $2', [ids.farmerB, ids.farmerA]);
+    assert.equal((await list(db, ids.farmerB))[0]?.state, 'normal', 'chat fell back into requests');
+    assert.equal((await list(db, ids.farmerB, 'requests')).length, 0);
+    // a chat that never had a message while connected is still a request after the disconnect
+    const d = await open(db, ids.farmerA, ids.expertUser);
+    await send(db, ids.farmerA, d.conversation_id, 'first contact');
+    assert.equal((await list(db, ids.expertUser, 'requests'))[0]?.state, 'request_incoming');
   });
 
   test('decline hides the request and silences it; accept via the request button works; only the recipient answers', async () => {

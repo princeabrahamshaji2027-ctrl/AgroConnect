@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import InputField from '../components/InputField';
+import { useFormValidation } from '../utils/useFormValidation';
 import { Button } from '../components/Button';
 import { validateRequiredText, validateImageFile, validateVideoFile } from '../utils/validation';
 import { supabase } from '../supabase';
@@ -138,18 +139,16 @@ export default function CreatePost({ onPublish, onCancel }) {
   };
 
   // ─── Publish handler ─────────────────────────────────────────────────────────
+  const postValues = { title, content };
+  const v = useFormValidation({
+    title: (val) => { const r = validateRequiredText(val || '', 'Post title', 2, 150); return r.isValid ? null : (val && val.trim() ? r.error : 'Please enter a post title.'); },
+    content: (val) => { const r = validateRequiredText(val || '', 'Description', 5, 3000); return r.isValid ? null : (val && val.trim() ? r.error : 'Please enter a description.'); },
+  });
+
   const handlePublish = async (e) => {
     e.preventDefault();
-    const titleVal = validateRequiredText(title, 'Post Title', 2, 150);
-    if (!titleVal.isValid) {
-      alert(titleVal.error);
-      return;
-    }
-    const contentVal = validateRequiredText(content, 'Caption / Description', 5, 3000);
-    if (!contentVal.isValid) {
-      alert(contentVal.error);
-      return;
-    }
+    if (uploading) return;
+    if (!v.validateAll(postValues)) return;
 
     setUploading(true);
     setUploadError(null);
@@ -219,7 +218,7 @@ export default function CreatePost({ onPublish, onCancel }) {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Header title="Create Post" showBack onBackClick={onCancel} />
 
-      <form onSubmit={handlePublish} className="page-container fade-in" style={{ gap: '16px', overflowY: 'auto', marginTop: 'var(--header-height)' }}>
+      <form onSubmit={handlePublish} noValidate className="page-container fade-in" style={{ gap: '16px', overflowY: 'auto', marginTop: 'var(--header-height)' }}>
 
         {/* Media Type Selector */}
         <div className="form-group">
@@ -356,26 +355,22 @@ export default function CreatePost({ onPublish, onCancel }) {
           label="Post Title *"
           placeholder="e.g. Pest damage on Rice crop leaves"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => { setTitle(e.target.value); v.changed('title', { ...postValues, title: e.target.value }); }}
           icon="title"
-          required
+          maxLength={150}
+          {...v.field('title', postValues)}
         />
 
         {/* Caption */}
-        <div className="form-group">
-          <label className="form-label">Caption / Description *</label>
-          <div className="input-container" style={{ padding: '8px 16px' }}>
-            <textarea
-              className="input-field"
-              rows="4"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Provide detailed coordinates, symptoms, fertilizer history, etc."
-              style={{ resize: 'none', height: '90px' }}
-              required
-            />
-          </div>
-        </div>
+        <InputField
+          label="Caption / Description *"
+          as="textarea"
+          rows={4}
+          value={content}
+          placeholder="Provide detailed coordinates, symptoms, fertilizer history, etc."
+          onChange={(e) => { setContent(e.target.value); v.changed('content', { ...postValues, content: e.target.value }); }}
+          {...v.field('content', postValues)}
+        />
 
         {/* Category */}
         <div className="form-group">

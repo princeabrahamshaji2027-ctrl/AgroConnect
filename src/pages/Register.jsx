@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import InputField from '../components/InputField';
+import InputField, { FormMessage } from '../components/InputField';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import { Button } from '../components/Button';
 import GoogleButton from '../components/GoogleButton';
 import PasswordRequirements from '../components/PasswordRequirements';
@@ -7,9 +9,7 @@ import {
   validatePassword,
   validateUsername,
   validateEmail,
-  validateName,
-  validatePhone,
-  validateRequiredText
+  validateName
 } from '../utils/validation';
 import './pages.css';
 
@@ -32,7 +32,33 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
   const [longitude, setLongitude] = useState('');
   const [address, setAddress] = useState('');
 
-  const [error, setError] = useState('');
+  const [error, setError] = useState('');   // sign-up / network errors only; field errors appear under each field
+
+  const values = { name, username, email, phone, password, confirmPassword, country, state, district, city };
+  const v = useFormValidation({
+    name: rules.name('Full name'),
+    username: rules.username,
+    email: rules.email,
+    phone: rules.phone(true),
+    password: (val, all) => {
+      if (!val) return 'Please enter a password.';
+      const res = validatePassword(val, (all.email || '').trim(), (all.username || '').trim());
+      return res.isValid ? null : res.errors[0];
+    },
+    confirmPassword: rules.confirmPassword('password'),
+    country: rules.required('Please enter your country.'),
+    state: rules.required('Please enter your state.'),
+    district: rules.required('Please enter your district.'),
+    city: rules.required('Please enter your city or village.'),
+  });
+  const setters = { name: setName, username: setUsername, email: setEmail, phone: setPhone, password: setPassword,
+    confirmPassword: setConfirmPassword, country: setCountry, state: setState, district: setDistrict, city: setCity };
+  // props for a validated field: value, onChange (re-checks once touched), error, ref, onBlur
+  const bind = (key) => ({
+    value: values[key],
+    onChange: (e) => { setters[key](e.target.value); v.changed(key, { ...values, [key]: e.target.value }); },
+    ...v.field(key, values),
+  });
 
   const handleGPSDetect = () => {
     if (navigator.geolocation) {
@@ -74,57 +100,10 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
     e.preventDefault();
     setError('');
 
-    // 1. Validate Full Name
+    if (!v.validateAll(values)) return;   // every field shows its own message; the first one gets focus
     const nameVal = validateName(name, 'Full Name');
-    if (!nameVal.isValid) {
-      setError(nameVal.error);
-      return;
-    }
-
-    // 2. Validate Username
     const usernameVal = validateUsername(username);
-    if (!usernameVal.isValid) {
-      setError(usernameVal.error);
-      return;
-    }
-
-    // 3. Validate Email
     const emailVal = validateEmail(email);
-    if (!emailVal.isValid) {
-      setError(emailVal.error);
-      return;
-    }
-
-    // 4. Validate Phone
-    const phoneVal = validatePhone(phone, true);
-    if (!phoneVal.isValid) {
-      setError(phoneVal.error);
-      return;
-    }
-
-    // 5. Validate Password Policy
-    const pwdVal = validatePassword(password, emailVal.value, usernameVal.value);
-    if (!pwdVal.isValid) {
-      setError(pwdVal.errors[0]);
-      return;
-    }
-
-    // 6. Confirm Password Match
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-
-    // 7. Validate Location Fields
-    const countryVal = validateRequiredText(country, 'Country');
-    const stateVal = validateRequiredText(state, 'State');
-    const districtVal = validateRequiredText(district, 'District');
-    const cityVal = validateRequiredText(city, 'City / Village');
-
-    if (!countryVal.isValid || !stateVal.isValid || !districtVal.isValid || !cityVal.isValid) {
-      setError('Please fill in all required location details.');
-      return;
-    }
 
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: emailVal.value,
@@ -177,69 +156,53 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
         <p className="auth-subtitle">Join thousands of farmers sharing knowledge</p>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {error && (
-          <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255, 90, 90, 0.1)', padding: '12px', borderRadius: '12px', fontSize: '13px', textAlign: 'center' }}>
-            {error}
-          </div>
-        )}
+      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <FormMessage>{error}</FormMessage>
 
         <InputField
           label="Full Name"
           placeholder="Enter your full name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          {...bind('name')}
           icon="badge"
-          required
         />
 
         <InputField
           label="Username"
           placeholder="Choose a username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          {...bind('username')}
           icon="person"
-          required
         />
 
         <InputField
           label="Email Address"
           type="email"
           placeholder="Enter your email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          {...bind('email')}
           icon="mail"
-          required
         />
 
         <InputField
           label="Phone Number"
           type="tel"
           placeholder="Enter your phone number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          {...bind('phone')}
           icon="phone"
-          required
         />
 
         <InputField
           label="Password"
           type="password"
           placeholder="Create password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          {...bind('password')}
           icon="lock"
-          required
         />
 
         <InputField
           label="Confirm Password"
           type="password"
           placeholder="Confirm password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
+          {...bind('confirmPassword')}
           icon="lock_reset"
-          required
         />
 
         <PasswordRequirements
@@ -268,37 +231,29 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
         <InputField
           label="Country"
           placeholder="e.g. India"
-          value={country}
-          onChange={(e) => setCountry(e.target.value)}
+          {...bind('country')}
           icon="public"
-          required
         />
 
         <InputField
           label="State"
           placeholder="e.g. Punjab"
-          value={state}
-          onChange={(e) => setState(e.target.value)}
+          {...bind('state')}
           icon="map"
-          required
         />
 
         <InputField
           label="District"
           placeholder="e.g. Ludhiana"
-          value={district}
-          onChange={(e) => setDistrict(e.target.value)}
+          {...bind('district')}
           icon="explore"
-          required
         />
 
         <InputField
           label="City / Village"
           placeholder="e.g. Gill Village"
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
+          {...bind('city')}
           icon="home_pin"
-          required
         />
 
         <div style={{ display: 'flex', gap: '12px' }}>

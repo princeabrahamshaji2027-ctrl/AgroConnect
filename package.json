@@ -16,7 +16,7 @@
     "test:rls": "node tests/rls-anon-probe.mjs",
     "test:db": "node --test tests/db/*.test.mjs",
     "test:e2e": "playwright test",
-    "test:staging": "node --test --test-concurrency=1 tests/e2e/staging-anon.test.mjs tests/e2e/staging-api.test.mjs tests/e2e/staging-workflows.test.mjs tests/e2e/staging-media.test.mjs tests/e2e/staging-catchup.test.mjs tests/e2e/staging-auth.test.mjs tests/e2e/staging-meet-payment-push.test.mjs"
+    "test:staging": "node --test --test-concurrency=1 tests/e2e/staging-anon.test.mjs tests/e2e/staging-api.test.mjs tests/e2e/staging-workflows.test.mjs tests/e2e/staging-media.test.mjs tests/e2e/staging-catchup.test.mjs tests/e2e/staging-auth.test.mjs tests/e2e/staging-meet-payment-push.test.mjs tests/e2e/staging-cancel-messaging.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

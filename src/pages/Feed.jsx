@@ -502,7 +502,7 @@ export default function Feed({
         if (onShowToast) onShowToast('🤝 Connected!');
       }
     } catch (err) {
-      alert(`Connect action failed: ${err.message}`);
+      if (onShowToast) onShowToast(/fetch|network/i.test(err?.message || '') ? 'No connection. Please try again.' : `Connect action failed: ${err.message}`);
     }
   };
 

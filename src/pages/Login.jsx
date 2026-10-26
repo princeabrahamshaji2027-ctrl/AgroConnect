@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import InputField from '../components/InputField';
+import InputField, { FormMessage } from '../components/InputField';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import { Button } from '../components/Button';
 import GoogleButton from '../components/GoogleButton';
 import './pages.css';
@@ -9,7 +11,9 @@ import { supabase } from '../supabase';
 export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin, onForgotPassword }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState('');   // sign-in / network errors only (field errors are shown under the fields)
+  const v = useFormValidation({ username: rules.emailOrUsername, password: rules.password });
+  const values = { username, password };
 
   const getErrorMessage = (err) => {
     if (!err) return '';
@@ -24,11 +28,8 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
     const cleanUser = username.trim();
     const cleanPwd = password;
 
-    if (!cleanUser || !cleanPwd) {
-      setError('Please fill in both email/username and password.');
-      return;
-    }
     setError('');
+    if (!v.validateAll(values)) return;
 
     try {
       // Check if user is using simple username or email
@@ -78,20 +79,17 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
         <p className="auth-subtitle">Log in to connect with your farming community</p>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {error && (
-          <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255, 90, 90, 0.1)', padding: '12px', borderRadius: '12px', fontSize: '13px', textAlign: 'center' }}>
-            {error}
-          </div>
-        )}
+      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <FormMessage>{error}</FormMessage>
 
         <InputField
           label="Email or Username"
           placeholder="Enter your email or username"
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={(e) => { setUsername(e.target.value); v.changed('username', { ...values, username: e.target.value }); }}
           icon="person"
-          required
+          autoComplete="username"
+          {...v.field('username', values)}
         />
 
         <InputField
@@ -99,9 +97,10 @@ export default function Login({ onLoginSuccess, onGoToRegister, onGoToAdminLogin
           type="password"
           placeholder="Enter your password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => { setPassword(e.target.value); v.changed('password', { ...values, password: e.target.value }); }}
           icon="lock"
-          required
+          autoComplete="current-password"
+          {...v.field('password', values)}
         />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', marginTop: '-4px' }}>

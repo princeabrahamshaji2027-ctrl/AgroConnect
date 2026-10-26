@@ -9,7 +9,7 @@ import { createDb, as, ids, seed, signUp, addBookingStartingIn, rejects, ALL } f
 const one = async (db, sql, params) => (await db.query(sql, params)).rows[0];
 const count = async (db, sql, params) => Number((await db.query(sql, params)).rows[0].count);
 const setup = async () => {
-  const db = await createDb({ proposed: [...ALL, '09', '11', '12', '13', '14', '15', '16', '17', '18'] });
+  const db = await createDb({ proposed: [...ALL, '09', '11', '12', '13', '14', '15', '16', '17', '18', '19'] });
   await seed(db);
   return db;
 };

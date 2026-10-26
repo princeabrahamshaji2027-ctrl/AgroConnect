@@ -98,3 +98,17 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 | Staging/production separation | yes | PASS | PASS | PASS | STG | bundles + APK contain only the staging ref; staging APK installs as `com.agroconnect.app.staging` next to production | — | — |
 | Rotation / back button | — | — | PASS (phone) | — | STG | device-smoke: landscape renders signed-in UI; one back press keeps the app in front | — | — |
 | Admin SPA deep-link refresh | yes | — | — | PASS (vite preview) | LOCAL | admin.spec | Render needs a rewrite rule | configure on Render (owner) |
+
+## Validation, cancellation & refunds, messaging — 2026-10-26 (staging only)
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| Inline form validation (red border + reason under the field, first invalid field focused, no popups) | yes | see TEST_RESULTS §2026-10-26 | UNTESTED | PASS (admin cancel reason) | LOCAL + STG | unit `form-rules.test.mjs`; regression guard: no `alert()` in app pages/components; Playwright login/register checks | Feed keeps one deliberate `confirm()` before deleting a comment | phone check |
+| Cancellation terms shown before confirming (server quote) | yes | see TEST_RESULTS | UNTESTED | — | STG | `consultation_cancellation_quote`; staging-cancel-messaging (quote = result) | — | phone check |
+| Farmer ≥ 14 h → full refund; < 14 h → expert ceil(F/2), 2 % kept, rest refunded | yes | — | UNTESTED | PASS | LOCAL + STG | DB `cancellation.test.mjs`; staging-cancel-messaging | refunds are simulated bookkeeping (`Pending`) | — |
+| Expert / admin / no-show → full refund, any time | yes | — | UNTESTED | PASS | LOCAL + STG | same; admin cancel needs a reason, audit-logged | — | — |
+| Admin: refund cards, net commission/share, cancellation filter, cancellation detail | yes | — | — | see TEST_RESULTS | STG | admin.spec | — | — |
+| Messaging: anyone → anyone; connected-to-each-other or shared booking = normal chat; otherwise message request | yes | see TEST_RESULTS | UNTESTED | — | LOCAL + STG | DB `messaging.test.mjs` (9); staging-cancel-messaging (2) | each farmer pair can show the request flow on staging only once (conversations are kept) | phone check |
+| Requests icon (top right) with blue dot; Accept / Decline / reply-accepts | yes | see TEST_RESULTS | UNTESTED | — | STG | app.spec message-request test | — | phone check |
+| Message notifications + push (no message text in push) | yes | — | UNTESTED | counts only | LOCAL + STG | DB tests; push delivery still needs Firebase | Firebase not configured | owner |
+| Skeleton loading + error/Retry (Catch Up lists, Chat, Notifications, Profile, Edit Profile) | yes | see TEST_RESULTS | UNTESTED | — | STG | — | — | phone check |
+| Admin Pending Reports / Expert Apps red only when something is pending | yes | — | — | see TEST_RESULTS | STG | admin.spec + regression guard | — | — |

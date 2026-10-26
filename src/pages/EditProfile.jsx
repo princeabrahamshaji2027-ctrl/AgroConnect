@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
-import InputField from '../components/InputField';
+import InputField, { FieldError, FormMessage } from '../components/InputField';
+import { FormSkeleton } from '../components/Skeleton';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import { Button } from '../components/Button';
 import { validateImageFile, validateName, validatePhone } from '../utils/validation';
 import { supabase } from '../supabase';
@@ -15,6 +18,15 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
   const [avatar, setAvatar] = useState('');
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState(null);
+  const [formError, setFormError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const values = { name, phone, bio };
+  const v = useFormValidation({
+    name: rules.name('Full name'),
+    phone: rules.phone(false),
+    bio: rules.maxLength(500, 'Please keep your bio under 500 characters.'),
+  });
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -47,9 +59,10 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setAvatarError(null);
     const imgVal = await validateImageFile(file, 5);
     if (!imgVal.isValid) {
-      alert(imgVal.error);
+      setAvatarError(imgVal.error);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -81,7 +94,7 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
         .eq('id', authUser.id);
 
     } catch (err) {
-      alert(`Avatar upload failed: ${err.message}`);
+      setAvatarError(`The picture could not be uploaded. ${/fetch|network/i.test(err.message || '') ? 'Check your connection and try again.' : err.message}`);
     } finally {
       setUploading(false);
     }
@@ -89,22 +102,16 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-
+    if (saving) return;
+    setFormError(null);
+    if (!v.validateAll(values)) return;
     const nameVal = validateName(name, 'Full Name');
-    if (!nameVal.isValid) {
-      alert(nameVal.error);
-      return;
-    }
-
     const phoneVal = validatePhone(phone, false);
-    if (!phoneVal.isValid) {
-      alert(phoneVal.error);
-      return;
-    }
+    setSaving(true);
 
     const { data: { user: authUser } } = await supabase.auth.getUser();
     const targetUserId = userId === 'user1' ? authUser?.id : userId;
-    if (!targetUserId) return;
+    if (!targetUserId) { setSaving(false); return; }
 
     const { error } = await supabase
       .from('profiles')
@@ -117,8 +124,9 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
       })
       .eq('id', targetUserId);
 
+    setSaving(false);
     if (error) {
-      alert(`Failed to save profile: ${error.message}`);
+      setFormError(/fetch|network/i.test(error.message || '') ? 'No connection. Your changes were not saved — please try again.' : `Your profile could not be saved: ${error.message}`);
       return;
     }
 
@@ -137,8 +145,9 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
 
   if (loading) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-dark)' }}>
-        <span style={{ color: 'var(--primary-green)' }}>Loading profile...</span>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Header title="Edit Profile" showBack onBackClick={onCancel} />
+        <FormSkeleton fields={5} />
       </div>
     );
   }
@@ -147,7 +156,8 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Header title="Edit Profile" showBack onBackClick={onCancel} />
       
-      <form onSubmit={handleSave} className="page-container fade-in" style={{ gap: '16px' }}>
+      <form onSubmit={handleSave} noValidate className="page-container fade-in" style={{ gap: '16px' }}>
+        <FormMessage>{formError}</FormMessage>
         
         {/* Avatar change */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '16px 0' }}>
@@ -171,14 +181,15 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
           >
             {uploading ? '⏳ Uploading...' : 'Change Profile Picture'}
           </button>
+          <FieldError>{avatarError}</FieldError>
         </div>
 
         <InputField
           label="Full Name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => { setName(e.target.value); v.changed('name', { ...values, name: e.target.value }); }}
           icon="badge"
-          required
+          {...v.field('name', values)}
         />
 
         <InputField
@@ -186,23 +197,18 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           icon="person"
-          required
           disabled
         />
 
-        <div className="form-group">
-          <label className="form-label">Bio</label>
-          <div className="input-container" style={{ padding: '8px 16px' }}>
-            <textarea
-              className="input-field"
-              rows="3"
-              style={{ resize: 'none', height: '80px' }}
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              placeholder="Tell us about yourself..."
-            />
-          </div>
-        </div>
+        <InputField
+          label="Bio"
+          as="textarea"
+          rows={3}
+          value={bio}
+          placeholder="Tell us about yourself..."
+          onChange={(e) => { setBio(e.target.value); v.changed('bio', { ...values, bio: e.target.value }); }}
+          {...v.field('bio', values)}
+        />
 
         <InputField
           label="Location"
@@ -214,16 +220,18 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
         <InputField
           label="Phone Number"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          type="tel"
+          onChange={(e) => { setPhone(e.target.value); v.changed('phone', { ...values, phone: e.target.value }); }}
           icon="phone"
+          {...v.field('phone', values)}
         />
 
         <div style={{ display: 'flex', gap: '12px', marginTop: '16px', paddingBottom: '32px' }}>
           <Button variant="secondary" onClick={onCancel} style={{ flex: 1 }}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" style={{ flex: 1 }}>
-            Save Changes
+          <Button type="submit" variant="primary" disabled={saving} style={{ flex: 1 }}>
+            {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         </div>
 

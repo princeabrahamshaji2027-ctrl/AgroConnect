@@ -1,21 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from '../components/Header';
-import InputField from '../components/InputField';
-import { Button } from '../components/Button';
+import { FieldError } from '../components/InputField';
+import { ConversationRowSkeleton, MessageBubblesSkeleton, SkeletonGroup, LoadError } from '../components/Skeleton';
 import { supabase } from '../supabase';
 import './pages.css';
 
+// Text-only messaging. Everything goes through the messaging RPCs (migration 17); the app never writes the tables.
+// Users connected to each other (or who share a consultation) chat normally. Anyone else's first message lands in the
+// recipient's "Message requests" box (the icon at the top right, with a blue dot while requests are waiting) until the
+// recipient accepts it or replies; Decline hides it without telling the sender.
+
+const MAX_LEN = 2000;
+const PAGE = 30;
+
 const formatTimeAgo = (dateStr) => {
   if (!dateStr) return '';
-  const date = new Date(dateStr);
-  const seconds = Math.floor((new Date() - date) / 1000);
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
   if (seconds < 60) return 'Just now';
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 };
 
 const formatTime12h = (timeStr) => {
@@ -29,386 +35,528 @@ const formatTime12h = (timeStr) => {
   return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
 };
 
-export default function Chat({ onNavigateToBooking, onProfileClick }) {
-  const [currentUserId, setCurrentUserId] = useState(null);
-  const [conversations, setConversations] = useState([]);
-  const [activeConv, setActiveConv] = useState(null);
+const newClientId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  // older Android WebViews: RFC 4122 v4 from getRandomValues
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
+
+const isNetworkError = (err) => /Failed to fetch|NetworkError|network|Load failed/i.test(err?.message || '');
+const friendlyError = (err, fallback) => (isNetworkError(err) ? 'No connection. Please try again.' : (err?.message || fallback));
+
+const toRow = (r) => ({
+  id: r.conversation_id,
+  otherUserId: r.other_user_id,
+  name: r.other_name || 'User',
+  avatar: r.other_avatar || '/profile-placeholder.png',
+  state: r.state,
+  lastMsg: r.last_message || '',
+  lastAt: r.last_message_at,
+  lastFromMe: r.last_from_me,
+  unread: r.unread_count || 0,
+});
+
+// Adds or replaces messages by id (and replaces the optimistic copy that has the same client_id); keeps time order.
+const mergeMessages = (list, incoming) => {
+  const out = [...list];
+  for (const m of incoming) {
+    const i = out.findIndex((x) => x.id === m.id || (m.client_id && x.client_id === m.client_id && x.sender_id === m.sender_id));
+    if (i >= 0) out[i] = { ...m, _status: undefined };
+    else out.push(m);
+  }
+  return out.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+};
+
+export default function Chat({ onNavigateToBooking, onProfileClick, onShowToast, focusConversation, clearFocusConversation }) {
+  const [me, setMe] = useState(null);
+  const [box, setBox] = useState('inbox');              // 'inbox' | 'requests'
+  const [lists, setLists] = useState({ inbox: [], requests: [] });
+  const [listState, setListState] = useState('loading'); // loading | ready | error
+  const [badges, setBadges] = useState({ inbox_unread: 0, requests: 0, requests_unread: 0 });
+
+  const [active, setActive] = useState(null);           // { id, otherUserId, name, avatar, state }
   const [messages, setMessages] = useState([]);
-  const [newMsg, setNewMsg] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef(null);
-  const realtimeChannelRef = useRef(null);
+  const [msgState, setMsgState] = useState('idle');     // idle | loading | ready | error
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [sendError, setSendError] = useState(null);
+  const [answering, setAnswering] = useState(false);
 
-  // ─── Fetch current user & conversations ────────────────────────────────
-  useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      setCurrentUserId(user.id);
-      await fetchConversations(user.id);
-    };
-    init();
+  const activeRef = useRef(null);
+  activeRef.current = active;
+  const meRef = useRef(null);
+  meRef.current = me;
+  const endRef = useRef(null);
+  const areaRef = useRef(null);
+  const inputRef = useRef(null);
+  const stickToBottomRef = useRef(true);
+  const refreshTimerRef = useRef(null);
+  const listSeqRef = useRef(0);
+
+  // ─── conversation lists + badges (one round trip each, in parallel) ────────────────────────────────────────────
+  const loadLists = useCallback(async () => {
+    const seq = ++listSeqRef.current;
+    const [inbox, requests, b] = await Promise.all([
+      supabase.rpc('list_conversations', { p_box: 'inbox', p_limit: 50 }),
+      supabase.rpc('list_conversations', { p_box: 'requests', p_limit: 50 }),
+      supabase.rpc('chat_badges'),
+    ]);
+    if (seq !== listSeqRef.current) return null;
+    const err = inbox.error || requests.error || b.error;
+    if (err) {
+      console.error('Error loading conversations:', err.message);
+      setListState((s) => (s === 'ready' ? 'ready' : 'error'));
+      return null;
+    }
+    const next = { inbox: (inbox.data || []).map(toRow), requests: (requests.data || []).map(toRow) };
+    setLists(next);
+    setBadges(b.data || { inbox_unread: 0, requests: 0, requests_unread: 0 });
+    setListState('ready');
+    return next;
   }, []);
 
-  const fetchConversations = async (uid) => {
-    setLoading(true);
-    try {
-      // Fetch conversations where this user is user_one or user_two
-      const { data, error } = await supabase
-        .from('conversations')
-        .select(`
-          id,
-          user_one,
-          user_two,
-          last_message_at,
-          messages (
-            content,
-            created_at,
-            sender_id
-          )
-        `)
-        .or(`user_one.eq.${uid},user_two.eq.${uid}`)
-        .order('last_message_at', { ascending: false });
+  const scheduleRefresh = useCallback(() => {
+    clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => { loadLists(); }, 400);
+  }, [loadLists]);
 
-      if (error) throw error;
-
-      // For each conversation, fetch the other participant's profile
-      const enriched = await Promise.all((data || []).map(async (conv) => {
-        const otherUserId = conv.user_one === uid ? conv.user_two : conv.user_one;
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('id, full_name, profile_image_path')
-          .eq('id', otherUserId)
-          .single();
-
-        // Get the last message from the messages array
-        const sortedMessages = (conv.messages || []).sort(
-          (a, b) => new Date(b.created_at) - new Date(a.created_at)
-        );
-        const lastMsg = sortedMessages[0];
-
-        return {
-          id: conv.id,
-          otherUserId,
-          name: profile?.full_name || 'User',
-          avatar: profile?.profile_image_path || '/profile-placeholder.png',
-          lastMsg: lastMsg?.content || 'Say hi!',
-          lastTime: lastMsg ? formatTimeAgo(lastMsg.created_at) : '',
-        };
-      }));
-
-      setConversations(enriched);
-    } catch (err) {
-      console.error('Error fetching conversations:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ─── Open conversation thread ───────────────────────────────────────────
-  const openConversation = async (conv) => {
-    setActiveConv(conv);
-    await fetchMessages(conv.id);
-
-    // Subscribe to realtime messages for this conversation
-    if (realtimeChannelRef.current) {
-      supabase.removeChannel(realtimeChannelRef.current);
-    }
-    const channel = supabase
-      .channel(`chat-${conv.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conv.id}` },
-        (payload) => {
-          setMessages(prev => [...prev, payload.new]);
-        }
-      )
-      .subscribe();
-    realtimeChannelRef.current = channel;
-  };
-
-  const fetchMessages = async (convId) => {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('id, content, sender_id, created_at, is_read, message_type, metadata')
-      .eq('conversation_id', convId)
-      .order('created_at', { ascending: true });
-
-    if (!error) setMessages(data || []);
-  };
-
-  // Cleanup realtime on unmount or when leaving thread
   useEffect(() => {
+    let channel = null;
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled || !session?.user) return;
+      setMe(session.user.id);
+      loadLists();
+      // One channel for all my conversations: RLS only delivers messages of conversations I am part of.
+      channel = supabase
+        .channel(`chat-inbox-${session.user.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+          const m = payload.new;
+          if (!m) return;
+          const cur = activeRef.current;
+          if (cur && m.conversation_id === cur.id) {
+            setMessages((prev) => mergeMessages(prev, [m]));
+            if (m.sender_id !== meRef.current) supabase.rpc('mark_conversation_read', { p_conversation_id: cur.id }).then(() => {});
+          }
+          scheduleRefresh();
+        })
+        .subscribe();
+    })();
     return () => {
-      if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current);
-      }
+      cancelled = true;
+      clearTimeout(refreshTimerRef.current);
+      if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [loadLists, scheduleRefresh]);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  // ─── thread ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  const openConversation = useCallback(async (conv) => {
+    setActive(conv);
+    setMessages([]);
+    setDraft('');
+    setSendError(null);
+    setHasMore(false);
+    setMsgState('loading');
+    stickToBottomRef.current = true;
+    const { data, error } = await supabase.rpc('get_messages', { p_conversation_id: conv.id, p_limit: PAGE });
+    if (activeRef.current?.id !== conv.id) return;
+    if (error) {
+      console.error('Error loading messages:', error.message);
+      setMsgState('error');
+      return;
     }
+    setMessages(data || []);
+    setHasMore((data || []).length >= PAGE);
+    setMsgState('ready');
+    if ((data || []).some((m) => m.sender_id !== meRef.current && !m.read_at)) {
+      await supabase.rpc('mark_conversation_read', { p_conversation_id: conv.id });
+      scheduleRefresh();
+    }
+  }, [scheduleRefresh]);
+
+  const loadOlder = async () => {
+    if (!active || loadingOlder || messages.length === 0) return;
+    setLoadingOlder(true);
+    stickToBottomRef.current = false;
+    const area = areaRef.current;
+    const prevHeight = area ? area.scrollHeight : 0;
+    const { data, error } = await supabase.rpc('get_messages', {
+      p_conversation_id: active.id, p_before: messages[0].created_at, p_limit: PAGE,
+    });
+    setLoadingOlder(false);
+    if (error) { if (onShowToast) onShowToast(friendlyError(error, 'Could not load earlier messages.')); return; }
+    setMessages((prev) => mergeMessages(prev, data || []));
+    setHasMore((data || []).length >= PAGE);
+    // keep the reader where they were instead of jumping
+    requestAnimationFrame(() => { if (area) area.scrollTop += area.scrollHeight - prevHeight; });
+  };
+
+  // Opened from a profile ("Message"), a push notification or a notification row.
+  useEffect(() => {
+    if (!focusConversation?.id || !me) return;
+    let cancelled = false;
+    (async () => {
+      let found = [...lists.inbox, ...lists.requests].find((c) => c.id === focusConversation.id);
+      if (!found) {
+        const fresh = await loadLists();
+        if (cancelled) return;
+        found = fresh && [...fresh.inbox, ...fresh.requests].find((c) => c.id === focusConversation.id);
+      }
+      const conv = found || (focusConversation.otherUserId ? {
+        id: focusConversation.id,
+        otherUserId: focusConversation.otherUserId,
+        name: focusConversation.name || 'User',
+        avatar: focusConversation.avatar || '/profile-placeholder.png',
+        state: focusConversation.state || 'normal',
+      } : null);
+      if (clearFocusConversation) clearFocusConversation();
+      if (conv) {
+        if (conv.state === 'request_incoming') setBox('requests');
+        openConversation(conv);
+      } else if (onShowToast) {
+        onShowToast('This conversation is no longer available.');
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusConversation?.id, me]);
+
+  useEffect(() => {
+    if (stickToBottomRef.current && endRef.current) endRef.current.scrollIntoView({ block: 'end' });
+    stickToBottomRef.current = true;
   }, [messages]);
 
-  // ─── Send message ──────────────────────────────────────────────────────
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMsg.trim() || !activeConv || !currentUserId || sending) return;
-
-    setSending(true);
-    const msgContent = newMsg.trim();
-    setNewMsg('');
-
-    try {
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: activeConv.id,
-          sender_id: currentUserId,
-          content: msgContent,
-          is_read: false,
-        });
-      if (error) throw error;
-
-      // Update last_message_at on the conversation
-      await supabase
-        .from('conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', activeConv.id);
-
-    } catch (err) {
-      console.error('Failed to send message:', err);
-      setNewMsg(msgContent); // Restore on error
-    } finally {
-      setSending(false);
+  // ─── sending ────────────────────────────────────────────────────────────────────────────────────────────────────
+  const deliver = async (conv, content, clientId) => {
+    const { data, error } = await supabase.rpc('send_message', {
+      p_conversation_id: conv.id, p_content: content, p_client_id: clientId,
+    });
+    if (activeRef.current?.id !== conv.id) { scheduleRefresh(); return; }
+    if (error) {
+      setMessages((prev) => prev.map((m) => (m.client_id === clientId && m._status ? { ...m, _status: 'failed', _error: friendlyError(error, 'Not sent.') } : m)));
+      return;
     }
+    setMessages((prev) => mergeMessages(prev, [data]));
+    // replying to a request accepts it
+    if (conv.state === 'request_incoming') setActive((a) => (a && a.id === conv.id ? { ...a, state: 'normal' } : a));
+    scheduleRefresh();
+  };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    if (!active || !me) return;
+    const content = draft.trim();
+    if (!content) { setSendError('Please type a message.'); inputRef.current?.focus(); return; }
+    if (content.length > MAX_LEN) { setSendError(`Messages can be up to ${MAX_LEN} characters.`); inputRef.current?.focus(); return; }
+    setSendError(null);
+    const clientId = newClientId();
+    setMessages((prev) => [...prev, {
+      id: `local-${clientId}`, client_id: clientId, sender_id: me, content, message_type: 'text',
+      created_at: new Date().toISOString(), _status: 'sending',
+    }]);
+    setDraft('');
+    deliver(active, content, clientId);
+  };
+
+  const retrySend = (m) => {
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, _status: 'sending', _error: undefined } : x)));
+    deliver(active, m.content, m.client_id);   // same client id: the server stores it once even if the first try arrived
+  };
+
+  // ─── requests ───────────────────────────────────────────────────────────────────────────────────────────────────
+  const answerRequest = async (accept) => {
+    if (!active || answering) return;
+    setAnswering(true);
+    const { data, error } = await supabase.rpc('respond_to_message_request', { p_conversation_id: active.id, p_accept: accept });
+    setAnswering(false);
+    if (error) { if (onShowToast) onShowToast(friendlyError(error, 'Could not answer the request.')); return; }
+    if (accept) {
+      setActive((a) => (a ? { ...a, state: data || 'normal' } : a));
+      setBox('inbox');
+    } else {
+      setActive(null);
+      setMessages([]);
+      if (onShowToast) onShowToast('Request declined.');
+    }
+    loadLists();
   };
 
   const handleBack = () => {
-    if (realtimeChannelRef.current) {
-      supabase.removeChannel(realtimeChannelRef.current);
-      realtimeChannelRef.current = null;
-    }
-    setActiveConv(null);
+    setActive(null);
     setMessages([]);
-    if (currentUserId) fetchConversations(currentUserId);
+    setMsgState('idle');
+    loadLists();
   };
 
+  // ─── rendering ──────────────────────────────────────────────────────────────────────────────────────────────────
+  const renderCancellation = (m) => {
+    const meta = m.metadata || {};
+    const offered = Array.isArray(meta.offered_slots) ? meta.offered_slots : [];
+    const mine = m.sender_id === me;
+    const title = mine ? 'You cancelled this meeting'
+      : `Meeting cancelled by ${meta.expert_name || active?.name || 'the other person'}`;
+    return (
+      <div
+        key={m.id}
+        className={`chat-bubble ${mine ? 'sent' : 'received'}`}
+        style={{
+          width: '88%', maxWidth: '320px', backgroundColor: '#1E1E1E', border: '1.5px solid var(--error)',
+          borderRadius: '16px', padding: '14px', color: 'var(--text-primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error)', fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>event_busy</span>
+          <span>{title}</span>
+        </div>
+        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', backgroundColor: '#262626', padding: '8px 10px', borderRadius: '8px', marginBottom: '10px', lineHeight: '1.4', overflowWrap: 'anywhere' }}>
+          <strong style={{ color: 'var(--text-primary)' }}>Reason:</strong> {meta.cancellation_reason || m.content}
+        </div>
+        {offered.length > 0 && !mine && (
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary-green)', marginBottom: '8px' }}>
+              Select an offered date/time to book again:
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {offered.map((slot, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => onNavigateToBooking && onNavigateToBooking({ expertId: meta.expert_id, date: slot.date, time: slot.time })}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '10px',
+                    backgroundColor: 'rgba(136, 217, 130, 0.12)', border: '1px solid var(--primary-green)', color: 'var(--primary-green)',
+                    fontSize: '12px', fontWeight: '700', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>schedule</span>
+                    <span>{slot.date} • {formatTime12h(slot.time)}</span>
+                  </span>
+                  <span style={{ fontSize: '11px', textDecoration: 'underline' }}>Book Slot →</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <span style={{ fontSize: '10px', opacity: 0.6, display: 'block', marginTop: '8px', textAlign: 'right' }}>{formatTimeAgo(m.created_at)}</span>
+      </div>
+    );
+  };
+
+  const renderMessage = (m) => {
+    if (m.message_type === 'cancellation_reschedule') return renderCancellation(m);
+    const mine = m.sender_id === me;
+    return (
+      <div key={m.id} className={`chat-bubble ${mine ? 'sent' : 'received'}`} style={m._status === 'failed' ? { opacity: 0.75 } : undefined}>
+        {/* plain text only: React escapes it, nothing is rendered as HTML */}
+        <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.content}</div>
+        <span style={{ fontSize: '10px', opacity: 0.6, display: 'block', marginTop: '4px', textAlign: 'right' }}>
+          {m._status === 'sending' ? 'Sending…' : m._status === 'failed' ? '' : formatTimeAgo(m.created_at)}
+        </span>
+        {m._status === 'failed' && (
+          <div role="alert" style={{ fontSize: '11px', color: 'var(--error)', display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <span>{m._error || 'Not sent.'}</span>
+            <button type="button" onClick={() => retrySend(m)} style={{ background: 'none', border: 'none', color: 'var(--error)', textDecoration: 'underline', fontSize: '11px', fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const requestsButton = (
+    <button
+      type="button"
+      onClick={() => setBox(box === 'requests' ? 'inbox' : 'requests')}
+      aria-label={badges.requests > 0 ? `Message requests, ${badges.requests} waiting` : 'Message requests'}
+      aria-pressed={box === 'requests'}
+      style={{
+        position: 'relative', background: box === 'requests' ? 'rgba(136, 217, 130, 0.15)' : 'transparent', border: 'none',
+        borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', color: 'var(--text-primary)',
+      }}
+    >
+      <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>mark_chat_unread</span>
+      {badges.requests > 0 && (
+        <span
+          data-testid="requests-dot"
+          aria-hidden="true"
+          style={{ position: 'absolute', top: '6px', right: '6px', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#2F80ED', border: '2px solid var(--bg-dark)' }}
+        />
+      )}
+    </button>
+  );
+
+  if (!active) {
+    const rows = lists[box];
+    return (
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Header title={box === 'requests' ? 'Message requests' : 'Messages'} showBack={box === 'requests'} onBackClick={() => setBox('inbox')} rightActions={requestsButton} />
+        <div className="page-container fade-in">
+          {box === 'requests' && (
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45, margin: '4px 0 8px' }}>
+              Messages from people you are not connected with. They won't know you have seen them until you accept or reply.
+            </p>
+          )}
+          {listState === 'loading' ? (
+            <SkeletonGroup label="Loading conversations…" style={{ gap: 0 }}>
+              {[0, 1, 2, 3, 4].map((i) => <ConversationRowSkeleton key={i} />)}
+            </SkeletonGroup>
+          ) : listState === 'error' ? (
+            <LoadError message="Could not load your messages. Check your connection." onRetry={() => { setListState('loading'); loadLists(); }} />
+          ) : rows.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--border-color)', display: 'block', marginBottom: '12px' }}>
+                {box === 'requests' ? 'mark_chat_unread' : 'chat_bubble'}
+              </span>
+              <p style={{ fontSize: '14px', fontWeight: '600' }}>{box === 'requests' ? 'No message requests' : 'No messages yet'}</p>
+              {box === 'inbox' && <p style={{ fontSize: '12px', marginTop: '6px' }}>Open someone's profile and tap Message to start a conversation.</p>}
+            </div>
+          ) : (
+            <div className="chat-thread-list">
+              {rows.map((conv) => (
+                <div
+                  key={conv.id}
+                  className="chat-thread-item"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openConversation(conv)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') openConversation(conv); }}
+                >
+                  <img
+                    src={conv.avatar}
+                    alt=""
+                    className="chat-thread-avatar"
+                    onClick={(e) => { if (onProfileClick && conv.otherUserId) { e.stopPropagation(); onProfileClick(conv.otherUserId); } }}
+                  />
+                  <div className="chat-thread-details" style={{ minWidth: 0 }}>
+                    <div className="chat-thread-name-row">
+                      <span className="chat-thread-name" style={{ fontWeight: conv.unread > 0 ? 800 : 600 }}>{conv.name}</span>
+                      <span className="chat-thread-time">{formatTimeAgo(conv.lastAt)}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <p className="chat-thread-msg" style={{ flex: 1, color: conv.unread > 0 ? 'var(--text-primary)' : undefined }}>
+                        {conv.lastFromMe ? 'You: ' : ''}{conv.lastMsg}
+                      </p>
+                      {conv.state === 'request_outgoing' && (
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1px 6px', flexShrink: 0 }}>Request sent</span>
+                      )}
+                      {conv.unread > 0 && (
+                        <span aria-label={`${conv.unread} unread`} style={{ minWidth: '18px', height: '18px', borderRadius: '9px', backgroundColor: 'var(--primary-green)', color: '#121212', fontSize: '10px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', flexShrink: 0 }}>
+                          {conv.unread > 99 ? '99+' : conv.unread}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const isIncomingRequest = active.state === 'request_incoming';
+  const remaining = MAX_LEN - draft.length;
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {!activeConv ? (
-        /* ── Conversation List ─────────────────────────── */
-        <>
-          <Header title="Messages" />
-          <div className="page-container fade-in">
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
-                <span className="material-symbols-outlined" style={{ animation: 'spin 1.5s infinite linear', fontSize: '28px', color: 'var(--primary-green)' }}>progress_activity</span>
-                <p style={{ marginTop: '8px', fontSize: '13px' }}>Loading conversations...</p>
-              </div>
-            ) : conversations.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '48px', color: 'var(--border-color)', display: 'block', marginBottom: '12px' }}>chat_bubble</span>
-                <p style={{ fontSize: '14px', fontWeight: '600' }}>No messages yet</p>
-                <p style={{ fontSize: '12px', marginTop: '6px' }}>Start a conversation by visiting a user's profile.</p>
-              </div>
-            ) : (
-              <div className="chat-thread-list">
-                {conversations.map(conv => (
-                  <div
-                    key={conv.id}
-                    className="chat-thread-item"
-                    onClick={() => openConversation(conv)}
-                  >
-                    <img
-                      src={conv.avatar}
-                      alt={conv.name}
-                      className="chat-thread-avatar"
-                      onClick={(e) => { if (onProfileClick && conv.otherUserId) { e.stopPropagation(); onProfileClick(conv.otherUserId); } }}
-                    />
-                    <div className="chat-thread-details">
-                      <div className="chat-thread-name-row">
-                        <span className="chat-thread-name">{conv.name}</span>
-                        <span className="chat-thread-time">{conv.lastTime}</span>
-                      </div>
-                      <p className="chat-thread-msg">{conv.lastMsg}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        /* ── Active Chat Thread ────────────────────────── */
-        <>
-          <Header
-            title={activeConv.name}
-            showBack
-            onBackClick={handleBack}
-            rightActions={
-              <img
-                src={activeConv.avatar}
-                alt={activeConv.name}
-                onClick={() => onProfileClick && activeConv.otherUserId && onProfileClick(activeConv.otherUserId)}
-                style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', cursor: 'pointer' }}
-              />
-            }
+      <Header
+        title={active.name}
+        showBack
+        onBackClick={handleBack}
+        rightActions={
+          <img
+            src={active.avatar}
+            alt={`${active.name}'s profile`}
+            onClick={() => onProfileClick && active.otherUserId && onProfileClick(active.otherUserId)}
+            style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', cursor: 'pointer' }}
           />
+        }
+      />
 
-          <div className="page-container fade-in" style={{ paddingBottom: '76px', display: 'flex', flexDirection: 'column' }}>
-            <div className="chat-messages-area">
-              {messages.map(m => {
-                const isCancellation = m.message_type === 'cancellation_reschedule' || (m.metadata && m.metadata.offered_slots);
+      <div className="page-container fade-in" style={{ paddingBottom: isIncomingRequest ? '190px' : '96px', display: 'flex', flexDirection: 'column' }}>
+        {active.state === 'request_outgoing' && (
+          <div className="form-message info" role="status">
+            {active.name} will see your messages as a request until they accept or reply.
+          </div>
+        )}
+        <div className="chat-messages-area" ref={areaRef}>
+          {hasMore && msgState === 'ready' && (
+            <button type="button" className="btn btn-secondary" onClick={loadOlder} disabled={loadingOlder}
+              style={{ alignSelf: 'center', padding: '6px 14px', fontSize: '12px', borderRadius: '12px' }}>
+              {loadingOlder ? 'Loading…' : 'Load earlier messages'}
+            </button>
+          )}
+          {msgState === 'loading' && <MessageBubblesSkeleton />}
+          {msgState === 'error' && <LoadError message="Could not load messages. Check your connection." onRetry={() => openConversation(active)} />}
+          {msgState === 'ready' && messages.length === 0 && (
+            <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', padding: '24px 0' }}>Say hello to {active.name}.</p>
+          )}
+          {messages.map(renderMessage)}
+          <div ref={endRef} />
+        </div>
 
-                if (isCancellation) {
-                  const meta = m.metadata || {};
-                  const offered = meta.offered_slots || [];
-                  return (
-                    <div
-                      key={m.id}
-                      className={`chat-bubble ${m.sender_id === currentUserId ? 'sent' : 'received'}`}
-                      style={{
-                        width: '88%',
-                        maxWidth: '320px',
-                        backgroundColor: '#1E1E1E',
-                        border: '1.5px solid var(--error)',
-                        borderRadius: '16px',
-                        padding: '14px',
-                        color: 'var(--text-primary)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error)', fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>
-                        <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>event_busy</span>
-                        <span>Meeting Cancelled by {meta.expert_name || 'Expert'}</span>
-                      </div>
-
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', backgroundColor: '#262626', padding: '8px 10px', borderRadius: '8px', marginBottom: '10px', lineHeight: '1.4' }}>
-                        <strong style={{ color: 'var(--text-primary)' }}>Reason:</strong> {meta.cancellation_reason || m.content}
-                      </div>
-
-                      {offered.length > 0 && (
-                        <div>
-                          <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary-green)', marginBottom: '8px' }}>
-                            📅 Select an offered date/time to reschedule:
-                          </div>
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            {offered.map((slot, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => {
-                                  if (onNavigateToBooking) {
-                                    onNavigateToBooking({
-                                      expertId: meta.expert_id,
-                                      date: slot.date,
-                                      time: slot.time
-                                    });
-                                  }
-                                }}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justify: 'space-between',
-                                  padding: '8px 12px',
-                                  borderRadius: '10px',
-                                  backgroundColor: 'rgba(136, 217, 130, 0.12)',
-                                  border: '1px solid var(--primary-green)',
-                                  color: 'var(--primary-green)',
-                                  fontSize: '12px',
-                                  fontWeight: '700',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.2s ease',
-                                  textAlign: 'left'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>schedule</span>
-                                  <span>{slot.date} • {formatTime12h(slot.time)}</span>
-                                </div>
-                                <span style={{ fontSize: '11px', textDecoration: 'underline' }}>Book Slot →</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <span style={{ fontSize: '10px', opacity: 0.6, alignSelf: 'flex-end', display: 'block', marginTop: '8px', textAlign: 'right' }}>
-                        {formatTimeAgo(m.created_at)}
-                      </span>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={m.id}
-                    className={`chat-bubble ${m.sender_id === currentUserId ? 'sent' : 'received'}`}
-                  >
-                    <div>{m.content}</div>
-                    <span style={{ fontSize: '10px', opacity: 0.6, alignSelf: 'flex-end', display: 'block', marginTop: '4px', textAlign: 'right' }}>
-                      {formatTimeAgo(m.created_at)}
-                    </span>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
+        <div
+          style={{
+            position: 'absolute', bottom: 'calc(var(--bottom-nav-height) + var(--safe-bottom) + 8px)', left: '16px', right: '16px',
+            backgroundColor: 'var(--bg-dark)', display: 'flex', flexDirection: 'column', gap: '8px',
+          }}
+        >
+          {isIncomingRequest && (
+            <div className="card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: '12px', lineHeight: 1.45, color: 'var(--text-secondary)' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>{active.name}</strong> wants to send you messages. Accept to move this chat to your inbox, or reply to accept.
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" className="btn btn-secondary" disabled={answering} onClick={() => answerRequest(false)} style={{ flex: 1, padding: '8px', borderRadius: '12px', fontSize: '13px' }}>Decline</button>
+                <button type="button" className="btn btn-primary" disabled={answering} onClick={() => answerRequest(true)} style={{ flex: 1, padding: '8px', borderRadius: '12px', fontSize: '13px' }}>Accept</button>
+              </div>
             </div>
-
-            {/* Chat Input */}
-            <form
-              onSubmit={handleSendMessage}
-              style={{
-                position: 'absolute',
-                bottom: `calc(var(--bottom-nav-height) + var(--safe-bottom) + 8px)`,
-                left: '16px',
-                right: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                backgroundColor: 'var(--bg-dark)'
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <InputField
+          )}
+          <form onSubmit={handleSend} noValidate style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className={`input-container${sendError ? ' has-error' : ''}`} style={{ flex: 1 }}>
+                <input
+                  ref={inputRef}
+                  className="input-field"
+                  aria-label="Message"
+                  aria-invalid={sendError ? true : undefined}
+                  aria-describedby={sendError ? 'chat-send-err' : undefined}
                   placeholder="Type a message..."
-                  value={newMsg}
-                  onChange={(e) => setNewMsg(e.target.value)}
+                  value={draft}
+                  maxLength={MAX_LEN}
+                  enterKeyHint="send"
+                  disabled={msgState !== 'ready'}
+                  onChange={(e) => { setDraft(e.target.value); if (sendError) setSendError(null); }}
                 />
               </div>
-
               <button
                 type="submit"
-                disabled={sending || !newMsg.trim()}
+                aria-label="Send message"
+                disabled={msgState !== 'ready' || !draft.trim()}
                 style={{
-                  background: sending ? 'var(--border-color)' : 'var(--primary-green)',
-                  border: 'none',
-                  color: '#121212',
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: sending ? 'default' : 'pointer',
-                  flexShrink: 0,
-                  transition: 'background 0.2s ease',
+                  background: !draft.trim() ? 'var(--border-color)' : 'var(--primary-green)', border: 'none', color: '#121212',
+                  width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: draft.trim() ? 'pointer' : 'default', flexShrink: 0,
                 }}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
-                  {sending ? 'hourglass_top' : 'send'}
-                </span>
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>send</span>
               </button>
-            </form>
-          </div>
-        </>
-      )}
+            </div>
+            <FieldError id="chat-send-err">{sendError}</FieldError>
+            {remaining <= 200 && (
+              <p className="field-hint" aria-live="polite" style={{ textAlign: 'right' }}>{remaining} characters left</p>
+            )}
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

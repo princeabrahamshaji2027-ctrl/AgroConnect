@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
+import { ListRowSkeleton, SkeletonGroup, LoadError } from '../components/Skeleton';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -15,34 +16,36 @@ const formatTimeAgo = (dateStr) => {
   return `${days}d ago`;
 };
 
-export default function Notifications({ onGoBack, onProfileClick }) {
+const toItem = (n) => ({
+  id: n.id,
+  type: n.type,
+  message: n.message,
+  relatedId: n.related_id,
+  read: n.is_read,
+  senderName: 'AgroConnect',
+  createdAt: n.created_at,
+});
+
+export default function Notifications({ onGoBack, onProfileClick, onOpenChat, onOpenBooking }) {
   const [notifications, setNotifications] = useState([]);
+  const [loadState, setLoadState] = useState('loading'); // loading | ready | error
 
   const fetchNotifications = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: notifsData } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (notifsData) {
-        setNotifications(notifsData.map(n => ({
-          id: n.id,
-          type: n.type,
-          message: n.message,
-          relatedId: n.related_id,
-          read: n.is_read,
-          senderName: 'AgroConnect',
-          time: formatTimeAgo(n.created_at)
-        })));
-      }
-    } catch (err) {
-      console.error(err);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id, type, message, related_id, is_read, created_at')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) {
+      console.error('Error loading notifications:', error.message);
+      setLoadState((s) => (s === 'ready' ? 'ready' : 'error'));
+      return;
     }
+    setNotifications((data || []).map(toItem));
+    setLoadState('ready');
   };
 
   useEffect(() => {
@@ -50,7 +53,8 @@ export default function Notifications({ onGoBack, onProfileClick }) {
 
     // Realtime: update list when a new notification is inserted
     let channel = null;
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user;
       if (!user) return;
       channel = supabase
         .channel('notifications-realtime')
@@ -59,15 +63,7 @@ export default function Notifications({ onGoBack, onProfileClick }) {
           { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
           (payload) => {
             if (!payload.new) return;
-            const n = payload.new;
-            setNotifications(prev => [{
-              id: n.id,
-              type: n.type,
-              message: n.message,
-              read: n.is_read,
-              senderName: 'AgroConnect',
-              time: 'Just now'
-            }, ...prev]);
+            setNotifications((prev) => (prev.some((x) => x.id === payload.new.id) ? prev : [toItem(payload.new), ...prev]));
           }
         )
         .subscribe();
@@ -79,22 +75,15 @@ export default function Notifications({ onGoBack, onProfileClick }) {
   }, []);
 
   const handleMarkAsRead = async (id) => {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id);
-    setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n));
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
   };
 
   const handleMarkAllRead = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', user.id);
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', session.user.id).eq('is_read', false);
   };
 
   const getIcon = (type) => {
@@ -104,6 +93,7 @@ export default function Notifications({ onGoBack, onProfileClick }) {
       case 'announcement': return 'campaign';
       case 'report': return 'report';
       case 'booking': return 'event';
+      case 'message': return 'chat';
       default: return 'notifications';
     }
   };
@@ -115,14 +105,24 @@ export default function Notifications({ onGoBack, onProfileClick }) {
       case 'announcement': return '#FFA726';
       case 'report': return '#FF5A5A';
       case 'booking': return 'var(--primary-green)';
+      case 'message': return '#2F80ED';
       default: return 'var(--text-primary)';
     }
   };
 
   const handleNotificationTap = (n) => {
-    handleMarkAsRead(n.id);
-    // Booking/system notifications carry a booking id in related_id, not a user id.
-    if (n.type === 'booking' || n.type === 'system') return;
+    if (!n.read) handleMarkAsRead(n.id);
+    // related_id holds a booking id for booking notifications and a conversation id for message notifications;
+    // both are re-read with the user's own permissions on the screen they open.
+    if (n.type === 'message') {
+      if (n.relatedId && onOpenChat) onOpenChat({ id: n.relatedId });
+      return;
+    }
+    if (n.type === 'booking') {
+      if (n.relatedId && onOpenBooking) onOpenBooking(n.relatedId);
+      return;
+    }
+    if (n.type === 'system') return;
     if (n.relatedId && onProfileClick) {
       onProfileClick(n.relatedId);
     } else if (n.type === 'announcement' && onProfileClick) {
@@ -132,24 +132,39 @@ export default function Notifications({ onGoBack, onProfileClick }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Header 
-        title="Notifications" 
+      <Header
+        title="Notifications"
+        showBack={!!onGoBack}
+        onBackClick={onGoBack}
         rightActions={
-          <button 
+          <button
             onClick={handleMarkAllRead}
+            disabled={loadState !== 'ready' || notifications.every((n) => n.read)}
             style={{ background: 'transparent', border: 'none', color: 'var(--primary-green)', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
           >
             Mark all read
           </button>
         }
       />
-      
+
       <div className="page-container fade-in">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {loadState === 'loading' && (
+            <SkeletonGroup label="Loading notifications…" style={{ gap: 0 }}>
+              {[0, 1, 2, 3, 4, 5].map((i) => <ListRowSkeleton key={i} />)}
+            </SkeletonGroup>
+          )}
+          {loadState === 'error' && (
+            <LoadError message="Could not load notifications. Check your connection." onRetry={() => { setLoadState('loading'); fetchNotifications(); }} />
+          )}
+
           {notifications.map((n) => (
-            <div 
+            <div
               key={n.id}
+              role="button"
+              tabIndex={0}
               onClick={() => handleNotificationTap(n)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleNotificationTap(n); }}
               style={{
                 display: 'flex',
                 gap: '12px',
@@ -177,14 +192,14 @@ export default function Notifications({ onGoBack, onProfileClick }) {
               )}
 
               {/* Notification icon */}
-              <div 
-                style={{ 
-                  width: '36px', 
-                  height: '36px', 
-                  borderRadius: '50%', 
-                  backgroundColor: 'rgba(255,255,255,0.05)', 
-                  display: 'flex', 
-                  alignItems: 'center', 
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  display: 'flex',
+                  alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0
                 }}
@@ -197,17 +212,17 @@ export default function Notifications({ onGoBack, onProfileClick }) {
               {/* Message & details */}
               <div style={{ flex: 1, paddingRight: '12px' }}>
                 <div style={{ fontSize: '13px', lineHeight: '1.4' }}>
-                  {n.type !== 'announcement' && n.type !== 'system' && n.type !== 'booking' && (
+                  {!['announcement', 'system', 'booking', 'message'].includes(n.type) && (
                     <strong style={{ color: 'var(--text-primary)' }}>{n.senderName} </strong>
                   )}
                   <span style={{ color: '#eeeeee' }}>{n.message}</span>
                 </div>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '6px' }}>{n.time}</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '6px' }}>{formatTimeAgo(n.createdAt)}</span>
               </div>
             </div>
           ))}
 
-          {notifications.length === 0 && (
+          {loadState === 'ready' && notifications.length === 0 && (
             <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
               No notifications to display.
             </div>

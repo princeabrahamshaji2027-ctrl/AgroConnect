@@ -170,3 +170,16 @@ and expert share forever (history and admin read the snapshot) → admin **Consu
 detail with accounting, Meet link, completion, review, notifications). Terms & Conditions page (Settings) explains the 2 %.
 User-facing screens carry no demo/mock wording by product decision; the payment is **simulated** (`transaction_type = 'simulated'`),
 which code, admin and docs state plainly: no real money moves.
+
+## 2026-10-26 — validation, cancellation & refunds, messaging (owner decisions)
+* **Validation**: `src/utils/formRules.js` (one rule per field type) + `useFormValidation` (errors after blur or submit, first invalid
+  field focused and scrolled into view) + `InputField` (`error`, `aria-invalid`, message under the field) + `FormMessage` for
+  server/network errors. All app forms converted; popups removed.
+* **Cancellation** (migration 18): server computes the terms (`consultation_cancellation_quote`) and applies them
+  (`cancel_consultation_booking`, `admin_cancel_booking`); refunds go into the append-only `demo_payment_adjustments` ledger;
+  the booking snapshot (fee, 2 %, share) is never changed. Rule details in RELEASE_CHECKLIST and Terms & Conditions.
+* **Messaging** (migrations 16, 17, 19): Chat uses RPCs only; inbox and "Message requests" (icon at the top right, blue dot);
+  Message button on profiles; notification and push taps open the conversation. Text only, 2000 characters, 30/min.
+  Assumption: a farmer and an expert who share a booking chat normally, so cancellation notes always reach the inbox.
+* **Performance**: Catch Up loads in two parallel rounds with only the needed columns (see TEST_RESULTS for the numbers);
+  reviews and shop load only when their tab opens; new indexes for upcoming/history/open slots/notifications.

@@ -310,7 +310,7 @@ def full_consultation():
         tap_where(lambda n: re.fullmatch(rf'{day}\s*\d+ open', (n.get('text') or '').strip()) is not None, f'date {day}')
         wait_text(r'Choose a time')
         assert '₹' not in ' '.join((n.get('text') or '') for n in nodes() if re.search(r'\d{2}:\d{2} [AP]M', n.get('text') or '')), 'price on a time button'
-        scroll_into_list_and_tap(f'{t12(start)} - {t12(end)}', r'Choose a time', r'Consultation Topic')
+        scroll_into_list_and_tap(f'{t12(start)} - {t12(end)}', r'Choose a time', r'Meeting description')
         shot('35_phone_time_no_price')
         tap_where(lambda n: 'Explain the problem' in (n.get('hint') or n.get('text') or n.get('content-desc') or '')
                   or (n.get('class') == 'android.widget.EditText' and n.get('password') != 'true'), 'issue field')

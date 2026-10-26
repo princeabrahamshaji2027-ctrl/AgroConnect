@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
-import InputField from '../components/InputField';
 import { Button } from '../components/Button';
 import Dialog from '../components/Dialog';
 import BottomSheet from '../components/BottomSheet';
@@ -8,6 +7,10 @@ import ExpertMenuSheet from '../components/ExpertMenuSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
 import DemoCheckout from '../components/DemoCheckout';
 import ConsultationFeeEditor from '../components/ConsultationFeeEditor';
+import InputField, { FieldError, FormMessage } from '../components/InputField';
+import { MeetingCardSkeleton, ExpertCardSkeleton, ListRowSkeleton, SkeletonGroup, LoadError } from '../components/Skeleton';
+import { rules } from '../utils/formRules';
+import { useFormValidation } from '../utils/useFormValidation';
 import { formatInr } from '../utils/money';
 import JoinMeetingButton, { meetingStartMs } from '../components/JoinMeetingButton';
 import { supabase } from '../supabase';
@@ -43,6 +46,9 @@ function formatDateYYYYMMDD(d) {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+// Today in India (slot dates are stored as Asia/Kolkata local dates).
+const todayIST = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
 
 // Open and still in the future (slots are stored as the expert's local date + time, same as this device).
 function isBookableSlot(s) {
@@ -140,6 +146,32 @@ const agreedFeeOf = (b) => {
   const list = Array.isArray(b.demo_payments) ? b.demo_payments : b.demo_payments ? [b.demo_payments] : [];
   return list.find((p) => p.status === 'succeeded')?.amount_paise ?? null;
 };
+// What cancelling now would do, as computed by the server (consultation_cancellation_quote): who keeps what.
+const istDateTime = (iso) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+function CancellationTerms({ quote, error, confirming = false }) {
+  if (error) return <div className="form-message error">{error}</div>;
+  if (!quote) return <div className="form-message info">Checking the cancellation terms…</div>;
+  if (!quote.allowed) {
+    return <div className="form-message info">This consultation can no longer be cancelled ({quote.status === 'Completed' ? 'it is completed' : 'it is already cancelled'}).</div>;
+  }
+  const fee = formatInr(quote.fee_paise);
+  let text;
+  if (quote.role === 'farmer' && quote.rule === 'farmer_early') {
+    text = <>If you cancel now you get a <strong>full refund of {fee}</strong>. Free cancellation ends {istDateTime(quote.cutoff_at)} (14 hours before the start).</>;
+  } else if (quote.role === 'farmer') {
+    text = <>The meeting starts in less than 14 hours. If you cancel now you get <strong>{formatInr(quote.refund_paise)}</strong> back;
+      {' '}{formatInr(quote.expert_keeps_paise)} goes to the expert and {formatInr(quote.platform_keeps_paise)} to AgroConnect.</>;
+  } else {
+    text = <>If you cancel, the farmer gets a <strong>full refund of {fee}</strong>.</>;
+  }
+  return (
+    <div data-testid="cancellation-terms" className={`form-message ${quote.full_refund ? 'info' : 'error'}`} style={{ fontSize: '12.5px' }}>
+      {confirming && <strong style={{ display: 'block', marginBottom: 4 }}>Before you confirm</strong>}
+      {text}
+    </div>
+  );
+}
+
 const COMMON_TIME_SLOTS = [
   '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
   '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
@@ -280,6 +312,13 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [bookingIssue, setBookingIssue] = useState('');
   const [availableSlots, setAvailableSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
+  const bookingValues = { slot: selectedSlot, bookingIssue };
+  const cancelV = useFormValidation({
+    cancelReason: rules.cancellationReason,
+    offeredSlots: (val) => (isCurrentExpertRef.current && (!val || val.length === 0) ? 'Please offer at least one alternative date and time.' : null),
+  });
+  const isCurrentExpertRef = useRef(false);
+  const bookingV = useFormValidation({ slot: rules.slot, bookingIssue: rules.meetingDescription });
 
   // Expert Slot Management & Identity States
   const [isCurrentExpert, setIsCurrentExpert] = useState(false);
@@ -298,14 +337,25 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [isCancelSheetOpen, setIsCancelSheetOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [offeredSlots, setOfferedSlots] = useState([]);
+  const cancelValues = { cancelReason, offeredSlots };
   const [offerDateInput, setOfferDateInput] = useState('');
   const [offerTimeInput, setOfferTimeInput] = useState('10:00');
   const [cancellingMeeting, setCancellingMeeting] = useState(false);
+  const [cancelQuote, setCancelQuote] = useState(null);         // server result of consultation_cancellation_quote()
+  const [cancelQuoteError, setCancelQuoteError] = useState(null);
+  const [cancelFormError, setCancelFormError] = useState(null);
 
   // Expert Edit Profile Modal state
   const [isExpertProfileEditOpen, setIsExpertProfileEditOpen] = useState(false);
   const [expertEditBio, setExpertEditBio] = useState('');
   const [expertEditSpecialization, setExpertEditSpecialization] = useState('');
+  const [expertProfileSaving, setExpertProfileSaving] = useState(false);
+  const [expertProfileError, setExpertProfileError] = useState(null);
+  const expertProfileValues = { specialization: expertEditSpecialization, bio: expertEditBio };
+  const expertProfileV = useFormValidation({
+    specialization: (val) => (!val?.trim() ? 'Please enter your specialization.' : val.trim().length > 100 ? 'Please keep it under 100 characters.' : null),
+    bio: rules.maxLength(500, 'Please keep your bio under 500 characters.'),
+  });
 
   // Expandable calendar grid for expert cards
   const [expandedExpertId, setExpandedExpertId] = useState(null);
@@ -366,9 +416,18 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [reviewingMeeting, setReviewingMeeting] = useState(null);
   const [ratingInput, setRatingInput] = useState(5);
   const [reviewTextInput, setReviewTextInput] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewFormError, setReviewFormError] = useState(null);
+  const reviewValues = { rating: ratingInput, review: reviewTextInput };
+  const reviewV = useFormValidation({ rating: rules.rating, review: rules.review });
 
   // Marketplace state
   const [products, setProducts] = useState([]);
+  const [loadState, setLoadState] = useState('loading');   // first load of the Catch Up lists: loading | ready | error
+  const loadSeqRef = useRef(0);
+  const loadStateRef = useRef('loading');
+  loadStateRef.current = loadState;
+  isCurrentExpertRef.current = isCurrentExpert;
   const [cart, setCart] = useState({});
 
   useEffect(() => {
@@ -394,17 +453,30 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     setMySlots(data || []);
   };
 
+  // Catch Up data. Everything the visible lists need is fetched in TWO parallel rounds (identity, then lists) instead
+  // of 13 sequential requests; reviews and marketplace load only when their tab is opened. A newer call wins
+  // (loadSeq), so a slow older response can never overwrite fresher data.
   const fetchData = async () => {
+    const seq = ++loadSeqRef.current;
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();   // local, no network round trip
+      const user = session?.user;
       if (!user) return;
 
-      // 0. Check if logged in user is an expert
-      const { data: myExpert } = await supabase
-        .from('experts')
-        .select('id, meeting_duration_minutes, buffer_time_minutes, is_active, specialization, consultation_fee_paise')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // 1. who am I — one parallel round
+      const [meRes, profRes, farmerRes] = await Promise.all([
+        supabase.from('experts')
+          .select('id, meeting_duration_minutes, buffer_time_minutes, is_active, specialization, consultation_fee_paise')
+          .eq('user_id', user.id).maybeSingle(),
+        supabase.from('profiles').select('full_name, profile_image_path, role, bio').eq('id', user.id).maybeSingle(),
+        supabase.from('farmer_profiles').select('id').eq('user_id', user.id).maybeSingle(),
+      ]);
+      const firstError = meRes.error || profRes.error || farmerRes.error;
+      if (firstError) throw firstError;
+      if (seq !== loadSeqRef.current) return;
+      const myExpert = meRes.data;
+      const userProf = profRes.data;
+      const farmerProfile = farmerRes.data;
 
       let activeExpertId = null;
       if (myExpert && myExpert.is_active !== false) {
@@ -416,13 +488,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         if (myExpert.meeting_duration_minutes) setMeetingDuration(myExpert.meeting_duration_minutes);
         if (myExpert.buffer_time_minutes) setBufferTime(myExpert.buffer_time_minutes);
         fetchMySlots(myExpert.id);
-
-        const { data: userProf } = await supabase
-          .from('profiles')
-          .select('full_name, profile_image_path, role, bio')
-          .eq('id', user.id)
-          .single();
-
         if (userProf) {
           setCurrentExpertProfile({
             name: userProf.full_name || 'Expert',
@@ -438,267 +503,179 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         setIsCurrentExpert(false);
         setCurrentExpertId(null);
         setCurrentExpertProfile(null);
-        const { data: me } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-        setExpertRecordMissing(me?.role === 'Expert');
+        setExpertRecordMissing(userProf?.role === 'Expert');
       }
 
-      // 1a. Fetch reviews per expert count
-      const { data: allRevs } = await supabase.from('reviews').select('expert_id');
-      const revCounts = {};
-      if (allRevs) {
-        allRevs.forEach(r => {
-          if (r.expert_id) revCounts[r.expert_id] = (revCounts[r.expert_id] || 0) + 1;
-        });
-      }
-
-      // 1b. Fetch all consultation slots for calendar view
-      const { data: allSlots } = await supabase
-        .from('consultation_slots')
-        .select('*')
-        .order('slot_date', { ascending: true })
-        .order('start_time', { ascending: true });
-
-      const slotsGrouped = {};
-      if (allSlots) {
-        allSlots.forEach(s => {
-          if (!slotsGrouped[s.expert_id]) slotsGrouped[s.expert_id] = [];
-          slotsGrouped[s.expert_id].push(s);
-        });
-      }
-      setAllExpertSlotsMap(slotsGrouped);
-
-      // 1c. Only experts with at least one open future slot are listed (no empty calendars); never yourself
-      const hasUpcomingAvailability = (expertId) => (slotsGrouped[expertId] || []).some(isBookableSlot);
-
-      const { data: expertsData } = await supabase
-        .from('experts')
-        .select(`
-          id,
-          user_id,
-          rating,
-          is_active,
-          consultation_fee_paise,
-          profiles:user_id (
-            full_name,
-            profile_image_path,
-            role,
-            bio
-          )
-        `);
-      if (expertsData) {
-        setExpertsList(
-          expertsData
-            .filter(exp => exp.is_active !== false && exp.id !== activeExpertId && hasUpcomingAvailability(exp.id))
-            .map(exp => ({
-              id: exp.id,
-              userId: exp.user_id,
-              name: exp.profiles?.full_name || 'Expert',
-              avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
-              role: exp.profiles?.role || 'Expert',
-              bio: exp.profiles?.bio || '',
-              rating: exp.rating ? Number(exp.rating).toFixed(1) : '5.0',
-              feePaise: exp.consultation_fee_paise,   // the expert's fee: the only price shown before checkout
-              reviewCount: revCounts[exp.id] || 0
-            }))
-        );
-      }
-
-      if (activeExpertId) {
-        // If expert, fetch expert's upcoming bookings
-        const { data: expBookings } = await supabase
-          .from('consultation_bookings')
-          .select(`
-            *,
+      // 2. the lists — one parallel round, only the columns the cards use
+      const upcomingCols = `id, meeting_date, meeting_time, issue_description, slot_id, status,
             consultation_slots:slot_id ( slot_date, start_time, end_time ),
             video_meetings ( meeting_link ),
-            farmer_profiles:farmer_id (
-              id,
-              user_id,
-              profiles:user_id (
-                id,
-                full_name,
-                profile_image_path
-              )
-            )
-          `)
-          .eq('expert_id', activeExpertId)
-          .eq('status', 'Booked')
-          .order('meeting_date', { ascending: true })
-          .order('meeting_time', { ascending: true });
-
-        if (expBookings) {
-          setAppointments(expBookings.map(b => ({
-            id: b.id,
-            farmerId: b.farmer_profiles?.id,
-            farmerUserId: b.farmer_profiles?.user_id || b.farmer_profiles?.profiles?.id,
-            farmerName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
-            farmerAvatar: b.farmer_profiles?.profiles?.profile_image_path || '/profile-placeholder.png',
-            expertName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
-            expertAvatar: b.farmer_profiles?.profiles?.profile_image_path || '/profile-placeholder.png',
-            topic: b.issue_description || '',
-            date: b.meeting_date,
-            time: b.meeting_time,
-            endsMs: slotEndMs(b),
-            slotId: b.slot_id,
-            meetingLink: meetingLinkOf(b),
-            status: 'upcoming'
-          })));
-        }
-      } else {
-        // Get farmer profile
-        const { data: farmerProfile } = await supabase
-          .from('farmer_profiles')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (farmerProfile) {
-          // 2. Fetch upcoming bookings for farmer
-          const { data: bookingsData } = await supabase
-            .from('consultation_bookings')
-            .select(`
-              *,
-              consultation_slots:slot_id ( slot_date, start_time, end_time ),
-              video_meetings ( meeting_link ),
-              demo_payments ( amount_paise, status ),
-              experts:expert_id (
-                id,
-                user_id,
-                profiles:user_id (
-                  id,
-                  full_name,
-                  profile_image_path
-                )
-              )
-            `)
+            demo_payments ( amount_paise, status )`;
+      const empty = Promise.resolve({ data: [], error: null });
+      const [slotsRes, expertsRes, upcomingRes, historyRes] = await Promise.all([
+        supabase.from('consultation_slots')
+          .select('id, expert_id, slot_date, start_time, end_time, is_booked')
+          .eq('is_booked', false)
+          .gte('slot_date', todayIST())
+          .order('slot_date', { ascending: true })
+          .order('start_time', { ascending: true }),
+        supabase.from('experts')
+          .select('id, user_id, rating, is_active, consultation_fee_paise, profiles:user_id ( full_name, profile_image_path, role, bio ), reviews ( count )'),
+        activeExpertId
+          ? supabase.from('consultation_bookings')
+            .select(`${upcomingCols}, farmer_profiles:farmer_id ( id, user_id, profiles:user_id ( id, full_name, profile_image_path ) )`)
+            .eq('expert_id', activeExpertId).eq('status', 'Booked')
+            .order('meeting_date', { ascending: true }).order('meeting_time', { ascending: true })
+          : farmerProfile
+            ? supabase.from('consultation_bookings')
+              .select(`${upcomingCols}, experts:expert_id ( id, user_id, profiles:user_id ( id, full_name, profile_image_path ) )`)
+              .eq('farmer_id', farmerProfile.id).eq('status', 'Booked')
+              .order('meeting_date', { ascending: true }).order('meeting_time', { ascending: true })
+            : empty,
+        farmerProfile
+          ? supabase.from('consultation_bookings')
+            .select(`id, meeting_date, meeting_time, issue_description, status, completion_source, cancellation_reason,
+                     cancellation_rule, cancelled_by_role, refund_paise,
+                     demo_payments ( amount_paise, status ), reviews ( id ),
+                     experts:expert_id ( id, user_id, profiles:user_id ( full_name, profile_image_path ) )`)
             .eq('farmer_id', farmerProfile.id)
-            .eq('status', 'Booked')
-            .order('meeting_date', { ascending: true });
+            .neq('status', 'Booked')
+            .order('meeting_date', { ascending: false })
+            .order('meeting_time', { ascending: false })   // newest first, also within one day
+            .limit(100)                                     // bounded; the list shows 15 at a time
+          : empty,
+      ]);
+      const listError = slotsRes.error || expertsRes.error || upcomingRes.error || historyRes.error;
+      if (listError) throw listError;
+      if (seq !== loadSeqRef.current) return;
 
-          if (bookingsData) {
-            setAppointments(bookingsData.map(appt => ({
-              id: appt.id,
-              expertId: appt.experts?.id,
-              expertUserId: appt.experts?.user_id,
-              expertName: appt.experts?.profiles?.full_name || 'Expert',
-              expertAvatar: appt.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
-              topic: appt.issue_description || '',
-              date: appt.meeting_date,
-              time: appt.meeting_time,
-              endsMs: slotEndMs(appt),
-              meetingLink: meetingLinkOf(appt),
-              agreedFeePaise: agreedFeeOf(appt),
-              status: 'upcoming'
-            })));
-          }
-        }
-      }
-
-      // 3. Fetch past bookings for history
-      const { data: farmerProfileForHist } = await supabase
-        .from('farmer_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (farmerProfileForHist) {
-        const { data: histData } = await supabase
-          .from('consultation_bookings')
-          .select(`
-            *,
-            demo_payments ( amount_paise, status ),
-            experts:expert_id (
-              id,
-              user_id,
-              profiles:user_id (
-                full_name,
-                profile_image_path
-              )
-            )
-          `)
-          .eq('farmer_id', farmerProfileForHist.id)
-          .neq('status', 'Booked')
-          .order('meeting_date', { ascending: false })
-          .order('meeting_time', { ascending: false }); // newest first, also within one day
-
-        const { data: reviewsData } = await supabase
-          .from('reviews')
-          .select('booking_id');
-        const reviewedBookingIds = new Set(reviewsData?.map(r => r.booking_id) || []);
-
-        if (histData) {
-          const seen = new Set();
-          const dedupedHistory = histData.filter(h => {
-            if (seen.has(h.id)) return false;
-            seen.add(h.id);
-            return true;
-          }).map(h => ({
-            id: h.id,
-            expertId: h.experts?.id,
-            expertUserId: h.experts?.user_id,
-            expertName: h.experts?.profiles?.full_name || 'Expert',
-            expertAvatar: h.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
-            topic: h.issue_description || '',
-            date: h.meeting_date,
-            duration: '30 mins',
-            status: h.status,
-            completionSource: h.completion_source,
-            agreedFeePaise: agreedFeeOf(h),
-            cancellationReason: h.cancellation_reason,
-            reviewed: reviewedBookingIds.has(h.id)
-          }));
-          setHistory(dedupedHistory);
-        }
-      }
-
-      // 4. Fetch reviews
-      const { data: revsData } = await supabase
-        .from('reviews')
-        .select(`
-          id,
-          rating,
-          comment,
-          reviewer_id,
-          reviewer:reviewer_id (
-            full_name,
-            profile_image_path
-          ),
-          experts:expert_id (
-            profiles:user_id (
-              full_name
-            )
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      if (revsData) {
-        setReviews(revsData.map(r => ({
-          id: r.id,
-          authorId: r.reviewer_id,
-          authorName: r.reviewer?.full_name || 'Farmer',
-          authorAvatar: r.reviewer?.profile_image_path || '/profile-placeholder.png',
-          expertName: r.experts?.profiles?.full_name || 'Expert',
-          rating: r.rating,
-          content: r.comment || '',
-          date: 'Recent'
+      const slotsGrouped = {};
+      (slotsRes.data || []).forEach(s => {
+        if (!slotsGrouped[s.expert_id]) slotsGrouped[s.expert_id] = [];
+        slotsGrouped[s.expert_id].push(s);
+      });
+      setAllExpertSlotsMap(slotsGrouped);
+      // Only experts with at least one open future slot are listed (no empty calendars); never yourself
+      const hasUpcomingAvailability = (expertId) => (slotsGrouped[expertId] || []).some(isBookableSlot);
+      setExpertsList((expertsRes.data || [])
+        .filter(exp => exp.is_active !== false && exp.id !== activeExpertId && hasUpcomingAvailability(exp.id))
+        .map(exp => ({
+          id: exp.id,
+          userId: exp.user_id,
+          name: exp.profiles?.full_name || 'Expert',
+          avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
+          role: exp.profiles?.role || 'Expert',
+          bio: exp.profiles?.bio || '',
+          rating: exp.rating ? Number(exp.rating).toFixed(1) : '5.0',
+          feePaise: exp.consultation_fee_paise,   // the expert's fee: the only price shown before checkout
+          reviewCount: (Array.isArray(exp.reviews) ? exp.reviews[0]?.count : exp.reviews?.count) || 0
         })));
-      }
 
-      // 5. Fetch marketplace products
-      const { data: productsData } = await supabase
-        .from('products')
-        .select('*, seller_profiles:seller_id(shop_name, user_id, profiles:user_id(full_name))')
-        .gt('stock', 0)
-        .order('created_at', { ascending: false });
-      if (productsData) setProducts(productsData);
+      setAppointments((upcomingRes.data || []).map(b => (activeExpertId ? {
+        id: b.id,
+        farmerId: b.farmer_profiles?.id,
+        farmerUserId: b.farmer_profiles?.user_id || b.farmer_profiles?.profiles?.id,
+        farmerName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
+        farmerAvatar: b.farmer_profiles?.profiles?.profile_image_path || '/profile-placeholder.png',
+        expertName: b.farmer_profiles?.profiles?.full_name || 'Farmer',
+        expertAvatar: b.farmer_profiles?.profiles?.profile_image_path || '/profile-placeholder.png',
+        topic: b.issue_description || '',
+        date: b.meeting_date,
+        time: b.meeting_time,
+        endsMs: slotEndMs(b),
+        slotId: b.slot_id,
+        meetingLink: meetingLinkOf(b),
+        status: 'upcoming'
+      } : {
+        id: b.id,
+        expertId: b.experts?.id,
+        expertUserId: b.experts?.user_id,
+        expertName: b.experts?.profiles?.full_name || 'Expert',
+        expertAvatar: b.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
+        topic: b.issue_description || '',
+        date: b.meeting_date,
+        time: b.meeting_time,
+        endsMs: slotEndMs(b),
+        meetingLink: meetingLinkOf(b),
+        agreedFeePaise: agreedFeeOf(b),
+        status: 'upcoming'
+      })));
 
+      setHistory((historyRes.data || []).map(h => ({
+        id: h.id,
+        expertId: h.experts?.id,
+        expertUserId: h.experts?.user_id,
+        expertName: h.experts?.profiles?.full_name || 'Expert',
+        expertAvatar: h.experts?.profiles?.profile_image_path || '/profile-placeholder.png',
+        topic: h.issue_description || '',
+        date: h.meeting_date,
+        duration: '30 mins',
+        status: h.status,
+        completionSource: h.completion_source,
+        agreedFeePaise: agreedFeeOf(h),
+        cancellationReason: h.cancellation_reason,
+        cancellationRule: h.cancellation_rule,
+        cancelledByRole: h.cancelled_by_role,
+        refundPaise: h.refund_paise,
+        reviewed: (Array.isArray(h.reviews) ? h.reviews.length : h.reviews ? 1 : 0) > 0
+      })));
+      setLoadState('ready');
     } catch (err) {
-      console.error('Error fetching connect data:', err);
+      if (seq !== loadSeqRef.current) return;
+      console.error('Error fetching connect data:', err?.message || err);
+      // keep what is already on screen when a refresh fails; only the first load shows the error state
+      setLoadState(prev => (prev === 'ready' ? 'ready' : 'error'));
+      if (onShowToast && loadStateRef.current === 'ready') onShowToast('Could not refresh. Check your connection.');
     }
   };
 
+  const retryLoad = () => { setLoadState('loading'); fetchData(); };
+  // Placeholder for the first load of a Catch Up list: skeletons while loading, an error with Retry if it failed.
+  const listPlaceholder = (Shape, label) => (
+    loadState === 'loading' ? (
+      <SkeletonGroup label={label}>{[0, 1, 2].map((i) => <Shape key={i} />)}</SkeletonGroup>
+    ) : loadState === 'error' ? (
+      <LoadError message="Could not load your consultations. Check your connection." onRetry={retryLoad} />
+    ) : null
+  );
+
+  // Reviews and marketplace: only when their tab is opened (not on every Catch Up load).
+  const fetchReviews = async () => {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('id, rating, comment, reviewer_id, reviewer:reviewer_id ( full_name, profile_image_path ), experts:expert_id ( profiles:user_id ( full_name ) )')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) { if (onShowToast) onShowToast('Could not load reviews.'); return; }
+    setReviews((data || []).map(r => ({
+      id: r.id,
+      authorId: r.reviewer_id,
+      authorName: r.reviewer?.full_name || 'Farmer',
+      authorAvatar: r.reviewer?.profile_image_path || '/profile-placeholder.png',
+      expertName: r.experts?.profiles?.full_name || 'Expert',
+      rating: r.rating,
+      content: r.comment || '',
+      date: 'Recent'
+    })));
+  };
+  const fetchProducts = async () => {
+    const { data } = await supabase
+      .from('products')
+      .select('*, seller_profiles:seller_id(shop_name, user_id, profiles:user_id(full_name))')
+      .gt('stock', 0)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (data) setProducts(data);
+  };
+  useEffect(() => {
+    if (activeSubTab === 'reviews') fetchReviews();
+    if (activeSubTab === 'marketplace') fetchProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSubTab]);
+
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Opened from a push notification: show that booking if it is still upcoming for this user (the list is loaded
@@ -730,6 +707,19 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     return () => clearTimeout(t);
   }, [focusBookingId]);
 
+  const loadCancelQuote = async (bookingId) => {
+    setCancelQuote(null);
+    setCancelQuoteError(null);
+    const { data, error } = await supabase.rpc('consultation_cancellation_quote', { p_booking_id: bookingId });
+    if (error) { setCancelQuoteError('Could not load the cancellation terms. Check your connection.'); return; }
+    setCancelQuote(data);
+  };
+  useEffect(() => {
+    if (selectedMeetingDetail?.id) loadCancelQuote(selectedMeetingDetail.id);
+    else setCancelQuote(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMeetingDetail?.id]);
+
   // Measure the server clock once per load (one call, not one per booking).
   useEffect(() => {
     if (appointments.length === 0) return;
@@ -739,6 +729,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   }, [appointments]);
 
   const handleBookClick = async (expert, targetDate = null) => {
+    bookingV.reset();
     setSelectedExpert(expert);
     setSelectedSlot(null);
     setBookingDate(targetDate || '');
@@ -746,8 +737,10 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
     const { data: slots } = await supabase
       .from('consultation_slots')
-      .select('*')
+      .select('id, expert_id, slot_date, start_time, end_time, is_booked')
       .eq('expert_id', expert.id)
+      .eq('is_booked', false)
+      .gte('slot_date', todayIST())
       .order('slot_date', { ascending: true })
       .order('start_time', { ascending: true });
 
@@ -806,7 +799,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
   const handleSaveAvailability = async () => {
     if (!currentExpertId) {
-      alert('Expert profile not found. Make sure your account has an expert role.');
+      if (onShowToast) onShowToast('Your expert profile was not found. Please log out and in again.');
       return;
     }
     const slotsToInsert = [];
@@ -840,7 +833,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       .upsert(slotsToInsert, { onConflict: 'expert_id,slot_date,start_time', ignoreDuplicates: true });
 
     if (error) {
-      alert(`Error saving availability: ${error.message}`);
+      if (onShowToast) onShowToast(/fetch|network/i.test(error.message || '') ? 'No connection. Your availability was not saved.' : `Your availability could not be saved: ${error.message}`);
       return;
     }
 
@@ -876,18 +869,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   };
 
   const handleConfirmBooking = async () => {
-    if (!bookingIssue) {
-      alert('Please explain the consultation topic/issue');
-      return;
-    }
-
-    if (selectedSlot && selectedSlot.is_booked) {
-      alert('This slot is already booked by another farmer.');
-      return;
-    }
-
-    if (!selectedSlot) {
-      alert('Please select an available time slot.');
+    if (!bookingV.validateAll(bookingValues)) return;   // errors appear under the time list / the description
+    if (selectedSlot.is_booked) {
+      bookingV.setFieldError('slot', 'This time was just booked by someone else. Please choose another time.');
       return;
     }
 
@@ -967,14 +951,20 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   };
 
   const handleOpenReviewDialog = (item) => {
+    reviewV.reset();
+    setReviewFormError(null);
     setReviewingMeeting(item);
   };
 
   const handleSubmitReview = async () => {
-    if (!reviewTextInput.trim()) return;
+    if (reviewSubmitting) return;
+    setReviewFormError(null);
+    if (!reviewV.validateAll(reviewValues)) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user) { setReviewFormError('Your session has ended. Please log in again.'); return; }
+    setReviewSubmitting(true);
 
     const { error } = await supabase
       .from('reviews')
@@ -983,13 +973,17 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         reviewer_id: user.id,
         expert_id: reviewingMeeting.expertId,
         rating: ratingInput,
-        comment: reviewTextInput
+        comment: reviewTextInput.trim()
       });
+    setReviewSubmitting(false);
 
     if (error) {
-      if (onShowToast) onShowToast(`Failed to submit review: ${error.message}`);
+      setReviewFormError(/already been reviewed|duplicate/i.test(error.message || '') ? 'You have already reviewed this consultation.'
+        : /fetch|network/i.test(error.message || '') ? 'No connection. Your review was not sent — please try again.'
+        : `Your review could not be saved: ${error.message}`);
       return;
     }
+    reviewV.reset();
 
     setReviewingMeeting(null);
     setReviewTextInput('');
@@ -1011,7 +1005,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       if (onShowToast) onShowToast('⚠️ This date/time option is already added');
       return;
     }
-    setOfferedSlots([...offeredSlots, { date: offerDateInput, time: offerTimeInput }]);
+    const next = [...offeredSlots, { date: offerDateInput, time: offerTimeInput }];
+    setOfferedSlots(next);
+    cancelV.changed('offeredSlots', { ...cancelValues, offeredSlots: next });
   };
 
   const handleRemoveOfferedSlot = (index) => {
@@ -1029,209 +1025,85 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       const { data, error } = await supabase.rpc('join_consultation', { p_booking_id: meeting.id });
       if (error) {
         preparedWindow?.close();
-        alert(joinErrorText(error));
+        if (onShowToast) onShowToast(joinErrorText(error));
         fetchData();
         return;
       }
       if (data?.server_now) setClockOffsetMs(Date.parse(data.server_now) - Date.now());
       const opened = await openMeetingLink(data?.meeting_link, preparedWindow);
-      if (!opened.ok) { alert(opened.error); return; }
+      if (!opened.ok) { if (onShowToast) onShowToast(opened.error); return; }
       if (onShowToast) onShowToast('Opening Google Meet… The consultation takes place in Google Meet.');
     } catch (err) {
       preparedWindow?.close();
-      alert(joinErrorText(err));
+      if (onShowToast) onShowToast(joinErrorText(err));
     } finally {
       setJoiningId(null);
     }
   };
 
-  const handleConfirmCancelMeeting = async () => {
-    if (!isCurrentExpert) {
-      return handleFarmerConfirmCancelMeeting();
-    }
-    if (!cancelReason.trim()) {
-      alert("Please provide a mandatory cancellation reason.");
-      return;
-    }
-    if (offeredSlots.length === 0) {
-      alert("Please offer at least 1 alternative date/time slot.");
-      return;
-    }
-    if (!selectedMeetingDetail) return;
+  const openCancelSheet = () => {
+    cancelV.reset();
+    setCancelFormError(null);
+    setIsCancelSheetOpen(true);
+    if (selectedMeetingDetail?.id) loadCancelQuote(selectedMeetingDetail.id);   // terms at the moment of confirming
+  };
 
+  // Farmer or expert. The server re-checks everything when it commits (participant, status, refund rule, its clock),
+  // records the refund, frees the slot, notifies the other side and posts the note into the chat.
+  const handleConfirmCancelMeeting = async () => {
+    if (cancellingMeeting || !selectedMeetingDetail) return;
+    setCancelFormError(null);
+    if (!cancelV.validateAll(cancelValues)) return;
     setCancellingMeeting(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const appt = selectedMeetingDetail;
-
-      // Server updates the booking, frees the slot and notifies the farmer.
-      const { error: updateErr } = await supabase.rpc('cancel_consultation_booking', {
-        p_booking_id: appt.id,
+      const { data: refund, error } = await supabase.rpc('cancel_consultation_booking', {
+        p_booking_id: selectedMeetingDetail.id,
         p_reason: cancelReason.trim(),
-        p_offered_slots: offeredSlots
+        p_offered_slots: isCurrentExpert ? offeredSlots : []
       });
-
-      if (updateErr) throw updateErr;
-
-      const farmerUserId = appt.farmerUserId;
-      if (user && farmerUserId) {
-        let { data: conv } = await supabase
-          .from('conversations')
-          .select('id')
-          .or(`and(user_one.eq.${user.id},user_two.eq.${farmerUserId}),and(user_one.eq.${farmerUserId},user_two.eq.${user.id})`)
-          .maybeSingle();
-
-        if (!conv) {
-          const { data: newConv } = await supabase
-            .from('conversations')
-            .insert({ user_one: user.id, user_two: farmerUserId })
-            .select('id')
-            .single();
-          conv = newConv;
-        }
-
-        if (conv) {
-          await supabase
-            .from('messages')
-            .insert({
-              conversation_id: conv.id,
-              sender_id: user.id,
-              content: `Meeting Cancelled: ${cancelReason.trim()}`,
-              message_type: 'cancellation_reschedule',
-              metadata: {
-                booking_id: appt.id,
-                expert_id: currentExpertId,
-                expert_name: currentExpertProfile?.name || 'Expert',
-                cancellation_reason: cancelReason.trim(),
-                offered_slots: offeredSlots
-              }
-            });
-
-          await supabase
-            .from('conversations')
-            .update({ last_message_at: new Date().toISOString() })
-            .eq('id', conv.id);
-        }
-      }
-
+      if (error) throw error;
       if (onShowToast) {
-        onShowToast("📅 Meeting cancelled & reschedule options sent via Chat!");
+        onShowToast(isCurrentExpert
+          ? `📅 Meeting cancelled. The farmer gets a full refund of ${formatInr(Math.round(Number(refund) * 100))}.`
+          : `📅 Meeting cancelled. Refund of ${formatInr(Math.round(Number(refund) * 100))} requested.`);
       }
-
       setIsCancelSheetOpen(false);
       setSelectedMeetingDetail(null);
       setCancelReason('');
       setOfferedSlots([]);
+      cancelV.reset();
       fetchData();
-
     } catch (err) {
-      alert(`Cancellation failed: ${err.message}`);
-    } finally {
-      setCancellingMeeting(false);
-    }
-  };
-
-  const handleFarmerConfirmCancelMeeting = async () => {
-    if (!cancelReason.trim()) {
-      alert("Please provide a mandatory cancellation reason.");
-      return;
-    }
-    if (!selectedMeetingDetail) return;
-
-    setCancellingMeeting(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const appt = selectedMeetingDetail;
-
-      // Server computes the refund, frees the slot and notifies the expert and admins.
-      const { data: refundAmount, error: updateErr } = await supabase.rpc('cancel_consultation_booking', {
-        p_booking_id: appt.id,
-        p_reason: cancelReason.trim()
-      });
-
-      if (updateErr) throw updateErr;
-
-      const expertUserId = appt.expertUserId;
-      if (user && expertUserId) {
-        let { data: conv } = await supabase
-          .from('conversations')
-          .select('id')
-          .or(`and(user_one.eq.${user.id},user_two.eq.${expertUserId}),and(user_one.eq.${expertUserId},user_two.eq.${user.id})`)
-          .maybeSingle();
-
-        if (!conv) {
-          const { data: newConv } = await supabase
-            .from('conversations')
-            .insert({ user_one: user.id, user_two: expertUserId })
-            .select('id')
-            .single();
-          conv = newConv;
-        }
-
-        if (conv) {
-          await supabase
-            .from('messages')
-            .insert({
-              conversation_id: conv.id,
-              sender_id: user.id,
-              content: `Meeting Cancelled: ${cancelReason.trim()}`,
-              message_type: 'cancellation_reschedule',
-              metadata: {
-                booking_id: appt.id,
-                cancellation_reason: cancelReason.trim()
-              }
-            });
-
-          await supabase
-            .from('conversations')
-            .update({ last_message_at: new Date().toISOString() })
-            .eq('id', conv.id);
-        }
-      }
-
-      if (onShowToast) {
-        onShowToast(`📅 Meeting cancelled. Refund of ₹${refundAmount} requested.`);
-      }
-
-      setIsCancelSheetOpen(false);
-      setSelectedMeetingDetail(null);
-      setCancelReason('');
-      fetchData();
-
-    } catch (err) {
-      alert(`Cancellation failed: ${err.message}`);
+      setCancelFormError(/fetch|network/i.test(err.message || '')
+        ? 'No connection. The meeting was not cancelled — please try again.'
+        : err.message || 'The meeting could not be cancelled.');
     } finally {
       setCancellingMeeting(false);
     }
   };
 
   const handleSaveExpertProfileEdit = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !currentExpertId) return;
-
-    try {
-      await supabase
-        .from('profiles')
-        .update({ bio: expertEditBio.trim() })
-        .eq('id', user.id);
-
-      await supabase
-        .from('experts')
-        .update({ specialization: expertEditSpecialization.trim() })
-        .eq('id', currentExpertId);
-
-      setCurrentExpertProfile(prev => ({
-        ...prev,
-        bio: expertEditBio.trim(),
-        specialization: expertEditSpecialization.trim()
-      }));
-
-      setIsExpertProfileEditOpen(false);
-      if (onShowToast) onShowToast("Expert profile updated!");
-      fetchData();
-    } catch (err) {
-      alert(`Update failed: ${err.message}`);
+    if (expertProfileSaving) return;
+    setExpertProfileError(null);
+    if (!expertProfileV.validateAll(expertProfileValues)) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
+    if (!user || !currentExpertId) { setExpertProfileError('Your session has ended. Please log in again.'); return; }
+    setExpertProfileSaving(true);
+    const [p1, p2] = await Promise.all([
+      supabase.from('profiles').update({ bio: expertEditBio.trim() }).eq('id', user.id),
+      supabase.from('experts').update({ specialization: expertEditSpecialization.trim() }).eq('id', currentExpertId),
+    ]);
+    setExpertProfileSaving(false);
+    const err = p1.error || p2.error;
+    if (err) {
+      setExpertProfileError(/fetch|network/i.test(err.message || '') ? 'No connection. Your profile was not saved — please try again.' : `Your profile could not be saved: ${err.message}`);
+      return;
     }
+    setCurrentExpertProfile(prev => ({ ...prev, bio: expertEditBio.trim(), specialization: expertEditSpecialization.trim() }));
+    setIsExpertProfileEditOpen(false);
+    if (onShowToast) onShowToast('Expert profile updated!');
+    fetchData();
   };
 
   return (
@@ -1324,7 +1196,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               </div>
             )}
             <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Available Verified Experts</h3>
-            {expertsList.length === 0 && (
+            {listPlaceholder(ExpertCardSkeleton, 'Loading experts…')}
+            {loadState === 'ready' && expertsList.length === 0 && (
               <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--text-secondary)', fontSize: '13px' }}>
                 No expert has open dates right now. Please check again later.
               </div>
@@ -1914,8 +1787,10 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               {isCurrentExpert ? 'Expert Catch Up — Scheduled Meetings' : 'Upcoming Appointments'}
             </h3>
 
+            {listPlaceholder(MeetingCardSkeleton, 'Loading meetings…')}
+
             {/* Zero availability prompt for Expert */}
-            {isCurrentExpert && mySlots.length === 0 && (
+            {loadState === 'ready' && isCurrentExpert && mySlots.length === 0 && (
               <div className="card fade-in" style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -2083,7 +1958,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               })
             )}
 
-            {!isCurrentExpert && appointments.length === 0 && (
+            {loadState === 'ready' && !isCurrentExpert && appointments.length === 0 && (
               <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
                 No upcoming consultations scheduled.
               </div>
@@ -2095,7 +1970,13 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         {activeSubTab === 'history' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Meeting History</h3>
-            
+            {listPlaceholder(ListRowSkeleton, 'Loading history…')}
+            {loadState === 'ready' && history.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
+                No past consultations yet.
+              </div>
+            )}
+
             {history.slice(0, historyShown).map((hist) => (
               <div key={hist.id} className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2267,8 +2148,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
             {availableSlots.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label className="form-label">Choose a time *</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
+                <label className="form-label" id="slot-list-label">Choose a time *</label>
+                <div ref={bookingV.refFor('slot')} tabIndex={-1} role="group" aria-labelledby="slot-list-label"
+                  aria-invalid={bookingV.errorFor('slot') ? true : undefined} aria-describedby={bookingV.errorFor('slot') ? 'slot-list-error' : undefined}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '160px', overflowY: 'auto', outline: 'none',
+                           borderRadius: '12px', padding: bookingV.errorFor('slot') ? '6px' : 0, border: bookingV.errorFor('slot') ? '1px solid var(--error)' : 'none' }}>
                   {availableSlots.map(slot => (
                     <div
                       key={slot.id}
@@ -2277,6 +2161,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                           setSelectedSlot(slot);
                           setBookingDate(slot.slot_date);
                           setBookingTime(slot.start_time);
+                          bookingV.changed('slot', { ...bookingValues, slot });
                         }
                       }}
                       style={{
@@ -2303,6 +2188,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     </div>
                   ))}
                 </div>
+                <FieldError id="slot-list-error">{bookingV.errorFor('slot')}</FieldError>
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--text-secondary)' }}>
@@ -2312,20 +2198,16 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               </div>
             )}
 
-            <div className="form-group">
-              <label className="form-label">Consultation Topic / Issue</label>
-              <div className="input-container" style={{ padding: '8px 16px' }}>
-                <textarea
-                  className="input-field"
-                  rows="3"
-                  value={bookingIssue}
-                  onChange={(e) => setBookingIssue(e.target.value)}
-                  placeholder="Explain the problem you're facing (e.g. wheat leaves turning yellow)..."
-                  style={{ resize: 'none', height: '60px' }}
-                  required
-                />
-              </div>
-            </div>
+            <InputField
+              label="Meeting description *"
+              as="textarea"
+              rows={3}
+              maxLength={1000}
+              value={bookingIssue}
+              placeholder="Explain the problem you're facing (e.g. wheat leaves turning yellow)..."
+              onChange={(e) => { setBookingIssue(e.target.value); bookingV.changed('bookingIssue', { ...bookingValues, bookingIssue: e.target.value }); }}
+              {...bookingV.field('bookingIssue', bookingValues)}
+            />
           </div>
         )}
       </Dialog>
@@ -2334,7 +2216,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       <Dialog
         isOpen={!!reviewingMeeting}
         title="Write Consultation Review"
-        confirmText="Submit Review"
+        confirmText={reviewSubmitting ? 'Sending…' : 'Submit Review'}
+        confirmDisabled={reviewSubmitting}
         onConfirm={handleSubmitReview}
         onCancel={() => setReviewingMeeting(null)}
       >
@@ -2344,33 +2227,35 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               Rating for session with <strong>{reviewingMeeting.expertName}</strong>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+            <div ref={reviewV.refFor('rating')} tabIndex={-1} role="radiogroup" aria-label="Rating" style={{ display: 'flex', gap: '8px', justifyContent: 'center', outline: 'none' }}>
               {[1, 2, 3, 4, 5].map((star) => (
-                <span
+                <button
                   key={star}
-                  onClick={() => setRatingInput(star)}
+                  type="button"
+                  role="radio"
+                  aria-checked={ratingInput === star}
+                  aria-label={`${star} star${star > 1 ? 's' : ''}`}
+                  onClick={() => { setRatingInput(star); reviewV.changed('rating', { ...reviewValues, rating: star }); }}
                   className="material-symbols-outlined"
-                  style={{ fontSize: '32px', color: star <= ratingInput ? '#FFA726' : 'var(--text-muted)', cursor: 'pointer' }}
+                  style={{ fontSize: '32px', color: star <= ratingInput ? '#FFA726' : 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
                 >
                   star
-                </span>
+                </button>
               ))}
             </div>
+            <FieldError>{reviewV.errorFor('rating')}</FieldError>
 
-            <div className="form-group">
-              <label className="form-label">Your Review / Feedback</label>
-              <div className="input-container" style={{ padding: '8px 16px' }}>
-                <textarea
-                  className="input-field"
-                  rows="3"
-                  value={reviewTextInput}
-                  onChange={(e) => setReviewTextInput(e.target.value)}
-                  placeholder="Share details about the expert advice you received..."
-                  style={{ resize: 'none', height: '80px' }}
-                  required
-                />
-              </div>
-            </div>
+            <InputField
+              label="Your Review / Feedback"
+              as="textarea"
+              rows={3}
+              maxLength={1000}
+              value={reviewTextInput}
+              placeholder="Share details about the expert advice you received..."
+              onChange={(e) => { setReviewTextInput(e.target.value); reviewV.changed('review', { ...reviewValues, review: e.target.value }); }}
+              {...reviewV.field('review', reviewValues)}
+            />
+            <FormMessage>{reviewFormError}</FormMessage>
           </div>
         )}
       </Dialog>
@@ -2392,11 +2277,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           const otherName = isCurrentExpert ? selectedMeetingDetail.farmerName : selectedMeetingDetail.expertName;
           const otherAvatar = isCurrentExpert ? selectedMeetingDetail.farmerAvatar : selectedMeetingDetail.expertAvatar;
           
-          const timeClean = selectedMeetingDetail.time.length === 5 ? `${selectedMeetingDetail.time}:00` : selectedMeetingDetail.time;
-          const startMs = new Date(`${selectedMeetingDetail.date}T${timeClean}`).getTime();
-          const hoursUntilStart = (startMs - Date.now()) / 3600000;
-          const isCancelledBlocked = hoursUntilStart < 14;
-
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
@@ -2444,22 +2324,17 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 </div>
               </div>
 
-              {isCancelledBlocked && (
-                <div style={{ fontSize: '11px', color: '#FFA726', backgroundColor: 'rgba(255, 167, 38, 0.1)', padding: '8px 12px', borderRadius: '10px' }}>
-                  ⚠️ Cancellation is only available up to 14 hours before the session.
-                </div>
-              )}
+              <CancellationTerms quote={cancelQuote} error={cancelQuoteError} />
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-                {!isCancelledBlocked && (
-                  <Button
-                    onClick={() => setIsCancelSheetOpen(true)}
-                    variant="secondary"
-                    style={{ flex: 1, borderColor: 'var(--error)', color: 'var(--error)', borderRadius: '12px', fontSize: '13px' }}
-                  >
-                    Cancel Meeting
-                  </Button>
-                )}
+                <Button
+                  onClick={openCancelSheet}
+                  variant="secondary"
+                  disabled={!cancelQuote?.allowed}
+                  style={{ flex: 1, borderColor: 'var(--error)', color: 'var(--error)', borderRadius: '12px', fontSize: '13px' }}
+                >
+                  Cancel Meeting
+                </Button>
 
                 <JoinMeetingButton
                   meeting={selectedMeetingDetail}
@@ -2508,9 +2383,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               copy the meeting link and paste it below. Only you and this farmer can see it.
             </p>
             <label className="form-label" htmlFor="meet-link-input">Google Meet link</label>
-            <div className="input-container" style={{ padding: '8px 16px' }}>
+            <div className={`input-container${linkEditor.error ? ' has-error' : ''}`} style={{ padding: '8px 16px' }}>
               <input
                 id="meet-link-input"
+                aria-invalid={linkEditor.error ? true : undefined}
+                aria-describedby={linkEditor.error ? 'meet-link-err' : undefined}
                 className="input-field"
                 type="url"
                 inputMode="url"
@@ -2523,7 +2400,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 disabled={linkEditor.saving}
               />
             </div>
-            {linkEditor.error && <div role="alert" style={{ fontSize: '12px', color: 'var(--error)' }}>{linkEditor.error}</div>}
+            <FieldError id="meet-link-err">{linkEditor.error}</FieldError>
             {linkEditor.saved && <div role="status" style={{ fontSize: '12px', color: 'var(--primary-green)' }}>{linkEditor.saved}</div>}
             <div style={{ display: 'flex', gap: '10px' }}>
               <Button type="button" variant="secondary" onClick={() => setLinkEditor(null)} disabled={linkEditor.saving} style={{ flex: 1, borderRadius: '12px' }}>
@@ -2546,20 +2423,18 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             {isCurrentExpert ? 'Cancel Meeting & Offer Reschedule Options' : 'Cancel Meeting'}
           </h3>
 
-          <div className="form-group">
-            <label className="form-label">Mandatory Cancellation Reason *</label>
-            <div className="input-container" style={{ padding: '8px 16px' }}>
-              <textarea
-                className="input-field"
-                rows="3"
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Explain why this meeting needs to be cancelled..."
-                style={{ resize: 'none', height: '70px' }}
-                required
-              />
-            </div>
-          </div>
+          <CancellationTerms quote={cancelQuote} error={cancelQuoteError} confirming />
+
+          <InputField
+            label="Cancellation reason *"
+            as="textarea"
+            rows={3}
+            maxLength={500}
+            value={cancelReason}
+            placeholder="Explain why this meeting needs to be cancelled..."
+            onChange={(e) => { setCancelReason(e.target.value); cancelV.changed('cancelReason', { ...cancelValues, cancelReason: e.target.value }); }}
+            {...cancelV.field('cancelReason', cancelValues)}
+          />
 
           {isCurrentExpert && (
             <div>
@@ -2628,12 +2503,17 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     <span onClick={() => handleRemoveOfferedSlot(idx)} style={{ cursor: 'pointer', fontWeight: 'bold' }}>✕</span>
                   </div>
                 ))}
-                {offeredSlots.length === 0 && (
+                {offeredSlots.length === 0 && !cancelV.errorFor('offeredSlots') && (
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>At least 1 alternative option required.</span>
                 )}
               </div>
+              <div ref={cancelV.refFor('offeredSlots')} tabIndex={-1} style={{ outline: 'none' }}>
+                <FieldError>{cancelV.errorFor('offeredSlots')}</FieldError>
+              </div>
             </div>
           )}
+
+          <FormMessage>{cancelFormError}</FormMessage>
 
           <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
             <Button variant="secondary" onClick={() => setIsCancelSheetOpen(false)} style={{ flex: 1 }}>
@@ -2643,10 +2523,10 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               type="button"
               onClick={handleConfirmCancelMeeting}
               variant="primary"
-              disabled={cancellingMeeting || !cancelReason.trim() || (isCurrentExpert && offeredSlots.length === 0)}
+              disabled={cancellingMeeting || (cancelQuote && !cancelQuote.allowed)}
               style={{ flex: 1, backgroundColor: 'var(--error)', color: 'white' }}
             >
-              {cancellingMeeting ? 'Cancelling...' : 'Confirm Cancellation'}
+              {cancellingMeeting ? 'Cancelling...' : 'Yes, cancel meeting'}
             </Button>
           </div>
         </div>
@@ -2663,32 +2543,31 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       <Dialog
         isOpen={isExpertProfileEditOpen}
         title="Edit Expert Profile"
-        confirmText="Save Profile"
+        confirmText={expertProfileSaving ? 'Saving…' : 'Save Profile'}
+        confirmDisabled={expertProfileSaving}
         onConfirm={handleSaveExpertProfileEdit}
-        onCancel={() => setIsExpertProfileEditOpen(false)}
+        onCancel={() => { setIsExpertProfileEditOpen(false); expertProfileV.reset(); setExpertProfileError(null); }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '12px 0' }}>
           <InputField
             label="Specialization"
             value={expertEditSpecialization}
-            onChange={(e) => setExpertEditSpecialization(e.target.value)}
+            onChange={(e) => { setExpertEditSpecialization(e.target.value); expertProfileV.changed('specialization', { ...expertProfileValues, specialization: e.target.value }); }}
             placeholder="e.g. Soil Pathology & Rice Crop Health"
             icon="badge"
+            {...expertProfileV.field('specialization', expertProfileValues)}
           />
 
-          <div className="form-group">
-            <label className="form-label">Bio / Tagline</label>
-            <div className="input-container" style={{ padding: '8px 16px' }}>
-              <textarea
-                className="input-field"
-                rows="3"
-                value={expertEditBio}
-                onChange={(e) => setExpertEditBio(e.target.value)}
-                placeholder="Brief description of your expertise..."
-                style={{ resize: 'none', height: '70px' }}
-              />
-            </div>
-          </div>
+          <InputField
+            label="Bio / Tagline"
+            as="textarea"
+            rows={3}
+            value={expertEditBio}
+            placeholder="Brief description of your expertise..."
+            onChange={(e) => { setExpertEditBio(e.target.value); expertProfileV.changed('bio', { ...expertProfileValues, bio: e.target.value }); }}
+            {...expertProfileV.field('bio', expertProfileValues)}
+          />
+          <FormMessage>{expertProfileError}</FormMessage>
         </div>
       </Dialog>
     </div>

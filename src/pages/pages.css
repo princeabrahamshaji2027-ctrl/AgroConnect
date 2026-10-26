@@ -255,3 +255,18 @@
   gap: 16px;
   margin-bottom: 24px;
 }
+
+/* Connect + Message on another user's profile (Button ignores inline styles, so the row is laid out here) */
+.profile-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.profile-actions .btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+}

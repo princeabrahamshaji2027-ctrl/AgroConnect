@@ -105,3 +105,23 @@ Production order is now 04 → 05 → 09 → 10 → 11 → 12 → 13 → 14 → 
 fee in the app (the backfill is only a starting value), publish the Terms text (Settings → Terms & Conditions, no acceptance is
 recorded) and decide whether to track acceptance. The payment flow is simulated: **no real money is collected, no commission
 is received, no expert is paid** — admin screens and `transaction_type = 'simulated'` say so; user screens deliberately do not.
+
+## Addendum 2026-10-26 (validation, cancellation & refunds, messaging): migrations 16–19
+| # | Purpose | Depends on | Status | Re-runnable | Data impact | App/admin release needed | Rollback |
+|---|---|---|---|---|---|---|---|
+| 16 | Notification type `message` | — | applied to staging 2026-10-26 | yes | none | no | not needed (unused enum value is harmless) |
+| 17 | Messaging with message requests; RPC-only writes; participants-only reads (admins see counts only) | 01–03, 05, 13, 16 | applied to staging, bodies verified identical | yes | adds columns/indexes; **drops the old insert/update policies on `messages`/`conversations`** and the admin read policy; new CHECKs are `NOT VALID` (old rows untouched) | **yes** — the old Chat screen wrote the tables directly and stops working | restore the previous policies and drop the new functions |
+| 18 | Cancellation & refund rules, refund ledger, `admin_cancel_booking`, reporting, indexes | 05, 11–15 | applied to staging, bodies verified identical | yes | adds columns/table/indexes; existing cancelled bookings keep their old figures (no backfill) | **yes** — app (quote + new cancel flow) and admin (cancel with reason) | restore 15's function bodies; columns/table can stay |
+| 19 | Normal chats stay normal after a disconnect | 17 | applied to staging, body verified identical | yes | none | no | drop the trigger |
+
+Production order is now 04 → 05 → 09 → 10 → 11 → 12 → 13 → 14 → 15 → **16 → 17 → 18 → 19**, each in its own transaction (16 must
+commit before 17). Release the app and the admin website **together with 17 and 18**.
+
+Still blocking a production release (unchanged, owner action): leaked-password protection is off on production and staging;
+production migrations 04–19 are not applied; Firebase service account for push not set; SMTP for password-reset e-mails;
+installed-app checks on a phone for this pass (not done yet — no device connected).
+
+Business rules shipped in this pass (also in Terms & Conditions): farmers and experts can cancel at any time before completion
+with a reason; farmer ≥ 14 h before the start (exactly 14 h counts) → full refund; farmer < 14 h → the expert keeps ceil(F/2),
+AgroConnect keeps its 2 % commission, the farmer gets the rest (₹1,000 → ₹500 / ₹20 / ₹480); expert, admin or automatic no-show
+cancellation → full refund. Refunds remain simulated bookkeeping (`refund_status = 'Pending'`), no money moves.

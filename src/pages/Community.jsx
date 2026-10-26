@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { CommCard } from '../components/Card';
-import InputField from '../components/InputField';
+import InputField, { FormMessage } from '../components/InputField';
 import Dialog from '../components/Dialog';
 import { Button } from '../components/Button';
 import { supabase } from '../supabase';
@@ -13,6 +13,8 @@ export default function Community() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newCommName, setNewCommName] = useState('');
   const [newCommDesc, setNewCommDesc] = useState('');
+  const [nameError, setNameError] = useState(null);
+  const [createError, setCreateError] = useState(null);
 
   const fetchCommunities = async () => {
     try {
@@ -71,7 +73,9 @@ export default function Community() {
   };
 
   const handleCreateCommunity = async () => {
-    if (!newCommName.trim()) return;
+    setCreateError(null);
+    if (!newCommName.trim()) { setNameError('Please enter a group name.'); return; }
+    setNameError(null);
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -88,7 +92,7 @@ export default function Community() {
       .single();
 
     if (error) {
-      alert(`Failed to create group: ${error.message}`);
+      setCreateError(`Could not create the group: ${error.message}`);
       return;
     }
 
@@ -163,7 +167,8 @@ export default function Community() {
             label="Group Name"
             placeholder="e.g. Rice Cultivation Experts"
             value={newCommName}
-            onChange={(e) => setNewCommName(e.target.value)}
+            onChange={(e) => { setNewCommName(e.target.value); if (nameError) setNameError(null); }}
+            error={nameError}
             required
           />
           <div className="form-group">
@@ -179,6 +184,7 @@ export default function Community() {
               />
             </div>
           </div>
+          <FormMessage>{createError}</FormMessage>
         </div>
       </Dialog>
     </div>
