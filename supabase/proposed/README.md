@@ -1,6 +1,7 @@
 # Database remediation scripts
 
-**Applied to production 2026-10-24 (owner-approved): 01, 02, 03 (+03b block), 07, 08.** Held: 04, 05, 09, 10, 11, 12, 13, 14. Staging only: 06; on staging also 09–14 (2026-10-25).
+**Applied to production 2026-10-24 (owner-approved): 01, 02, 03 (+03b block), 07, 08.**
+**Applied to production 2026-10-26 (launch, owner-approved): 04, 05 (as 05ab + 05c scheduler), 09–20** as migrations `remediation_NN_*`; all 96 public functions verified identical (md5 of the comment/whitespace-stripped definition) to the PGlite rehearsal. Before applying: schema `backup_20261026` (copies of the public tables, functions, policies; no API access). Edge Functions `admin-delete-user` (verify_jwt) and `push-dispatch` (no JWT, shared Vault secret) deployed. Never on production: 06.
 Exact pre-apply restore: `supabase/backups/20261024_pre_remediation_restore.sql`.
 
 ## Original notes
@@ -32,8 +33,9 @@ Gate, risks and rollback: `REMEDIATION_STATUS.md`.
 | `17_messaging.sql` | Text messaging with message requests (owner decision 2026-10-26): RPCs only, participants-only reads, requests for users not connected to each other, Accept/Decline, read state, idempotent sends, 30/min limit, 2000 characters, push without message text, admin counts only. | Columns, policies, functions, trigger update |
 | `18_cancellation_and_refunds.sql` | Cancellation & refunds (owner decision 2026-10-26): farmer ≥ 14 h before = full refund, < 14 h = expert keeps ceil(F/2), AgroConnect keeps its 2 %, rest refunded; expert/admin/no-show = full refund at any time; quote RPC; refund ledger; `admin_cancel_booking`; reporting; indexes. | Columns, table, functions, indexes |
 | `19_messaging_keep_normal_chats.sql` | A chat that was normal stays normal after a disconnect. | Trigger |
+| `20_districts_and_district_feed.sql` | Launch districts (Kottayam, Pathanamthitta, Kannur): `profiles.district`, `posts.district` (set by the server from the author), sign-up stores district/phone/location, `get_feed()` (own district first, newest first, keyset pages), `admin_district_stats()`. | Columns, trigger, functions |
 | `99_rollback.sql` | Undo 01 (guards), 02, 05, 07, 08. | Drops |
 
-Order: 00 (review) → 01 → 02 → 03 → 04 → 07 → 08 → 05 → 09 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18 → 19 + deploy `admin-delete-user`, `push-dispatch` (`video-room-token` is retired) (all with the new client release) → 06 (staging). Never push the
+Order: 00 (review) → 01 → 02 → 03 → 04 → 07 → 08 → 05 → 09 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18 → 19 → 20 + deploy `admin-delete-user`, `push-dispatch` (`video-room-token` is retired) (all with the new client release) → 06 (staging). Never push the
 repo's `supabase/migrations/20260814_profiles_rls_fix.sql` (see 04). Once approved and applied, move them into
 `supabase/migrations/` with date prefixes.

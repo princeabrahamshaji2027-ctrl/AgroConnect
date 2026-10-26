@@ -29,6 +29,7 @@ export const PROPOSED = {
   '17': 'supabase/proposed/17_messaging.sql',
   '18': 'supabase/proposed/18_cancellation_and_refunds.sql',
   '19': 'supabase/proposed/19_messaging_keep_normal_chats.sql',
+  '20': 'supabase/proposed/20_districts_and_district_feed.sql',
   '99': 'supabase/proposed/99_rollback.sql',
 };
 export const ALL = ['01', '02', '03', '04', '05', '07', '08'];

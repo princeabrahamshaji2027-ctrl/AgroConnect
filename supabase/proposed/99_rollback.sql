@@ -67,3 +67,20 @@ drop trigger if exists protect_profile_privileged_columns on public.profiles;
 drop function if exists public.protect_profile_privileged_columns();
 drop trigger if exists guard_experts_insert on public.experts;
 drop function if exists public.guard_experts_insert();
+
+-- ---- undo 20 (districts / district feed) ----------------------------------------------------------------------
+-- Restores the sign-up trigger body that was live before 20 (md5 1328337ccb5a7ff8559b25ec69edaad1) and removes the
+-- feed/report functions. The district columns and their values are kept (dropping them would lose user choices);
+-- the app's Feed then needs the previous release (it calls get_feed).
+drop trigger if exists posts_set_district on public.posts;
+drop function if exists public._posts_set_district();
+drop function if exists public.get_feed(integer, integer, timestamptz, uuid);
+drop function if exists public.admin_district_stats();
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path to '' as $function$
+begin
+  insert into public.profiles (id, full_name, role)
+  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', ''), 'Farmer'::public.user_role);
+  return new;
+end;
+$function$;
