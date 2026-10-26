@@ -78,9 +78,17 @@ def tap_where(pred, what, timeout=20):
         time.sleep(1)
     raise AssertionError(f'not found: {what}')
 
+LAST_POKE = [0.0]
+def keep_screen_on():
+    """The phone's own screen timeout (5 min) can expire during the real-time waits. A Shift key press every minute counts
+    as user activity, so the screen stays on without changing any device setting."""
+    if time.time() - LAST_POKE[0] > 60:
+        adb('shell', 'input', 'keyevent', '59', check=False); LAST_POKE[0] = time.time()
+
 def wait_text(pattern, timeout=25):
     end = time.time() + timeout
     while time.time() < end:
+        keep_screen_on()
         t = texts()
         if re.search(pattern, t): return t
         time.sleep(1.5)
@@ -275,6 +283,39 @@ def scroll_into_list_and_tap(label, top_pattern, bottom_pattern):
             adb('shell', 'input', 'swipe', '540', str(bottom[0] - 30), '540', str(top[0] + 60), '400'); time.sleep(1)
     raise AssertionError(f'row not reachable: {label}')
 
+def farmer_reviews(topic):
+    """Farmer finds the completed meeting in History (paging with Show older) and rates it once."""
+    fresh_login('user1', env['FIXTURE_PASSWORD'])
+    wait_text(SIGNED_IN, 40); nav('Catch Up'); tap_text(r'^History'); wait_text(r'Meeting History', 30)
+    # staging test accounts carry many cancelled test bookings dated later than today; History lists the newest
+    # meeting date first, 15 at a time, so page with "Show older" until today's meeting is on screen
+    on_screen = lambda n: re.findall(r'\d+', n.get('bounds'))[2:] != ['0', '0']
+    for _ in range(60):
+        ns = nodes()
+        if any(re.search(re.escape(topic), n.get('text') or '') and on_screen(n) for n in ns): break
+        # tap only once the button is clear of the bottom bar (a half-hidden button's centre lands on the bar)
+        more = [n for n in ns if (n.get('text') or '').startswith('Show older') and on_screen(n)
+                and int(re.findall(r'\d+', n.get('bounds'))[3]) < SCREEN_H * 0.9]
+        if more: adb('shell', 'input', 'tap', *center(more[0])); time.sleep(1.5)
+        else: adb('shell', 'input', 'swipe', '540', str(int(SCREEN_H * 0.75)), '540', str(int(SCREEN_H * 0.3)), '300'); time.sleep(1)
+    wait_text(re.escape(topic), 15)
+    card = next(n for n in nodes() if re.search(re.escape(topic), n.get('text') or '') and on_screen(n))
+    cy = int(re.findall(r'\d+', card.get('bounds'))[1])
+    # the Leave Review button of THIS meeting: the first one below its topic
+    btns = sorted(((int(re.findall(r'\d+', n.get('bounds'))[1]), i, n) for i, n in enumerate(nodes())
+                   if (n.get('text') or '').strip().endswith('Leave Review') and on_screen(n) and int(re.findall(r'\d+', n.get('bounds'))[1]) > cy),
+                  key=lambda x: x[0])
+    if btns and btns[0][0] < SCREEN_H * 0.85: adb('shell', 'input', 'tap', *center(btns[0][2]))
+    else:
+        adb('shell', 'input', 'swipe', '540', str(int(SCREEN_H * 0.7)), '540', str(int(SCREEN_H * 0.35)), '400'); time.sleep(1.5)
+        card = next(n for n in nodes() if re.search(re.escape(topic), n.get('text') or '') and on_screen(n))
+        cy = int(re.findall(r'\d+', card.get('bounds'))[1])
+        tap_where(lambda n: (n.get('text') or '').strip().endswith('Leave Review') and on_screen(n) and int(re.findall(r'\d+', n.get('bounds'))[1]) > cy, 'Leave Review of this meeting')
+    wait_text(r'Write Consultation Review')
+    tap_where(lambda n: n.get('class') == 'android.widget.EditText' and n.get('password') != 'true', 'review text')
+    adb('shell', 'input', 'text', 'Clear%sadvice%son%sleaf%scurl'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
+    tap_text(r'^Submit Review$'); wait_text(r'Thank you for your review', 20); shot('44_phone_review_submitted')
+
 def full_consultation():
     """The whole Catch Up flow on the phone, in real time (~12 min):
     expert fee on the card -> calendar without prices -> checkout = the fee -> payment animation -> one booking;
@@ -288,10 +329,15 @@ def full_consultation():
     expert_id, original_fee = me['id'], me['consultation_fee_paise']
     api('/rest/v1/rpc/set_consultation_fee', {'p_fee_paise': FEE}, e_tok)
     ist = lambda m: time.gmtime(((int(time.time() + m * 60) // 60) + 1) * 60 + 330 * 60)
-    st = ist(9)
-    date, start = time.strftime('%Y-%m-%d', st), time.strftime('%H:%M', st)
-    end = f"{(st.tm_hour + (st.tm_min + 30) // 60) % 24:02d}:{(st.tm_min + 30) % 60:02d}"
-    slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end}, e_tok)[0]['id']
+    for m in range(9, 15):   # an earlier check's slot may hold this minute (unique_expert_slot): take the next one
+        st = ist(m)
+        date, start = time.strftime('%Y-%m-%d', st), time.strftime('%H:%M', st)
+        end = f"{(st.tm_hour + (st.tm_min + 30) // 60) % 24:02d}:{(st.tm_min + 30) % 60:02d}"
+        try:
+            slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end}, e_tok)[0]['id']
+            break
+        except AssertionError as e:
+            if '23505' not in str(e): raise
     start_epoch = calendar.timegm(time.strptime(f'{date} {start}', '%Y-%m-%d %H:%M')) - 330 * 60
     t12 = lambda hm: f"{(int(hm[:2]) + 11) % 12 + 1:02d}:{hm[3:5]} {'PM' if int(hm[:2]) >= 12 else 'AM'}"
     topic = f'Phone flow {start.replace(":", "")}'
@@ -363,19 +409,14 @@ def full_consultation():
         if PKG not in focus(): adb('shell', 'am', 'start', '-W', '-n', f'{PKG}/com.agroconnect.app.MainActivity')
 
         # 4. expert marks it completed after the start (the server refuses earlier)
-        while time.time() < start_epoch + 15: time.sleep(5)
+        while time.time() < start_epoch + 15: keep_screen_on(); time.sleep(5)
         fresh_login('expert1', env['FIXTURE_PASSWORD'])
         wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(re.escape(topic), 40)
         tap_text(re.escape(topic)); tap_text(r'Mark consultation completed$')
         wait_text(r'Consultation marked completed', 20); shot('43_phone_expert_completed')
 
         # 5. farmer rates it
-        fresh_login('user1', env['FIXTURE_PASSWORD'])
-        wait_text(SIGNED_IN, 40); nav('Catch Up'); tap_text(r'^History'); wait_text(re.escape(topic), 30)
-        tap_text(r'^Leave Review$'); wait_text(r'Write Consultation Review')
-        tap_where(lambda n: n.get('class') == 'android.widget.EditText' and n.get('password') != 'true', 'review text')
-        adb('shell', 'input', 'text', 'Clear%sadvice%son%sleaf%scurl'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
-        tap_text(r'^Submit Review$'); wait_text(r'Thank you for your review', 20); shot('44_phone_review_submitted')
+        farmer_reviews(topic)
 
         # 6. the admin record (the same snapshot the admin website shows)
         d = api('/rest/v1/rpc/admin_consultation_detail', {'p_booking_id': booking}, a_tok)
@@ -387,6 +428,132 @@ def full_consultation():
         if booking and api(f'/rest/v1/consultation_bookings?select=status&id=eq.{booking}', None, f_tok)[0]['status'] == 'Booked':
             api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': booking, 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
         api('/rest/v1/rpc/set_consultation_fee', {'p_fee_paise': original_fee}, e_tok)
+
+# ---- validation, cancellation & refunds, messaging 2026-10-26 -------------------------------------------------------
+def keyboard_shown():
+    return 'mInputShown=true' in adb('shell', 'dumpsys', 'input_method')
+
+def edit_texts():
+    return [n for n in nodes() if n.get('class') == 'android.widget.EditText' and n.get('password') != 'true']
+
+def inline_validation():
+    """Empty Log In: the reasons appear under the fields, no system dialog/popup; fixed field clears its error."""
+    adb('shell', 'am', 'force-stop', PKG); adb('shell', 'pm', 'clear', PKG)
+    adb('shell', 'am', 'start', '-W', '-n', f'{PKG}/com.agroconnect.app.MainActivity')
+    wait_text(r'Welcome Back', 40)
+    tap_where(lambda n: (n.get('text') or '') == 'Log In', 'Log In button')
+    t = wait_text(r'Please enter your email or username\.', 15)
+    assert 'Please enter your password.' in t, 'password reason missing'
+    assert PKG in focus(), f'a dialog took focus: {focus()}'
+    shot('45_phone_login_inline_errors')
+    type_into(0, 'someone@example.com')
+    end = time.time() + 10
+    while time.time() < end and 'Please enter your email or username.' in texts(): time.sleep(1)
+    assert 'Please enter your email or username.' not in texts(), 'error stayed after fixing the field'
+
+def book_via_api(farmer, minutes, topic):
+    """A real booking through the same simulated checkout the app uses (API, synthetic accounts)."""
+    e_uid, e_tok = sign_in_api('expert1'); f_uid, f_tok = sign_in_api(farmer)
+    expert_id = api(f'/rest/v1/experts?select=id&user_id=eq.{e_uid}', None, e_tok)[0]['id']
+    for m in range(minutes, minutes + 6):
+        st = time.gmtime(((int(time.time() + m * 60) // 60) + 1) * 60 + 330 * 60)
+        date, start = time.strftime('%Y-%m-%d', st), time.strftime('%H:%M', st)
+        end = f"{(st.tm_hour + (st.tm_min + 30) // 60) % 24:02d}:{(st.tm_min + 30) % 60:02d}"
+        try:
+            slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end}, e_tok)[0]['id']
+            break
+        except AssertionError as e:
+            if '23505' not in str(e) and 'duplicate' not in str(e): raise
+    pay = api('/rest/v1/rpc/start_demo_checkout', {'p_slot_id': slot, 'p_issue': topic, 'p_idempotency_key': str(uuid.uuid4())}, f_tok)
+    done = api('/rest/v1/rpc/confirm_demo_payment', {'p_payment_id': pay['payment_id']}, f_tok)
+    assert done['status'] == 'succeeded', f"checkout {done['status']}"
+    return done['booking_id'], f_tok
+
+def cancellation_phone():
+    """Farmer opens a booking that starts in ~90 min: the split is shown before confirming; an empty reason is an
+    inline error; with a reason the booking is cancelled under the late-farmer rule."""
+    topic = f'Phone cancel {time.strftime("%H%M")}'
+    booking, f_tok = book_via_api('user2', 90, topic)
+    try:
+        fresh_login('user2', env['FIXTURE_PASSWORD'])
+        wait_text(SIGNED_IN, 40); nav('Catch Up'); tap_text(r'Upcoming'); wait_text(re.escape(topic), 30)
+        tap_text(re.escape(topic))
+        t = wait_text(r'less than 14 hours', 20)
+        assert 'goes to the expert' in t, 'split not shown'
+        shot('46_phone_cancel_terms')
+        tap_text(r'Cancel Meeting$'); wait_text(r'Before you confirm', 15)
+        tap_text(r'Yes, cancel meeting$')
+        wait_text(r'Please enter a cancellation reason\.', 10); shot('47_phone_cancel_reason_error')
+        tap_where(lambda n: n.get('class') == 'android.widget.EditText' and n.get('password') != 'true', 'reason field')
+        time.sleep(0.8); adb('shell', 'input', 'text', 'Cannot%sattend%stoday'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
+        tap_text(r'Yes, cancel meeting$')
+        end = time.time() + 20
+        while time.time() < end:
+            b = api(f'/rest/v1/consultation_bookings?select=status,cancellation_rule,refund_paise&id=eq.{booking}', None, f_tok)[0]
+            if b['status'] == 'Cancelled': break
+            time.sleep(2)
+        assert (b['status'], b['cancellation_rule']) == ('Cancelled', 'farmer_late'), f'booking {b}'
+        shot('48_phone_cancelled')
+        print(f"      cancelled under farmer_late; refund {b['refund_paise'] / 100:.2f}")
+    finally:
+        b = api(f'/rest/v1/consultation_bookings?select=status&id=eq.{booking}', None, f_tok)[0]
+        if b['status'] == 'Booked':
+            api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': booking, 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
+
+def messaging_phone():
+    """Message button on the expert's profile opens the chat (they share a booking: normal chat); the input stays above
+    the keyboard; the message is stored once."""
+    fresh_login('user1', env['FIXTURE_PASSWORD'])
+    wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(r'Dr\. Ramesh Expert', 30)
+    tap_text(r'^Dr\. Ramesh Expert$'); wait_text(r"Dr\. Ramesh Expert's Posts", 20)
+    tap_text(r'Message$'); wait_text(r'Send message', 20)
+    assert not re.search(r'will see your messages as a request', texts()), 'shared-booking chat shown as a request'
+    box = edit_texts(); assert box, 'no message box'
+    adb('shell', 'input', 'tap', *center(box[-1])); time.sleep(2)
+    assert keyboard_shown(), 'keyboard did not open'
+    y = int(re.findall(r'\d+', edit_texts()[-1].get('bounds'))[3])
+    assert y < SCREEN_H * 0.7, f'message box hidden behind the keyboard (bottom at {y} of {SCREEN_H})'
+    text = f'Phone hello {int(time.time())}'
+    adb('shell', 'input', 'text', text.replace(' ', '%s')); time.sleep(0.8)
+    shot('49_phone_chat_keyboard')
+    tap_where(lambda n: (n.get('content-desc') or n.get('text') or '').strip().endswith('Send message'), 'Send message')
+    wait_text(re.escape(text), 20); time.sleep(3)
+    assert 'Sending…' not in texts(), 'message stuck on Sending'
+    adb('shell', 'input', 'keyevent', '111'); time.sleep(1); shot('50_phone_chat_sent')
+    e_uid, e_tok = sign_in_api('expert1'); f_uid, _ = sign_in_api('user1')
+    conv = api('/rest/v1/rpc/get_or_create_conversation', {'p_other': f_uid}, e_tok)
+    msgs = api('/rest/v1/rpc/get_messages', {'p_conversation_id': conv['conversation_id'], 'p_limit': 50}, e_tok)
+    assert sum(m['content'] == text for m in msgs) == 1, 'message not stored exactly once'
+
+def message_request_phone():
+    """A farmer with no booking or connection writes to the expert: on the phone the expert sees the requests icon
+    with its dot, the request in "Message requests" (not the inbox), and the notification opens the chat with
+    Accept / Decline; Accept makes it a normal chat."""
+    e_uid, e_tok = sign_in_api('expert1'); s_uid, s_tok = sign_in_api('user4')
+    conv = api('/rest/v1/rpc/get_or_create_conversation', {'p_other': e_uid}, s_tok)
+    if conv['state'] != 'request_outgoing':
+        print(f"      SKIPPED: user4 -> expert1 is already a {conv['state']} chat on staging"); return
+    sender = api(f'/rest/v1/profiles?select=full_name&id=eq.{s_uid}', None, s_tok)[0]['full_name']
+    api('/rest/v1/rpc/send_message', {'p_conversation_id': conv['conversation_id'], 'p_content': 'Phone request hello', 'p_client_id': str(uuid.uuid4())}, s_tok)
+    fresh_login('expert1', env['FIXTURE_PASSWORD'])
+    wait_text(SIGNED_IN, 40); nav('Chat')
+    wait_text(r'Message requests, \d+ waiting', 30); shot('51_phone_requests_dot')
+    assert 'Phone request hello' not in texts(), 'request shown in the inbox'
+    tap_text(r'^Message requests, \d+ waiting$|mark_chat_unread$')
+    wait_text(r'Phone request hello', 20); shot('52_phone_requests_list'); back()
+    nav('Feed'); wait_text(SIGNED_IN, 20)
+    tap_where(lambda n: (n.get('content-desc') or n.get('text') or '').strip().lower() == 'notifications', 'notifications')
+    wait_text(re.escape(sender) + r' sent you a message request', 30)
+    tap_text(re.escape(sender) + r' sent you a message request')
+    wait_text(r'Phone request hello', 20); t = wait_text(r'Decline', 10)
+    assert 'Accept' in t, 'no Accept button'
+    shot('53_phone_request_accept_decline')
+    tap_text(r'^Accept$')
+    end = time.time() + 15
+    while time.time() < end and re.search(r'(^| \| )Accept( \||$)', texts()): time.sleep(1)
+    rows = api('/rest/v1/rpc/list_conversations', {'p_box': 'inbox', 'p_limit': 200}, e_tok)
+    assert any(r['conversation_id'] == conv['conversation_id'] and r['state'] == 'normal' for r in rows), 'not accepted'
+    shot('54_phone_request_accepted')
 
 def google_enabled():
     r = subprocess.run(['curl', '-sS', f"{env['STAGING_SUPABASE_URL']}/auth/v1/settings", '-H', f"apikey: {env['STAGING_SUPABASE_ANON_KEY']}"],
@@ -494,6 +661,10 @@ for name, fn in [('farmer: login, feed, profile, Catch Up lists expert1, no expe
                  ('post media: image + video posts show in the feed card, video plays', post_media),
                  ('Catch Up end to end: expert fee, no calendar prices, checkout = fee, booking, expert Meet link, link notice, Join T-5 -> Google Meet, expert completes, farmer rates, admin 2 % record', full_consultation),
                  ('own post offers no Connect, also after a relaunch', own_post_no_connect_after_relaunch),
+                 ('2026-10-26 login: empty fields show inline reasons, no popup', inline_validation),
+                 ('2026-10-26 farmer cancels < 14 h: split shown first, empty reason inline, cancelled as farmer_late', cancellation_phone),
+                 ('2026-10-26 Message button opens chat; box above the keyboard; sent once', messaging_phone),
+                 ('2026-10-26 message request: icon + dot, requests list, notification opens chat, Accept', message_request_phone),
                  ('production app not replaced (same version + lastUpdateTime)', production_untouched)]:
     if ONLY and ONLY not in name and fn is not production_untouched: continue
     check(name, fn)

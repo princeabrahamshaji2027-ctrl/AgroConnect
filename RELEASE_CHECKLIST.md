@@ -119,7 +119,7 @@ commit before 17). Release the app and the admin website **together with 17 and 
 
 Still blocking a production release (unchanged, owner action): leaked-password protection is off on production and staging;
 production migrations 04–19 are not applied; Firebase service account for push not set; SMTP for password-reset e-mails;
-installed-app checks on a phone for this pass (not done yet — no device connected).
+installed-app checks on a phone for this pass are done (17/17 PASS on 2026-10-26, see TEST_RESULTS).
 
 Business rules shipped in this pass (also in Terms & Conditions): farmers and experts can cancel at any time before completion
 with a reason; farmer ≥ 14 h before the start (exactly 14 h counts) → full refund; farmer < 14 h → the expert keeps ceil(F/2),

@@ -375,14 +375,13 @@ export default function Chat({ onNavigateToBooking, onProfileClick, onShowToast,
       type="button"
       onClick={() => setBox(box === 'requests' ? 'inbox' : 'requests')}
       aria-label={badges.requests > 0 ? `Message requests, ${badges.requests} waiting` : 'Message requests'}
-      aria-pressed={box === 'requests'}
       style={{
         position: 'relative', background: box === 'requests' ? 'rgba(136, 217, 130, 0.15)' : 'transparent', border: 'none',
         borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: 'pointer', color: 'var(--text-primary)',
       }}
     >
-      <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>mark_chat_unread</span>
+      <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: '24px' }}>mark_chat_unread</span>
       {badges.requests > 0 && (
         <span
           data-testid="requests-dot"
@@ -547,7 +546,7 @@ export default function Chat({ onNavigateToBooking, onProfileClick, onShowToast,
                   cursor: draft.trim() ? 'pointer' : 'default', flexShrink: 0,
                 }}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>send</span>
+                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: '20px' }}>send</span>
               </button>
             </div>
             <FieldError id="chat-send-err">{sendError}</FieldError>

@@ -476,7 +476,24 @@ Test runs that the computer slept through (5.5 h) were discarded, not counted.
 | Staging builds + staging APK | PASS | APK `com.agroconnect.app.staging`, staging ref only, `windowSoftInputMode=adjustResize` present |
 | oxlint (root config) | 0 errors, 50 warnings | baseline 52 |
 | Catch Up load (desktop Chrome, staging, requests after tapping Catch Up until 1.5 s quiet) | farmer **7–8 requests, 1.2–2.4 s** (was 13, 2.4–2.6 s); expert **7 requests, 0.8–2.1 s** (was 11, 1.7–2.2 s) | slowest value is the first (cold) run each time |
-| Phone (installed APK) | **NOT RUN** | no device connected in this pass |
+| Phone (installed staging APK, Nothing Phone 2 `AIN065`, Android 16) | **PASS** — all 17 checks | see "Phone run 2026-10-26" below |
 
 Staging note: conversations are kept as records, so each pair of farmer accounts can show the "message request" flow only once
 on staging; all pairs are now used, and the browser/staging request tests skip themselves (the DB tests cover the flow every run).
+
+### Phone run 2026-10-26 (staging APK `com.agroconnect.app.staging`, `scripts/staging/device-smoke.py`)
+| Check | Result |
+|---|---|
+| 13 earlier checks (login, session after relaunch, rotation/back, expert mode, admin redirect, Google button, icons-only bar + menus + calendar, own avatar, leave-expert dialog, post media, own post) | PASS |
+| Catch Up end to end in real time: fee on card, no calendar prices, checkout = ₹450.00, booking, expert saves Meet link, farmer link notice, Join disabled → enabled at T-5 → Google Meet opens outside the app, expert completes, farmer rates 5/5, admin record ₹450.00 / 2 % ₹9.00 / share ₹441.00, simulated | PASS (booking `75962308`) |
+| Login with empty fields: reasons under the fields, no popup, error clears once fixed | PASS |
+| Farmer cancels < 14 h: split shown before confirming, empty reason = inline error, cancelled as `farmer_late` (refund ₹240.00 of ₹500.00) | PASS |
+| Message button on the expert's profile opens a normal chat; the message box stays above the keyboard (`adjustResize`); message stored once | PASS |
+| Message request: requests icon announces "Message requests, N waiting" (dot visible), request listed under requests and not in the inbox, notification opens the chat with Accept/Decline, Accept makes it normal | PASS |
+| Production app on the phone untouched (same version + install time); no ANR; no FATAL EXCEPTION | PASS |
+
+Found and fixed on the phone: the requests icon was announced to screen readers as "mark_chat_unread" (the icon's name) — the icon is
+now hidden from them so the label is read. Test-script fixes only (not app defects): the phone's 5-minute screen timeout during the
+real-time wait (a Shift key press each minute keeps it on; no device setting changed), paging History past the many cancelled
+staging test bookings, and the slot-minute collision retry. Not checked on the phone: push delivery (Firebase not configured).
+Screenshots: `appium-results/2026-10-25_staging_device/` 36–54.
