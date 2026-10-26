@@ -4,7 +4,9 @@
 // Requires SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and FIXTURE_PASSWORD in .env (never committed).
 // Mirrors supabase/proposed/06_repair_test_fixtures.sql. The old version never created the `experts` row for
 // expert1, which is why the expert Catch Up view did not appear (AUD-015).
-import { supabaseAdmin } from './lib/supabaseAdmin.js';
+import { supabaseAdmin, assertNotProduction } from './lib/supabaseAdmin.js';
+
+assertNotProduction('seed/test-fixtures.js');
 
 const FIXTURES = [
   { email: 'user1@agroconnect.local', fullName: 'Test User 1 (Farmer)', expertStatus: null },

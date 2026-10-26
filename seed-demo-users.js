@@ -2,6 +2,10 @@
 // Uses the Supabase Management API to create users server-side (bypasses email confirmation)
 
 const SUPABASE_URL = 'https://mgreapakfchcxcrauheq.supabase.co';
+// RETIRED (2026-10-26): this one-time script wrote demo accounts straight into PRODUCTION. Those accounts exist; the
+// launch community is created by scripts/production/seed-community.mjs (dry run + approval). It never runs now.
+console.error('Refusing to run: seed-demo-users.js is retired. Use scripts/production/seed-community.mjs.');
+process.exit(1);
 // The service role key is needed ONLY in this one-time admin seed script, never in frontend code
 // Get it from: Supabase Dashboard → Settings → API → service_role key
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;

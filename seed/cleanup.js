@@ -1,4 +1,6 @@
-import { supabaseAdmin } from './lib/supabaseAdmin.js';
+import { supabaseAdmin, assertNotProduction } from './lib/supabaseAdmin.js';
+
+assertNotProduction('seed/cleanup.js');
 
 async function cleanup() {
   console.log('🧹 Starting cleanup of seeded test data...');

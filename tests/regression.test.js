@@ -191,3 +191,36 @@ test('forms: every `const xValues = { … }` uses state declared above it (a lat
     }
   }
 });
+
+test('registration: no undefined variables after sign-up; district, phone and location go in the sign-up metadata', () => {
+  const src = read('src/pages/Register.jsx');
+  assert.doesNotMatch(src, /\b(phoneVal|cityVal|stateVal|countryVal|districtVal)\b/, 'removed validation variables are still used');
+  assert.match(src, /options:\s*\{\s*data:\s*\{[^}]*district[^}]*phone[^}]*location/);
+  assert.doesNotMatch(src, /handleGPSDetect|Detect Location via GPS/);
+  const lint = JSON.parse(read('.oxlintrc.json'));
+  assert.equal(lint.rules['no-undef'], 'error', 'oxlint must report undefined variables');
+});
+
+test('no invented Punjab / Ludhiana locations or fake distances in the app', () => {
+  for (const dir of ['src/pages', 'src/components']) {
+    for (const f of readdirSync(join(root, dir)).filter((n) => n.endsWith('.jsx'))) {
+      const src = read(`${dir}/${f}`);
+      assert.doesNotMatch(src, /Punjab, India|Ludhiana|Gill Village|km away/, `${dir}/${f}`);
+    }
+  }
+});
+
+test('feed uses the district-priority server function; seed scripts have no default project', () => {
+  assert.match(read('src/pages/Feed.jsx'), /rpc\('get_feed'/);
+  const admin = read('seed/lib/supabaseAdmin.js');
+  assert.doesNotMatch(admin, /https:\/\/[a-z]+\.supabase\.co/, 'seed scripts must not default to a project');
+  assert.doesNotMatch(admin, /SUPABASE_ANON_KEY/, 'no anon-key fallback for seeding');
+  for (const f of ['seed/cleanup.js', 'seed/test-fixtures.js']) assert.match(read(f), /assertNotProduction\(/, f);
+  assert.match(read('seed-demo-users.js'), /process\.exit\(1\);/, 'retired production seeder must refuse');
+  assert.doesNotMatch(admin, /ALLOW_PRODUCTION_SEED/, 'no production override for bulk/test seeders');
+  for (const f of ['scripts/production/seed-community.mjs', 'scripts/production/seed-posts.mjs']) {
+    const src = read(f);
+    assert.match(src, /confirmProduction\(REFS\.production\)/, `${f}: production writes need the typed confirmation`);
+    assert.match(src, /process\.stdin\.isTTY/, `${f}: never from a pipe or CI`);
+  }
+});
