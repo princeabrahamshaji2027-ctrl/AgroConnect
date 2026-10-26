@@ -125,3 +125,29 @@ Business rules shipped in this pass (also in Terms & Conditions): farmers and ex
 with a reason; farmer ≥ 14 h before the start (exactly 14 h counts) → full refund; farmer < 14 h → the expert keeps ceil(F/2),
 AgroConnect keeps its 2 % commission, the farmer gets the rest (₹1,000 → ₹500 / ₹20 / ₹480); expert, admin or automatic no-show
 cancellation → full refund. Refunds remain simulated bookkeeping (`refund_status = 'Pending'`), no money moves.
+
+## Production launch 2026-10-26 (branch `release/production-launch`)
+Plan and verified starting state: `PRODUCTION_LAUNCH_PROMPT.md`. Code is ready and tested on staging; every production
+write below waits for the owner's explicit approval, one gate at a time.
+
+| Gate | Action | Who | Status |
+|---|---|---|---|
+| G0 | Confirm a production backup (Dashboard → Database → Backups, or a `pg_dump` by the owner) | owner | pending |
+| G1 | `create extension pg_cron` on production (scheduler for reminders, no-show refunds, closing meetings) | owner approval | pending |
+| G2 | Apply 04 → 05 (05a, 05b, 05c) → 09 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18 → 19 → **20**, each as its own migration, 16 committed before 17 | owner approval | pending |
+| G3 | Deploy Edge Functions `admin-delete-user`, `push-dispatch`; secrets (`FIREBASE_SERVICE_ACCOUNT`) | owner approval + Firebase | pending |
+| G4 | Delete the 5 confirmed test fixtures (`11111111-1111-4000-8000-00000000000[1-5]`, `@agroconnect.local`) with `admin-delete-user` | owner approval | pending |
+| G5 | Push `release/production-launch` | owner approval | pending |
+| G6 | Merge the PR into `main` (Render deploys `main`) | owner approval | pending |
+| G7 | Render: add Rewrite `/*` → `/index.html`; confirm branch `main`, root `admin-dashboard`, build `npm ci && npm run build`, publish `dist`; deploy | owner (dashboard) | pending |
+| G8 | `seed-community.mjs --target production` dry run → approval → `--execute` (41 synthetic profiles, experts not bookable) | owner approval + service-role key in `.env.production.local` | pending |
+| G9 | `seed-posts.mjs --target production` dry run → approval → `--execute` (5 posts) | owner approval | pending |
+| G10 | Auth: enable leaked-password protection; Redirect URLs include `com.agroconnect.app://auth-callback**`; Google provider decision; SMTP; e-mail confirmation setting | owner (dashboard) | pending |
+
+* Release together: production migrations 14–20 change the server contract; the old APK v1.0 cannot book after 14 and
+  cannot send messages after 17. Ship the v1.1 APK (versionCode 2) and the admin site with them.
+* Android release signing reads `AGRO_RELEASE_*` from `~/.gradle/gradle.properties`; it must be the key that signed v1.0.
+* CI (`.github/workflows/ci.yml`) runs lint, unit + DB tests and both production builds on pull requests to `main` and
+  pushes to `main`/`release/**`. It has no secrets and deploys nothing; staging, Playwright and phone tests stay local.
+* Old seed scripts (`npm run seed`, `seed:cleanup`, `seed:fixtures`, `seed-demo-users.js`) now refuse production;
+  the launch community uses `scripts/production/seed-community.mjs` and `seed-posts.mjs` only.

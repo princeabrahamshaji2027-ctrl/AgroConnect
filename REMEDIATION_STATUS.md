@@ -262,3 +262,10 @@ Production order: see `RELEASE_CHECKLIST.md` (backup → 04 → 05 → 09 → 10
 | 19 normal chats stay normal after a disconnect | applied to staging; body identical to the file |
 | Production | **not applied** (no production writes were made) |
 | Fixed during testing | Catch Up crashed on open in the built app ("Cannot access 'cancelReason' before initialization": a form-values object was declared before its state). Found by Playwright on the staging build, fixed, all forms scanned for the same pattern. |
+
+## 2026-10-26 — migration 20 (staging) and the production launch
+| Item | Status |
+|---|---|
+| 20 districts and district-priority feed | applied to staging; 4 function bodies identical to the file |
+| Production 04, 05, 09–20 | **not applied** — waiting for owner approval (RELEASE_CHECKLIST gates G0–G2) |
+| Registration crash on the release branch (undefined variables after sign-up) | fixed; `no-undef` lint rule enabled; regression test |

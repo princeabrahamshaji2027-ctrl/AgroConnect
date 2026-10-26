@@ -1,0 +1,30 @@
+# Verification only: lint, unit + database tests (PGlite, no secrets), production builds of the app and the admin site.
+# Nothing here deploys or talks to staging/production. Staging scenario, Playwright and phone tests are run locally
+# with .env.staging (see RELEASE_CHECKLIST.md).
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'release/**']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Lint (errors fail the build; warnings do not)
+        run: npx oxlint
+      - name: Unit and database tests
+        run: npm test
+      - name: Build the app (production defaults)
+        run: npm run build
+      - name: Build the admin website
+        working-directory: admin-dashboard
+        run: npm ci && npm run build

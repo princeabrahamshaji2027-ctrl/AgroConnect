@@ -183,3 +183,11 @@ which code, admin and docs state plainly: no real money moves.
   Assumption: a farmer and an expert who share a booking chat normally, so cancellation notes always reach the inbox.
 * **Performance**: Catch Up loads in two parallel rounds with only the needed columns (see TEST_RESULTS for the numbers);
   reviews and shop load only when their tab opens; new indexes for upcoming/history/open slots/notifications.
+
+## 2026-10-26 — launch districts
+* Districts: Kottayam, Pathanamthitta, Kannur (`src/utils/districts.js`, DB CHECKs in migration 20). Registration asks for
+  one; users without one (Google sign-ups, older accounts) get a prompt and can change it in Edit Profile.
+* Feed: `get_feed()` puts the viewer's district first (read from their profile on the server), newest first in each group,
+  keyset pages ("Load more"). A post's district is the author's at posting time, set by a trigger.
+* Experts: own district first and a district filter in Catch Up → Book; Search lists experts in the user's district.
+* Launch community: `scripts/production/seed-community.mjs` / `seed-posts.mjs` (manifest `seed/manifests/community-2026-10.json`).

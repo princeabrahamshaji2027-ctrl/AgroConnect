@@ -112,3 +112,13 @@ builds (10), `scripts/staging/device-smoke.py` on the phone.
 | Message notifications + push (no message text in push) | yes | — | UNTESTED | counts only | LOCAL + STG | DB tests; push delivery still needs Firebase | Firebase not configured | owner |
 | Skeleton loading + error/Retry (Catch Up lists, Chat, Notifications, Profile, Edit Profile) | yes | see TEST_RESULTS | UNTESTED | — | STG | — | — | phone check |
 | Admin Pending Reports / Expert Apps red only when something is pending | yes | — | — | see TEST_RESULTS | STG | admin.spec + regression guard | — | — |
+
+## Launch districts — 2026-10-26 (staging)
+| Feature | Code | Web | Android | Admin | Env | Evidence | Issues / failures | Next action |
+|---|---|---|---|---|---|---|---|---|
+| Registration (fixed: crashed after sign-up on the previous branch) with required district | yes | see TEST_RESULTS | UNTESTED | — | LOCAL + STG | regression test, Playwright register test, DB test (sign-up stores district) | — | phone check |
+| District-priority feed (own district first, newest first, pages) | yes | see TEST_RESULTS | UNTESTED | — | LOCAL + STG | DB `districts-feed.test.mjs` (10), staging-districts (4), Playwright | — | phone check |
+| Choose-your-district prompt, district in Edit Profile | yes | see TEST_RESULTS | UNTESTED | — | STG | Playwright | — | — |
+| Expert discovery: own district first, district filter | yes | UNTESTED | UNTESTED | — | STG | — | — | Playwright / phone |
+| Admin: district overview, Users/Posts district filter | yes | — | — | see TEST_RESULTS | STG | admin.spec | — | — |
+| No invented locations (Punjab/Ludhiana, fake distances, fake articles) | removed | — | — | — | LOCAL | regression test | — | — |
