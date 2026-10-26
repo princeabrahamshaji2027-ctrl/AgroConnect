@@ -300,7 +300,8 @@ def full_consultation():
         # 1. farmer: one price, no calendar prices, checkout, payment animation
         fresh_login('user1', env['FIXTURE_PASSWORD'])
         wait_text(SIGNED_IN, 40); nav('Catch Up')
-        t = wait_text(r'Consultation fee ₹450\.00', 40)
+        # the WebView exposes the label and the amount as separate nodes (texts() is a sorted set of nodes)
+        t = wait_text(r'Consultation fee', 40); t = wait_text(r'(^| \| )₹450\.00( \||$)', 20)
         assert not re.search(r'From ₹|per session', t), 'old price label on the card'
         shot('34_phone_expert_card_fee')
         tap_text(r'^Book Consultation$'); wait_text(r'Select a Date')
@@ -319,7 +320,7 @@ def full_consultation():
         assert '₹450.00' in t and 'Dr. Ramesh Expert' in t and '30 minutes' in t, 'checkout summary wrong'
         assert not re.search(r'demo|no real money|simulated|mock', t, re.I), 'demo wording on the checkout'
         shot('36_phone_checkout')
-        tap_text(r'^Pay ₹450\.00$')
+        tap_where(lambda n: re.fullmatch(r'Pay\s*₹?\s*450\.00|Pay', (n.get('text') or n.get('content-desc') or '').strip()) is not None, 'Pay button')
         try:
             wait_text(r'Processing payment', 4); shot('37_phone_payment_processing')
         except AssertionError:
@@ -330,7 +331,7 @@ def full_consultation():
         assert len(rows) == 1, f'{len(rows)} bookings'
         booking = rows[0]['id']
         tap_text(r'^View my booking$'); wait_text(r'Waiting for expert to add meeting link', 30)
-        assert re.search(r'Consultation fee ₹450\.00', texts()), 'agreed fee not on the booking'
+        t = texts(); assert 'Consultation fee' in t and '₹450.00' in t, 'agreed fee not on the booking'
 
         # 2. expert on the phone: add the Google Meet link
         fresh_login('expert1', env['FIXTURE_PASSWORD'])
