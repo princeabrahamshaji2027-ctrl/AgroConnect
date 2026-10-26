@@ -25,6 +25,9 @@ export const PROPOSED = {
   '13': 'supabase/proposed/13_push_notifications.sql',
   '14': 'supabase/proposed/14_meet_links_and_demo_payment.sql',
   '15': 'supabase/proposed/15_expert_fee_and_commission.sql',
+  '16': 'supabase/proposed/16_message_notification_type.sql',
+  '17': 'supabase/proposed/17_messaging.sql',
+  '18': 'supabase/proposed/18_cancellation_and_refunds.sql',
   '99': 'supabase/proposed/99_rollback.sql',
 };
 export const ALL = ['01', '02', '03', '04', '05', '07', '08'];
