@@ -145,7 +145,7 @@ function App() {
         onClose={() => setSidebarOpen(false)}
         isOpen={sidebarOpen}
       />
-      <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-[260px]' : 'ml-0'}`}>
+      <div className={`flex flex-col flex-1 min-w-0 transition-all duration-300 ${sidebarOpen ? 'ml-[260px]' : 'ml-0'}`}>
         <TopNav
           userProfile={profile}
           onMenuClick={() => setSidebarOpen(prev => !prev)}

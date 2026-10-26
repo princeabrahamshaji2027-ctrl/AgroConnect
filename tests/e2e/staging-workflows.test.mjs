@@ -275,7 +275,9 @@ describe('scheduler (pg_cron, real time)', { skip }, () => {
       if (b.status !== 'Booked') break;
       await new Promise((r) => setTimeout(r, 20000));
     }
-    assert.deepEqual([b.status, b.refund_status, Number(b.refund_amount)], ['Cancelled', 'Pending', 400]);
+    // the refund is the fee agreed at booking (migration 15: the expert's fee snapshot), not the slot's legacy rate
+    const agreed = (await A.admin.c.from('demo_payments').select('amount_paise').eq('booking_id', booking).single()).data.amount_paise;
+    assert.deepEqual([b.status, b.refund_status, Number(b.refund_amount)], ['Cancelled', 'Pending', agreed / 100]);
     const notes = await A.user3.c.from('notifications').select('message').eq('related_id', booking);
     // besides the booking confirmation and reminders (11): exactly one auto-cancel notice
     assert.equal(notes.data.filter((n) => /auto-cancelled/.test(n.message)).length, 1, 'farmer should get exactly one auto-cancel notice');

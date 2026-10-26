@@ -239,3 +239,16 @@ Production order: see `RELEASE_CHECKLIST.md` (backup → 04 → 05 → 09 → 10
 * Found while building it: a reviewer could UPDATE their review onto another booking/expert (policy allowed it) — now
   blocked by `guard_reviews_update`; review text ≤ 1000 characters; expert slot fees must be ₹1–₹1,00,000.
 * Removed: Daily (`@daily-co/daily-js`, `video-room-token` provider code, in-app room, camera/microphone permissions).
+
+## 2026-10-25 — expert fee, commission, admin reporting (staging only; production unchanged)
+`15_expert_fee_and_commission.sql` (applied to staging, held for production after 14).
+* **Root cause of three different amounts**: there was no per-expert fee; the price lived on each slot (`consultation_slots.rate`)
+  and every screen picked a different slot — the card the cheapest open slot (or a hard-coded ₹500), each calendar day its cheapest,
+  each time button its own, checkout the chosen slot. Now `experts.consultation_fee_paise` is the only source; the slot column is legacy.
+* Fee changes: only `set_consultation_fee()` (expert) or `admin_set_consultation_fee()` (admin, reason, audit log); every direct write
+  of the column is refused, admins included. A client-created expert row cannot choose its own fee.
+* Checkout quotes the fee; `confirm_demo_payment()` rejects a quote that no longer equals the expert's fee (`fee_changed`), the app shows
+  the new amount and asks again. Confirmation stores fee F, 200 bps, commission C, share E (C + E = F, CHECK constraint) on the
+  accounting row; a trigger makes that snapshot immutable for everyone (service role included).
+* Admin reporting is read-only and admin-only (`is_admin()` in each function); the Meet link is returned only by the detail function.
+* Open risk: nothing stops an expert from setting an unreasonable (but in-range) fee; a business decision, not a defect.

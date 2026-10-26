@@ -433,3 +433,33 @@ Owner connected the phone over USB. Staging APK installed next to the production
   prop, so the Join button's old opacity never applied). Rebuilt staging APK re-checked on the phone: Meet check
   **PASS**, 0 ANR, 0 crash, production app unchanged; "Join opens … (in …)" is grey before the window and turns into the
   green "Join Meeting" by itself at T−5 min (screenshots 26, 27).
+
+## Final pricing pass — expert fee, 2 % commission, admin Consultations — 2026-10-25/26 (staging only)
+
+No phone or emulator used for this part (phone run pending). Production was not read or written in this pass.
+
+**Root cause of three different amounts:** no per-expert fee existed. The price lived on each slot (`consultation_slots.rate`,
+set per weekday in the availability editor, default 500). The expert card showed the cheapest open slot ("From ₹300", or a
+hard-coded ₹500 fallback), each calendar day its cheapest slot, each time button its own slot, checkout the chosen slot.
+expert1 had slots at ₹300/350/400/450/500, hence three different numbers. Fixed by `experts.consultation_fee_paise` as the
+only source (migration 15) and removing every slot price from the UI.
+
+| Suite | Result | Notes |
+|---|---|---|
+| `npm test` — validation | **27/27 PASS** | |
+| `npm test` — regression + unit | **22/22 PASS** | guards: no demo/mock/"no real money" wording in user-facing files, no slot price in the app, fee from `consultation_fee_paise`; Meet link, FCM (MOCKED) |
+| `npm run test:db` (PGlite, 01–15) | **86/86 PASS** | 12 new for 15: backfill, fee edit rules (expert only, ₹1–₹1,00,000, no direct writes incl. admin, audited admin change), checkout quotes the fee, ₹1,000 → ₹20/₹980 stored once, rounding (half up, C + E = F for every fee 100–20000 paise), stale quote refused, snapshot immutable (service role too), refunds from the agreed fee, admin functions admin-only, summary = rows, server-side filters + pagination, detail, re-runnable |
+| `npm run test:staging` (8 files, serial) | **45/45 PASS in one full run** | an earlier full run had 2 failures, both obsolete/limited tests: the no-show refund now equals the agreed fee (₹500), not the slot's legacy ₹400; a summary check capped at 100 rows (now pages through all rows) |
+| — new staging checks | | fee only via `set_consultation_fee` (direct writes refused, admin too), ₹1,000 booking → ₹20/₹980 kept after a fee change to ₹1,200, admin list/detail match, admin functions refused for farmer/expert/anon, summary = sum of all pages |
+| Playwright, E2E_STAGING=1, fresh staging builds | **34/34 PASS** (final run) | one price everywhere (₹735.50 on card = checkout = booking, calendar/day cells/time buttons without ₹, no demo wording on any screen, no payment host contacted); fee changed while on checkout → new amount shown and confirmed again; cancel; MOCKED network cut; slot conflict; expert fee editor (6 invalid inputs explained, 98 %/2 % preview, saved, farmer cannot change); Terms page; admin Consultations (cards, filters, pagination, read-only detail) and ₹1,000/₹20/₹980 after a raise to ₹1,200 |
+| Lint | 0 errors, 52 warnings | unchanged |
+| Builds | PASS | app + admin production (production ref only), staging (staging ref only), no service_role, no Daily/payment SDK, no demo wording in app bundles; staging APK `com.agroconnect.app.staging` (no camera/mic permission, fee code included) |
+| Security | PASS with known items | secret scan clean (only the public production anon key); advisor: only the expected signed-in-callable functions (each checks admin/ownership) + leaked-password protection still OFF (release blocker) |
+
+**Defects found and fixed during this pass:** fee editor gave no reason when Save was disabled (now explains invalid input
+immediately); admin page overflowed the window (layout `min-w-0`); admin menu item duplicated the "Consultations" section
+name (now "Bookings & Payments"); History showed "Session Verified" for bookings closed automatically (now "Not confirmed by the
+expert").
+
+**Not verified:** anything on the phone for this version (pending); push delivery (no Firebase); reset e-mail (no real inbox).
+Test runs that the computer slept through (5.5 h) were discarded, not counted.

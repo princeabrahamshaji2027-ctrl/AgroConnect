@@ -74,6 +74,18 @@ export default function Settings({ onLogout, onGoBack, onNavigate }) {
               {/* Push notifications — only in builds where push is configured (Firebase) */}
               {pushSupported() && <PushToggle />}
 
+              {/* Terms & Conditions (consultation fees and the 2% platform commission) */}
+              <div 
+                onClick={() => onNavigate && onNavigate('terms')}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', backgroundColor: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>gavel</span>
+                  <span style={{ fontSize: '15px' }}>Terms &amp; Conditions</span>
+                </div>
+                <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
+              </div>
+
               {/* Privacy & Security */}
               <div 
                 onClick={() => onNavigate && onNavigate('privacy')}

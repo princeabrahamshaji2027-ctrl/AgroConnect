@@ -100,7 +100,14 @@ test('AUD-013/014: Catch Up writes go through server functions, not direct table
   assert.doesNotMatch(src, /book_consultation_slot/);
   const checkout = read('src/components/DemoCheckout.jsx');
   for (const fn of ['start_demo_checkout', 'confirm_demo_payment', 'cancel_demo_payment']) assert.match(checkout, new RegExp(`rpc\\('${fn}'`), fn);
-  assert.match(checkout, /DEMO PAYMENT — NO REAL MONEY CHARGED/);
+  // product decision: no demo / mock / "no real money" wording anywhere the user can see it
+  for (const f of ['src/components/DemoCheckout.jsx', 'src/pages/Connect.jsx', 'src/pages/Terms.jsx', 'src/components/ConsultationFeeEditor.jsx']) {
+    const visible = read(f).split('\n').filter((l) => !/^\s*(\/\/|\*|\{\/\*)/.test(l)).map((l) => l.replace(/\s\/\/ .*$/, '')).join('\n');
+    assert.doesNotMatch(visible.replace(/demo_payments|demo-|DemoCheckout|confirm_demo_payment|start_demo_checkout|cancel_demo_payment|\.demo/g, ''), /demo payment|mock payment|no real money|simulated payment/i, f);
+  }
+  // one price source: the expert's fee; no per-slot price in the app
+  assert.match(src, /consultation_fee_paise/);
+  assert.doesNotMatch(src, /\bslot\.rate\b|\.rate\)|rate: 500|minRate|minDateRate/, 'slot rates are not shown or used any more');
   assert.doesNotMatch(checkout, /p_amount/, 'client sends an amount');
   assert.doesNotMatch(src, /checkRemindersAndNoShows/);
   assert.doesNotMatch(src, /setNowTick/, 'no whole-page re-render every second');

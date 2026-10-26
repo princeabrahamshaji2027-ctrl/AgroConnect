@@ -7,6 +7,7 @@ import BottomSheet from '../components/BottomSheet';
 import ExpertMenuSheet from '../components/ExpertMenuSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
 import DemoCheckout from '../components/DemoCheckout';
+import ConsultationFeeEditor from '../components/ConsultationFeeEditor';
 import { formatInr } from '../utils/money';
 import JoinMeetingButton, { meetingStartMs } from '../components/JoinMeetingButton';
 import { supabase } from '../supabase';
@@ -134,6 +135,11 @@ function MeetLinkStatus({ link, expert = false }) {
   );
 }
 
+// The fee agreed for a booking = its confirmed payment snapshot (never the expert's current fee). Readable by the farmer.
+const agreedFeeOf = (b) => {
+  const list = Array.isArray(b.demo_payments) ? b.demo_payments : b.demo_payments ? [b.demo_payments] : [];
+  return list.find((p) => p.status === 'succeeded')?.amount_paise ?? null;
+};
 const COMMON_TIME_SLOTS = [
   '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
   '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
@@ -319,10 +325,10 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [expandedDays, setExpandedDays] = useState(['Mon']);
   const [timesByDay, setTimesByDay] = useState({
     Mon: [
-      { time: '09:00', rate: 500 },
-      { time: '11:00', rate: 500 },
-      { time: '14:00', rate: 500 },
-      { time: '16:00', rate: 500 }
+      { time: '09:00' },
+      { time: '11:00' },
+      { time: '14:00' },
+      { time: '16:00' }
     ],
     Tue: [],
     Wed: [],
@@ -334,7 +340,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [meetingDuration, setMeetingDuration] = useState(30);
   const [bufferTime, setBufferTime] = useState(10);
   const [slotPickerTime, setSlotPickerTime] = useState({ Mon: '09:00', Tue: '09:00', Wed: '09:00', Thu: '09:00', Fri: '09:00', Sat: '09:00', Sun: '09:00' });
-  const [slotPickerRate, setSlotPickerRate] = useState({ Mon: 500, Tue: 500, Wed: 500, Thu: 500, Fri: 500, Sat: 500, Sun: 500 });
 
   // Database States & Calendar States
   const [expertsList, setExpertsList] = useState([]);
@@ -352,7 +357,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [joiningId, setJoiningId] = useState(null);
   const [completingId, setCompletingId] = useState(null);
   const [linkEditor, setLinkEditor] = useState(null); // { appt, value, saving, error, saved }
-  const [checkout, setCheckout] = useState(null);     // { slotId, issue } while the DEMO checkout is open
+  const [checkout, setCheckout] = useState(null);     // { slotId, issue } while the checkout is open (simulated payment)
+  const [myFeePaise, setMyFeePaise] = useState(null); // signed-in expert's own consultation fee
   // server clock = phone clock + offset, measured by consultation_join_status(); ticks once a second
   const [clockOffsetMs, setClockOffsetMs] = useState(0);
 
@@ -396,7 +402,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       // 0. Check if logged in user is an expert
       const { data: myExpert } = await supabase
         .from('experts')
-        .select('id, meeting_duration_minutes, buffer_time_minutes, is_active, specialization')
+        .select('id, meeting_duration_minutes, buffer_time_minutes, is_active, specialization, consultation_fee_paise')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -404,6 +410,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       if (myExpert && myExpert.is_active !== false) {
         setIsCurrentExpert(true);
         setCurrentExpertId(myExpert.id);
+        setMyFeePaise(myExpert.consultation_fee_paise);
         activeExpertId = myExpert.id;
         setActiveSubTab(prev => (prev === 'book' ? 'upcoming' : prev));
         if (myExpert.meeting_duration_minutes) setMeetingDuration(myExpert.meeting_duration_minutes);
@@ -470,6 +477,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           user_id,
           rating,
           is_active,
+          consultation_fee_paise,
           profiles:user_id (
             full_name,
             profile_image_path,
@@ -489,6 +497,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               role: exp.profiles?.role || 'Expert',
               bio: exp.profiles?.bio || '',
               rating: exp.rating ? Number(exp.rating).toFixed(1) : '5.0',
+              feePaise: exp.consultation_fee_paise,   // the expert's fee: the only price shown before checkout
               reviewCount: revCounts[exp.id] || 0
             }))
         );
@@ -551,6 +560,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               *,
               consultation_slots:slot_id ( slot_date, start_time, end_time ),
               video_meetings ( meeting_link ),
+              demo_payments ( amount_paise, status ),
               experts:expert_id (
                 id,
                 user_id,
@@ -577,6 +587,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               time: appt.meeting_time,
               endsMs: slotEndMs(appt),
               meetingLink: meetingLinkOf(appt),
+              agreedFeePaise: agreedFeeOf(appt),
               status: 'upcoming'
             })));
           }
@@ -595,6 +606,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           .from('consultation_bookings')
           .select(`
             *,
+            demo_payments ( amount_paise, status ),
             experts:expert_id (
               id,
               user_id,
@@ -631,6 +643,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             duration: '30 mins',
             status: h.status,
             completionSource: h.completion_source,
+            agreedFeePaise: agreedFeeOf(h),
             cancellationReason: h.cancellation_reason,
             reviewed: reviewedBookingIds.has(h.id)
           }));
@@ -775,13 +788,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
   const handleAddTimeSlotToDay = (dayStr) => {
     const timeToAdd = slotPickerTime[dayStr] || '09:00';
-    const rateToAdd = parseFloat(slotPickerRate[dayStr]) || 500;
     const currentSlots = timesByDay[dayStr] || [];
     if (currentSlots.some(s => (typeof s === 'string' ? s : s.time) === timeToAdd)) {
       if (onShowToast) onShowToast(`⚠️ ${formatTime12h(timeToAdd)} is already added for ${dayStr}`);
       return;
     }
-    const updated = [...currentSlots, { time: timeToAdd, rate: rateToAdd }].sort((a, b) => {
+    const updated = [...currentSlots, { time: timeToAdd }].sort((a, b) => {
       const tA = typeof a === 'string' ? a : a.time;
       const tB = typeof b === 'string' ? b : b.time;
       return tA.localeCompare(tB);
@@ -806,14 +818,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         const daySlots = timesByDay[day] || [];
         for (const slotObj of daySlots) {
           const timeStr = typeof slotObj === 'string' ? slotObj : slotObj.time;
-          const rateVal = typeof slotObj === 'object' && slotObj.rate !== undefined ? slotObj.rate : 500;
           const endTimeStr = addOneHour(timeStr);
           slotsToInsert.push({
             expert_id: currentExpertId,
             slot_date: formatDateYYYYMMDD(date),
             start_time: timeStr,
-            end_time: endTimeStr,
-            rate: parseFloat(rateVal) || 500,
+            end_time: endTimeStr,   // no price per slot: the fee is the expert's consultation fee (migration 15)
             is_booked: false
           });
         }
@@ -881,7 +891,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       return;
     }
 
-    // Pay & Book opens the DEMO checkout; the booking is created only when the demo payment is confirmed on the server.
+    // Pay & Book opens the checkout (a SIMULATED payment — no provider, no money moves; never labelled as such in the UI).
+    // The booking is created only when confirm_demo_payment() succeeds on the server.
     setCheckout({ slotId: selectedSlot.id, issue: bookingIssue.trim() });
   };
 
@@ -894,13 +905,13 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       setBookingDate('');
       setBookingTime('');
       setBookingIssue('');
-      if (onShowToast) onShowToast(`📅 Booked with ${expert?.name || 'the expert'} — demo payment, no real money charged.`);
+      if (onShowToast) onShowToast(`📅 Booked with ${expert?.name || 'the expert'}.`);
       fetchData();
       setActiveSubTab('upcoming');
       return;
     }
     if (result?.cancelled) {
-      if (onShowToast) onShowToast('Demo payment cancelled. Nothing was booked.');
+      if (onShowToast) onShowToast('Payment cancelled. Nothing was booked.');
       return;   // back to the booking dialog with the same choices
     }
     if (result?.reselect && expert) {
@@ -1321,10 +1332,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
             
             {expertsList.map((exp) => {
               const expertSlots = allExpertSlotsMap[exp.id] || [];
-              const unbookedSlots = expertSlots.filter(s => !s.is_booked);
-              const minRate = unbookedSlots.length > 0
-                ? Math.min(...unbookedSlots.map(s => Number(s.rate) || 500))
-                : (expertSlots.length > 0 ? Math.min(...expertSlots.map(s => Number(s.rate) || 500)) : 500);
 
               return (
                 <div 
@@ -1345,10 +1352,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                         <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
                       </div>
                       <span className="badge-role" style={{ display: 'inline-block', marginTop: '2px' }}>{exp.role}</span>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--primary-green)' }}>From ₹{minRate}</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>per session</div>
+                      {exp.feePaise > 0 && (
+                        <div data-testid="expert-fee" style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                          Consultation fee <strong style={{ color: 'var(--primary-green)' }}>{formatInr(exp.feePaise)}</strong>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1450,9 +1458,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                           const dateSlots = expertSlots.filter(s => s.slot_date === cell.dateStr);
                           const unbookedOnDate = dateSlots.filter(isBookableSlot);
                           const hasAvailableSlots = unbookedOnDate.length > 0;
-                          const minDateRate = hasAvailableSlots 
-                            ? Math.min(...unbookedOnDate.map(s => Number(s.rate) || 500))
-                            : null;
 
                           return (
                             <div
@@ -1480,7 +1485,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                                 {cell.dayNum}
                               </span>
                               <span style={{ fontSize: '10px', fontWeight: '700', color: hasAvailableSlots ? 'var(--primary-green)' : 'var(--text-muted)', marginTop: '2px' }}>
-                                {hasAvailableSlots ? `₹${minDateRate}` : '--'}
+                                {hasAvailableSlots ? `${unbookedOnDate.length} open` : '--'}
                               </span>
                             </div>
                           );
@@ -1503,6 +1508,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         {/* ================= EXPERT MANAGE AVAILABILITY ================= */}
         {activeSubTab === 'availability' && isCurrentExpert && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '32px' }}>
+            <ConsultationFeeEditor feePaise={myFeePaise} onSaved={(paise) => { setMyFeePaise(paise); fetchData(); }} onShowToast={onShowToast} />
             
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1650,7 +1656,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                                 {daySlots.map((slotObj, idx) => {
                                   const timeStr = typeof slotObj === 'string' ? slotObj : slotObj.time;
-                                  const rateVal = typeof slotObj === 'object' && slotObj.rate !== undefined ? slotObj.rate : 500;
                                   return (
                                     <div
                                       key={idx}
@@ -1668,7 +1673,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                                     >
                                       <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--primary-green)' }}>schedule</span>
                                       <span>{formatTime12h(timeStr)}</span>
-                                      <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>₹{rateVal}</span>
                                       <span
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -1709,24 +1713,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                                 <InlineTimePicker
                                   value={slotPickerTime[d.short] || '09:00'}
                                   onChange={(val) => setSlotPickerTime({ ...slotPickerTime, [d.short]: val })}
-                                />
-                              </div>
-
-                              <div style={{ width: '90px' }}>
-                                <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Rate (₹)</label>
-                                <input
-                                  type="number"
-                                  value={slotPickerRate[d.short] || 500}
-                                  onChange={(e) => setSlotPickerRate({ ...slotPickerRate, [d.short]: e.target.value })}
-                                  style={{
-                                    width: '100%',
-                                    backgroundColor: '#181818',
-                                    border: '1px solid var(--border-color)',
-                                    color: 'var(--text-primary)',
-                                    padding: '6px 8px',
-                                    borderRadius: '8px',
-                                    fontSize: '12px'
-                                  }}
                                 />
                               </div>
 
@@ -1897,7 +1883,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                   <div key={s.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px' }}>
                     <div>
                       <div style={{ fontWeight: '700', fontSize: '12px' }}>{s.slot_date} ({formatTime12h(s.start_time)} - {formatTime12h(s.end_time)})</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Rate: ₹{s.rate}</div>
                     </div>
                     <span style={{
                       fontSize: '10px',
@@ -2074,6 +2059,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     <div style={{ backgroundColor: '#252525', padding: '10px 12px', borderRadius: '10px', fontSize: '12px' }}>
                       <strong>Topic:</strong> {appt.topic}
                     </div>
+                    {appt.agreedFeePaise != null && (
+                      <div data-testid="agreed-fee" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        Consultation fee <strong style={{ color: 'var(--text-primary)' }}>{formatInr(appt.agreedFeePaise)}</strong>
+                      </div>
+                    )}
 
                     <MeetLinkStatus link={appt.meetingLink} />
 
@@ -2127,6 +2117,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 </div>
 
                 <p style={{ fontSize: '12px', color: '#dddddd' }}><strong>Consultation:</strong> {hist.topic}</p>
+                {hist.agreedFeePaise != null && (
+                  <p data-testid="history-fee" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Consultation fee <strong style={{ color: 'var(--text-primary)' }}>{formatInr(hist.agreedFeePaise)}</strong>
+                  </p>
+                )}
                 {hist.status === 'Cancelled' && hist.cancellationReason && (
                   <p style={{ fontSize: '11px', color: 'var(--error)', backgroundColor: 'rgba(255, 90, 90, 0.1)', padding: '6px 10px', borderRadius: '8px' }}>
                     <strong>Reason:</strong> {hist.cancellationReason}
@@ -2138,7 +2133,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                     <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
                       {hist.status === 'Cancelled' ? 'cancel' : 'check_circle'}
                     </span>
-                    {hist.status === 'Cancelled' ? 'Session Cancelled' : 'Session Verified'}
+                    {hist.status === 'Cancelled' ? 'Session Cancelled'
+                      : hist.completionSource === 'slot_ended' ? 'Not confirmed by the expert' : 'Session Verified'}
                   </span>
                   
                   {hist.status !== 'Cancelled' && !hist.reviewed ? (
@@ -2299,7 +2295,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                         {slot.slot_date}
                       </div>
                       <div style={{ fontSize: '10px', color: slot.is_booked ? 'var(--text-muted)' : 'var(--primary-green)', fontWeight: '600' }}>
-                        {formatTime12h(slot.start_time)} - {formatTime12h(slot.end_time)} (₹{slot.rate})
+                        {formatTime12h(slot.start_time)} - {formatTime12h(slot.end_time)}
                       </div>
                       {slot.is_booked && (
                         <span style={{ fontSize: '9px', color: 'var(--error)', fontWeight: 'bold' }}>Booked (Unavailable)</span>
@@ -2315,18 +2311,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                 <p style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-muted)' }}>This expert has not published any open slots for booking yet. Please check back later.</p>
               </div>
             )}
-
-            {selectedSlot && !selectedSlot.is_booked && (
-              <div data-testid="booking-fee" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1E1E1E', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '10px 12px', fontSize: '12px' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>
-                  {formatTime12h(selectedSlot.start_time)} – {formatTime12h(selectedSlot.end_time)} · Fee
-                </span>
-                <strong style={{ color: 'var(--primary-green)' }}>
-                  {Number(selectedSlot.rate) > 0 ? `${formatInr(Math.round(Number(selectedSlot.rate) * 100))} INR` : 'Fee unavailable'}
-                </strong>
-              </div>
-            )}
-            <div style={{ fontSize: '10.5px', color: '#ffb74d' }}>Demo payment — no real money is charged.</div>
 
             <div className="form-group">
               <label className="form-label">Consultation Topic / Issue</label>

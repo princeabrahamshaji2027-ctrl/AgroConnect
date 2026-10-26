@@ -69,7 +69,7 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     assert.ifError(book.error);
     const id = book.data;
     // DEMO payment: amount from the slot (paise), recorded as succeeded only after the booking exists
-    assert.deepEqual([book.payment.status, book.payment.currency, book.payment.demo], ['succeeded', 'INR', true]);
+    assert.deepEqual([book.payment.status, book.payment.currency, book.payment.transaction_type], ['succeeded', 'INR', 'simulated']);
     assert.ok(book.payment.amount_paise > 0);
 
     // immediate notifications, one each, with names

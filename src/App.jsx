@@ -13,6 +13,7 @@ import Notifications from './pages/Notifications';
 import Chat from './pages/Chat';
 import Settings from './pages/Settings';
 import PrivacySecurity from './pages/PrivacySecurity';
+import Terms from './pages/Terms';
 import NavBar from './components/NavBar';
 import { FAB } from './components/Button';
 import './index.css';
@@ -334,6 +335,10 @@ export default function App() {
           onNavigate={(target) => setSubScreen(target)}
         />
       );
+    }
+
+    if (subScreen === 'terms') {
+      return <Terms onGoBack={() => setSubScreen('settings')} />;
     }
 
     if (subScreen === 'privacy') {

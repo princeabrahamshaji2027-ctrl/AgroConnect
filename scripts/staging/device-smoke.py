@@ -6,7 +6,7 @@ Restores the device's rotation settings and does not clear its log, so it is saf
   ANDROID_SERIAL=<serial> python3 -I scripts/staging/device-smoke.py
 Screenshots: appium-results/2026-10-25_staging_device/ (01-09 base run, 10-20 change request 2026-10-25)
 """
-import json, os, re, uuid, signal, subprocess, sys, time, xml.etree.ElementTree as ET
+import calendar, json, os, re, uuid, signal, subprocess, sys, time, xml.etree.ElementTree as ET
 
 # a kill (SIGTERM) must still run the finally blocks that restore the device's rotation settings
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
@@ -254,101 +254,138 @@ def own_post_no_connect_after_relaunch():
         for p_ in api(f"/rest/v1/posts?select=id&user_id=eq.{uid}&caption=like.Phone%20own%20post%20check*", None, tok) or []:
             api(f"/rest/v1/posts?id=eq.{p_['id']}", None, tok, method='DELETE')
 
-def demo_book_api(slot, issue, token):
-    """Book like the app does: DEMO checkout (no real money) -> server confirms and creates the booking (migration 14)."""
-    p = api('/rest/v1/rpc/start_demo_checkout', {'p_slot_id': slot, 'p_issue': issue, 'p_idempotency_key': str(uuid.uuid4())}, token)
-    c = api('/rest/v1/rpc/confirm_demo_payment', {'p_payment_id': p['payment_id']}, token)
-    assert c['status'] == 'succeeded', f"demo payment {c['status']}: {c.get('failure_reason')}"
-    return c['booking_id']
+def sign_in_api_admin():
+    tok = api('/auth/v1/token?grant_type=password', {'email': fx('admin'), 'password': env['E2E_ADMIN_PASSWORD']})
+    return tok['user']['id'], tok['access_token']
 
-def catchup_meeting():
-    """Booking ~6 min ahead with a Google Meet link: "link ready", countdown, Join opens by itself at T-5 min and hands
-    the link to Google Meet / the browser OUTSIDE the app. The other app is never read or captured (it may show the
-    phone owner's Google account); the script only checks that AgroConnect is no longer in front, then returns."""
+def notification_texts(token):
+    return [n['message'] for n in api('/rest/v1/notifications?select=message&order=created_at', None, token) or []]
+
+def scroll_into_list_and_tap(label, top_pattern, bottom_pattern):
+    """Rows of a list that scrolls inside a dialog are in the accessibility tree even when off-screen; tapping their
+    coordinates would hit the backdrop (closes the dialog). Swipe inside the list until the row is visible, then tap."""
+    ys = lambda n: list(map(int, re.findall(r'\d+', n.get('bounds'))))
+    for _ in range(20):
+        top = [ys(n)[3] for n in nodes() if re.match(top_pattern, (n.get('text') or '').strip())]
+        bottom = [ys(n)[1] for n in nodes() if re.match(bottom_pattern, (n.get('text') or '').strip())]
+        row = [n for n in nodes() if (n.get('text') or '').strip().endswith(label)]
+        if row and top and bottom and top[0] + 10 < (ys(row[0])[1] + ys(row[0])[3]) // 2 < bottom[0] - 10:
+            adb('shell', 'input', 'tap', *center(row[0])); return
+        if top and bottom:
+            adb('shell', 'input', 'swipe', '540', str(bottom[0] - 30), '540', str(top[0] + 60), '400'); time.sleep(1)
+    raise AssertionError(f'row not reachable: {label}')
+
+def full_consultation():
+    """The whole Catch Up flow on the phone, in real time (~12 min):
+    expert fee on the card -> calendar without prices -> checkout = the fee -> payment animation -> one booking;
+    expert (on the phone) saves the Google Meet link -> farmer sees the link-ready notice and "link ready";
+    Join is disabled, turns on by itself at T-5 min and hands the link to Google Meet (the other app is never read or
+    captured); expert marks it completed after the start; farmer rates it; the admin record shows Rs 450.00, 2 % = Rs 9.00,
+    expert share Rs 441.00 (admin API). The payment is simulated; the app shows no demo label (product decision)."""
+    FEE = 45000
+    e_uid, e_tok = sign_in_api('expert1'); f_uid, f_tok = sign_in_api('user1'); a_uid, a_tok = sign_in_api_admin()
+    me = api(f'/rest/v1/experts?select=id,consultation_fee_paise&user_id=eq.{e_uid}', None, e_tok)[0]
+    expert_id, original_fee = me['id'], me['consultation_fee_paise']
+    api('/rest/v1/rpc/set_consultation_fee', {'p_fee_paise': FEE}, e_tok)
     ist = lambda m: time.gmtime(((int(time.time() + m * 60) // 60) + 1) * 60 + 330 * 60)
-    st = ist(6)
+    st = ist(9)
     date, start = time.strftime('%Y-%m-%d', st), time.strftime('%H:%M', st)
-    end = f"{(st.tm_hour + (st.tm_min + 30) // 60) % 24:02d}:{(st.tm_min + 30) % 60:02d}"  # slot is 30 minutes
-    e_uid, e_tok = sign_in_api('expert1')
-    expert_id = api(f'/rest/v1/experts?select=id&user_id=eq.{e_uid}', None, e_tok)[0]['id']
-    slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end, 'rate': 300}, e_tok)[0]['id']
-    f_uid, f_tok = sign_in_api('user1')
-    booking = demo_book_api(slot, f'Phone meeting check {start}', f_tok)
+    end = f"{(st.tm_hour + (st.tm_min + 30) // 60) % 24:02d}:{(st.tm_min + 30) % 60:02d}"
+    slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end}, e_tok)[0]['id']
+    start_epoch = calendar.timegm(time.strptime(f'{date} {start}', '%Y-%m-%d %H:%M')) - 330 * 60
+    t12 = lambda hm: f"{(int(hm[:2]) + 11) % 12 + 1:02d}:{hm[3:5]} {'PM' if int(hm[:2]) >= 12 else 'AM'}"
+    topic = f'Phone flow {start.replace(":", "")}'
+    booking = None
     try:
-        api('/rest/v1/rpc/set_meeting_link', {'p_booking_id': booking, 'p_link': 'https://meet.google.com/agr-phon-tst'}, e_tok)
-        fresh_login('user1', env['FIXTURE_PASSWORD'])   # the farmer's view (the previous check signed in as the expert)
-        wait_text(SIGNED_IN, 40); nav('Catch Up'); time.sleep(3)
-        tap_text(r'^Upcoming'); wait_text(rf'Phone meeting check {start}')
+        # 1. farmer: one price, no calendar prices, checkout, payment animation
+        fresh_login('user1', env['FIXTURE_PASSWORD'])
+        wait_text(SIGNED_IN, 40); nav('Catch Up')
+        t = wait_text(r'Consultation fee ₹450\.00', 40)
+        assert not re.search(r'From ₹|per session', t), 'old price label on the card'
+        shot('34_phone_expert_card_fee')
+        tap_text(r'^Book Consultation$'); wait_text(r'Select a Date')
+        assert not any(re.fullmatch(r'(\d{1,2})?\s*₹\d+', (n.get('text') or '').strip()) for n in nodes()), 'price in the calendar'
+        day = str(int(date[8:10]))
+        tap_where(lambda n: re.fullmatch(rf'{day}\s*\d+ open', (n.get('text') or '').strip()) is not None, f'date {day}')
+        wait_text(r'Choose a time')
+        assert '₹' not in ' '.join((n.get('text') or '') for n in nodes() if re.search(r'\d{2}:\d{2} [AP]M', n.get('text') or '')), 'price on a time button'
+        scroll_into_list_and_tap(f'{t12(start)} - {t12(end)}', r'Choose a time', r'Consultation Topic')
+        shot('35_phone_time_no_price')
+        tap_where(lambda n: 'Explain the problem' in (n.get('hint') or n.get('text') or n.get('content-desc') or '')
+                  or (n.get('class') == 'android.widget.EditText' and n.get('password') != 'true'), 'issue field')
+        adb('shell', 'input', 'text', topic.replace(' ', '%s')); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
+        tap_text(r'^Pay & Book$')
+        t = wait_text(r'Confirm your consultation', 30)
+        assert '₹450.00' in t and 'Dr. Ramesh Expert' in t and '30 minutes' in t, 'checkout summary wrong'
+        assert not re.search(r'demo|no real money|simulated|mock', t, re.I), 'demo wording on the checkout'
+        shot('36_phone_checkout')
+        tap_text(r'^Pay ₹450\.00$')
+        try:
+            wait_text(r'Processing payment', 4); shot('37_phone_payment_processing')
+        except AssertionError:
+            pass   # the animation can be shorter than one accessibility poll; the result below is what counts
+        t = wait_text(r'Booking confirmed', 30); shot('38_phone_booking_confirmed')
+        assert not re.search(r'demo|no real money|simulated|mock', t, re.I), 'demo wording after payment'
+        rows = api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}&status=eq.Booked', None, f_tok)
+        assert len(rows) == 1, f'{len(rows)} bookings'
+        booking = rows[0]['id']
+        tap_text(r'^View my booking$'); wait_text(r'Waiting for expert to add meeting link', 30)
+        assert re.search(r'Consultation fee ₹450\.00', texts()), 'agreed fee not on the booking'
+
+        # 2. expert on the phone: add the Google Meet link
+        fresh_login('expert1', env['FIXTURE_PASSWORD'])
+        wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(re.escape(topic), 40)
+        tap_text(re.escape(topic)); tap_text(r'Add Google Meet Link$')
+        tap_where(lambda n: n.get('class') == 'android.widget.EditText' and n.get('password') != 'true', 'link field')
+        adb('shell', 'input', 'text', 'https://meet.google.com/agr-phon-flw'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
+        tap_text(r'Save link$')
+        wait_text(r'Meeting link saved\. The farmer has been notified\.', 20); shot('39_phone_expert_link_saved')
+        notes = [m for m in notification_texts(f_tok) if 'Google Meet link' in m]
+        assert any('added the Google Meet link' in m for m in notes), 'farmer not notified'
+        assert not any('meet.google.com' in m for m in notes), 'link inside a notification'
+
+        # 3. farmer: link-ready notice, Join disabled -> enabled by itself -> Google Meet outside the app
+        fresh_login('user1', env['FIXTURE_PASSWORD'])
+        wait_text(SIGNED_IN, 40)
+        tap_where(lambda n: (n.get('content-desc') or n.get('text') or '').strip().lower() == 'notifications', 'notifications')
+        wait_text(r'added the Google Meet link', 30); shot('40_phone_farmer_link_notice'); back()
+        nav('Catch Up'); tap_text(r'^Upcoming'); wait_text(re.escape(topic), 30)
         wait_text(r'Google Meet link ready')
-        wait_text(r'Join opens .*\(in ')
-        shot('26_phone_join_not_yet')
-        # the button opens by itself (no restart) once the server window opens
-        wait_text(r'Join Meeting', 150); shot('27_phone_join_open')
+        if time.time() < start_epoch - 5 * 60 - 20:
+            wait_text(r'Join opens .*\(in ', 20); shot('41_phone_join_disabled')
+        wait_text(r'Join Meeting', max(30, int(start_epoch - 5 * 60 - time.time()) + 90)); shot('42_phone_join_enabled')
         tap_where(lambda n: (n.get('text') or '').endswith('Join Meeting'), 'Join Meeting')
         end_t = time.time() + 20
         while time.time() < end_t and PKG in focus(): time.sleep(1)
         assert PKG not in focus(), 'Join did not hand the link to Google Meet / the browser'
-        assert not re.search(r'Video not connected|Leave room|End consultation', texts()), 'in-app call screen shown'
         adb('shell', 'input', 'keyevent', '4'); time.sleep(2)          # leave the other app without looking at it
         if PKG not in focus(): adb('shell', 'am', 'start', '-W', '-n', f'{PKG}/com.agroconnect.app.MainActivity')
-        wait_text(r'Catch Up|Upcoming', 30); shot('28_phone_back_from_meet')
-    finally:
-        api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': booking, 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
 
-def demo_checkout():
-    """Farmer books through the DEMO checkout on the phone: banner, fee, Cancel books nothing, Confirm books once."""
-    ist = lambda m: time.gmtime(((int(time.time() + m * 60) // 60) + 1) * 60 + 330 * 60)
-    st = ist(97)
-    date, start = time.strftime('%Y-%m-%d', st), time.strftime('%H:%M', st)
-    end = f"{(st.tm_hour + (st.tm_min + 30) // 60) % 24:02d}:{(st.tm_min + 30) % 60:02d}"
-    e_uid, e_tok = sign_in_api('expert1')
-    expert_id = api(f'/rest/v1/experts?select=id&user_id=eq.{e_uid}', None, e_tok)[0]['id']
-    slot = api('/rest/v1/consultation_slots', {'expert_id': expert_id, 'slot_date': date, 'start_time': start, 'end_time': end, 'rate': 450}, e_tok)[0]['id']
-    f_uid, f_tok = sign_in_api('user1')
-    t12 = lambda hm: f"{(int(hm[:2]) + 11) % 12 + 1:02d}:{hm[3:5]} {'PM' if int(hm[:2]) >= 12 else 'AM'}"
-    try:
+        # 4. expert marks it completed after the start (the server refuses earlier)
+        while time.time() < start_epoch + 15: time.sleep(5)
+        fresh_login('expert1', env['FIXTURE_PASSWORD'])
+        wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(re.escape(topic), 40)
+        tap_text(re.escape(topic)); tap_text(r'Mark consultation completed$')
+        wait_text(r'Consultation marked completed', 20); shot('43_phone_expert_completed')
+
+        # 5. farmer rates it
         fresh_login('user1', env['FIXTURE_PASSWORD'])
-        wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(r'Dr\. Ramesh Expert')
-        tap_text(r'^Book Consultation$'); wait_text(r'Select a Date')
-        day = str(int(date[8:10]))
-        tap_where(lambda n: re.fullmatch(rf'{day}\s*₹\d+', (n.get('text') or '').strip()) is not None, f'date {day}')
-        wait_text(r'Choose a time')
-        # the time list scrolls inside the dialog: off-screen rows are still in the accessibility tree, and tapping
-        # their coordinates would hit the backdrop (which closes the dialog). Scroll until the row is inside the list.
-        label = f'{t12(start)} - {t12(end)} (₹450)'
-        ys = lambda n: list(map(int, re.findall(r'\d+', n.get('bounds'))))
-        for _ in range(15):
-            top = [ys(n)[3] for n in nodes() if (n.get('text') or '').strip().startswith('Choose a time')]
-            bottom = [ys(n)[1] for n in nodes() if re.match(r'.*(· Fee|Demo payment — no real money)', (n.get('text') or '').strip())]
-            row = [n for n in nodes() if label in (n.get('text') or '')]
-            if row and top and bottom and top[0] + 10 < (ys(row[0])[1] + ys(row[0])[3]) // 2 < bottom[0] - 10:
-                adb('shell', 'input', 'tap', *center(row[0])); break
-            if top and bottom:
-                adb('shell', 'input', 'swipe', '540', str(bottom[0] - 30), '540', str(top[0] + 60), '400'); time.sleep(1)
-        else:
-            raise AssertionError(f'time row not reachable: {label}')
-        wait_text(r'₹450\.00')   # fee line of the selected slot (the WebView splits it into several nodes)
-        tap_where(lambda n: 'Explain the problem' in (n.get('hint') or n.get('text') or n.get('content-desc') or '')
-                  or (n.get('class') == 'android.widget.EditText' and n.get('password') != 'true'), 'issue field')
-        adb('shell', 'input', 'text', 'Phone%sdemo%scheckout'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
-        tap_text(r'^Pay & Book$')
-        t = wait_text(r'DEMO PAYMENT — NO REAL MONEY CHARGED', 30)
-        assert '₹450.00' in t and 'Dr. Ramesh Expert' in t, 'checkout summary wrong'
-        shot('31_phone_demo_checkout')
-        tap_text(r'^Cancel$'); wait_text(r'Pay & Book')
-        assert not api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}', None, f_tok), 'cancelled checkout booked'
-        tap_text(r'^Pay & Book$'); wait_text(r'Confirm Demo Payment')
-        tap_text(r'^Confirm Demo Payment$')
-        wait_text(r'Booking confirmed', 30); shot('32_phone_demo_payment_success')
-        tap_text(r'^View my booking$'); wait_text(r'Waiting for expert to add meeting link', 30); shot('33_phone_upcoming_waiting_link')
-        assert len(api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}', None, f_tok)) == 1, 'not exactly one booking'
+        wait_text(SIGNED_IN, 40); nav('Catch Up'); tap_text(r'^History'); wait_text(re.escape(topic), 30)
+        tap_text(r'^Leave Review$'); wait_text(r'Write Consultation Review')
+        tap_where(lambda n: n.get('class') == 'android.widget.EditText' and n.get('password') != 'true', 'review text')
+        adb('shell', 'input', 'text', 'Clear%sadvice%son%sleaf%scurl'); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
+        tap_text(r'^Submit Review$'); wait_text(r'Thank you for your review', 20); shot('44_phone_review_submitted')
+
+        # 6. the admin record (the same snapshot the admin website shows)
+        d = api('/rest/v1/rpc/admin_consultation_detail', {'p_booking_id': booking}, a_tok)
+        got = (d['amount_paise'], d['commission_bps'], d['commission_paise'], d['expert_share_paise'], d['transaction_type'])
+        assert got == (45000, 200, 900, 44100, 'simulated'), f'admin accounting {got}'
+        assert d['status'] == 'Completed' and d['completion_source'] == 'expert' and d['rating'] and d['link_saved'], 'admin record incomplete'
+        print(f"      admin record: fee 450.00, commission 9.00, expert share 441.00, completed by expert, rated {d['rating']}/5; booking {booking[:8]}")
     finally:
-        for b in api(f'/rest/v1/consultation_bookings?select=id&slot_id=eq.{slot}&status=eq.Booked', None, f_tok) or []:
-            api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': b['id'], 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
-        try:   # a slot that ever had a booking stays (the cancelled booking keeps it); only unused slots are removed
-            api(f'/rest/v1/consultation_slots?id=eq.{slot}&is_booked=eq.false', None, e_tok, method='DELETE')
-        except AssertionError:
-            pass
+        if booking and api(f'/rest/v1/consultation_bookings?select=status&id=eq.{booking}', None, f_tok)[0]['status'] == 'Booked':
+            api('/rest/v1/rpc/cancel_consultation_booking', {'p_booking_id': booking, 'p_reason': 'phone test cleanup', 'p_offered_slots': []}, f_tok)
+        api('/rest/v1/rpc/set_consultation_fee', {'p_fee_paise': original_fee}, e_tok)
 
 def google_enabled():
     r = subprocess.run(['curl', '-sS', f"{env['STAGING_SUPABASE_URL']}/auth/v1/settings", '-H', f"apikey: {env['STAGING_SUPABASE_ANON_KEY']}"],
@@ -392,8 +429,9 @@ def farmer_changes():
     shot('14_catchup_expert_dates')
     tap_text(r'^Book Consultation$'); wait_text(r'Select a Date')
     shot('15_catchup_calendar')
-    # a highlighted day reads "26₹500" (or "₹500" on its own, depending on the WebView)
-    tap_where(lambda n: re.fullmatch(r'(\d{1,2})?\s*₹\d+', (n.get('text') or '').strip()), 'highlighted date')
+    # a highlighted day reads "26 3 open" (or "3 open" on its own, depending on the WebView); no price anywhere
+    assert not any(re.fullmatch(r'(\d{1,2})?\s*₹\d+', (n.get('text') or '').strip()) for n in nodes()), 'price in the calendar'
+    tap_where(lambda n: re.fullmatch(r'(\d{1,2})?\s*\d+ open', (n.get('text') or '').strip()), 'highlighted date')
     t = wait_text(r'Choose a time'); assert re.search(r'Date: ', t), 'date not fixed in the dialog'
     assert not any((n.get('class') or '').endswith('EditText') and re.search(r'date|time', (n.get('text') or '') + (n.get('hint') or ''), re.I) for n in nodes()), 'date/time field is editable'
     shot('16_catchup_times_for_date')
@@ -453,8 +491,7 @@ for name, fn in [('farmer: login, feed, profile, Catch Up lists expert1, no expe
                  ('own avatar on own post opens own profile', own_avatar),
                  ('expert: ☰ menu has Leave being an expert with reason dialog', expert_menu),
                  ('post media: image + video posts show in the feed card, video plays', post_media),
-                 ('Catch Up: DEMO checkout (banner, fee, cancel books nothing, confirm books once)', demo_checkout),
-                 ('Catch Up: Meet link ready, Join opens by itself at T-5 min and hands the link to Google Meet', catchup_meeting),
+                 ('Catch Up end to end: expert fee, no calendar prices, checkout = fee, booking, expert Meet link, link notice, Join T-5 -> Google Meet, expert completes, farmer rates, admin 2 % record', full_consultation),
                  ('own post offers no Connect, also after a relaunch', own_post_no_connect_after_relaunch),
                  ('production app not replaced (same version + lastUpdateTime)', production_untouched)]:
     if ONLY and ONLY not in name and fn is not production_untouched: continue

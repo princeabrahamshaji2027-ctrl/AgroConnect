@@ -161,3 +161,12 @@ notified "link ready" → Join (from 5 min before the start until the slot ends)
 expert marks the consultation completed → farmer rates it once. Daily and the in-app video room are removed; no
 payment provider is used. Fee = the existing per-slot fee (`consultation_slots.rate`, INR) set by the expert.
 Open: phone test (Meet app hand-off, checkout on Android), push delivery (Firebase), reset e-mail (real inbox).
+
+## Final pricing pass 2026-10-25 (staging only)
+Expert sets one consultation fee (Catch Up → Manage Availability → Consultation fee; live 98 % / 2 % preview) → shown once beside the
+expert's name ("Consultation fee ₹…") → calendar, day cells and time buttons show **no price** → checkout shows that fee once
+("Pay ₹…"; processing animation; success only after the server booked) → the booking keeps the agreed fee, 2 % commission
+and expert share forever (history and admin read the snapshot) → admin **Consultations** page (summary cards, filters, pagination,
+detail with accounting, Meet link, completion, review, notifications). Terms & Conditions page (Settings) explains the 2 %.
+User-facing screens carry no demo/mock wording by product decision; the payment is **simulated** (`transaction_type = 'simulated'`),
+which code, admin and docs state plainly: no real money moves.

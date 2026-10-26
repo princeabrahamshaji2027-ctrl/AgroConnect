@@ -3,10 +3,12 @@ import { supabase } from '../supabase';
 import { formatInr } from '../utils/money';
 import './DemoCheckout.css';
 
-// DEMO checkout for a consultation — NO REAL MONEY. No payment provider, no card/UPI/bank fields, nothing is collected.
-// The server decides everything (migration 14): start_demo_checkout() reads the fee from the slot, and
-// confirm_demo_payment() books the slot in the same transaction, so "success" is shown only after the booking exists.
-// The animation is presentation only; it never decides the outcome.
+// Consultation checkout. INTERNAL NOTE: this is a SIMULATED payment — there is no payment provider, nothing is
+// charged, no card/UPI/bank data exists anywhere, and the accounting record says transaction_type = 'simulated'.
+// By product decision the screen does not show a "demo" label; code, admin reports and docs stay explicit.
+// The server decides everything (migrations 14/15): start_demo_checkout() quotes the expert's fee
+// (experts.consultation_fee_paise), confirm_demo_payment() books the slot in the same transaction and stores the fee,
+// 2 % commission and expert share. "Success" is shown only after that booking exists; the animation decides nothing.
 
 const MIN_PROCESSING_MS = 1200;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -15,7 +17,6 @@ const newKey = () => (crypto.randomUUID ? crypto.randomUUID()
     const r = (crypto.getRandomValues(new Uint8Array(1))[0] & 15);
     return (c === 'x' ? r : (r & 3) | 8).toString(16);
   }));
-
 
 const formatWhen = (p) => {
   if (!p?.slot_date) return '';
@@ -31,10 +32,10 @@ const FAILURES = {
   slot_started: { text: 'This slot has already started. Please choose another time.', reselect: true },
   slot_missing: { text: 'This slot is no longer available. Please choose another time.', reselect: true },
   slot_changed: { text: 'This slot is no longer available. Please choose another time.', reselect: true },
-  fee_changed: { text: 'The expert changed the fee for this slot. Please choose the slot again to see the new fee.', reselect: true },
+  fee_changed: { text: 'The expert changed the consultation fee. Please start the booking again.', reselect: true },
   expert_unavailable: { text: 'This expert is not accepting bookings right now.', reselect: true },
   expired: { text: 'This checkout expired after 15 minutes. Please start again.', reselect: true },
-  cancelled: { text: 'This demo payment was cancelled. Nothing was booked.', reselect: true },
+  cancelled: { text: 'This payment was cancelled. Nothing was booked.', reselect: true },
   invalid_request: { text: 'The booking could not be confirmed. Please try again.', reselect: true },
 };
 const isNetworkError = (e) => /Failed to fetch|NetworkError|network|timeout|Load failed/i.test(e?.message || '');
@@ -45,23 +46,27 @@ export default function DemoCheckout({ slotId, issue, onClose }) {
   const [state, setState] = useState('starting'); // starting | ready | processing | success | failed
   const [payment, setPayment] = useState(null);
   const [failure, setFailure] = useState(null);   // { text, reselect, retry }
+  const [notice, setNotice] = useState(null);     // e.g. the fee changed: the new quote must be confirmed again
+
+  const startQuote = async () => {
+    const { data, error } = await supabase.rpc('start_demo_checkout', { p_slot_id: slotId, p_issue: issue, p_idempotency_key: keyRef.current });
+    if (error) {
+      setFailure(isNetworkError(error)
+        ? { text: 'No connection. Nothing was booked — check your internet and try again.', reselect: false }
+        : { text: error.message || 'This slot cannot be booked right now.', reselect: true });
+      setState('failed');
+      return null;
+    }
+    setPayment(data);
+    setState(data.status === 'pending' ? 'ready' : data.status === 'succeeded' ? 'success' : 'failed');
+    return data;
+  };
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const { data, error } = await supabase.rpc('start_demo_checkout', { p_slot_id: slotId, p_issue: issue, p_idempotency_key: keyRef.current });
-      if (!alive) return;
-      if (error) {
-        setFailure(isNetworkError(error)
-          ? { text: 'No connection. Nothing was booked — check your internet and try again.', reselect: false, restart: true }
-          : { text: error.message || 'This slot cannot be booked right now.', reselect: true });
-        setState('failed');
-        return;
-      }
-      setPayment(data);
-      setState(data.status === 'pending' ? 'ready' : data.status === 'succeeded' ? 'success' : 'failed');
-    })();
+    (async () => { if (alive) await startQuote(); })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotId, issue]);
 
   const confirm = async () => {
@@ -77,13 +82,21 @@ export default function DemoCheckout({ slotId, issue, onClose }) {
       if (error) {
         // the request may or may not have reached the server: retrying the same attempt is safe (idempotent)
         setFailure(isNetworkError(error)
-          ? { text: 'No connection. Your demo payment was not confirmed yet — check your internet and tap Try again.', retry: true }
+          ? { text: 'No connection. Your payment was not confirmed yet — check your internet and tap Try again.', retry: true }
           : { text: error.message || 'The booking could not be confirmed.', retry: true });
         setState('failed');
         return;
       }
+      if (data.status === 'succeeded') { setPayment(data); setState('success'); return; }
+      if (data.failure_reason === 'fee_changed') {
+        // stale quote: never charge a different amount silently — show the new fee and ask again
+        const oldAmount = payment.amount_paise;
+        keyRef.current = newKey();
+        const fresh = await startQuote();
+        if (fresh) setNotice(`The consultation fee changed from ${formatInr(oldAmount)} to ${formatInr(fresh.amount_paise)}. Please review and confirm the new amount.`);
+        return;
+      }
       setPayment(data);
-      if (data.status === 'succeeded') { setState('success'); return; }
       setFailure(FAILURES[data.failure_reason] || FAILURES.invalid_request);
       setState('failed');
     } finally {
@@ -105,11 +118,6 @@ export default function DemoCheckout({ slotId, issue, onClose }) {
   return (
     <div className="demo-checkout-overlay" role="dialog" aria-modal="true" aria-labelledby="demo-checkout-title">
       <div className="demo-checkout">
-        <div className="demo-banner" role="note">
-          <span className="material-symbols-outlined" aria-hidden="true">science</span>
-          DEMO PAYMENT — NO REAL MONEY CHARGED
-        </div>
-
         {state === 'starting' && (
           <div className="demo-center">
             <div className="demo-spinner" aria-hidden="true" />
@@ -120,25 +128,22 @@ export default function DemoCheckout({ slotId, issue, onClose }) {
         {(state === 'ready' || state === 'processing') && payment && (
           <>
             <h2 id="demo-checkout-title" className="demo-title">Confirm your consultation</h2>
+            {notice && <div role="alert" className="demo-notice">{notice}</div>}
             <dl className="demo-summary">
               <div><dt>Expert</dt><dd>{payment.expert_name}</dd></div>
               <div><dt>When</dt><dd>{formatWhen(payment)}</dd></div>
               <div><dt>Duration</dt><dd>{payment.duration_minutes} minutes</dd></div>
-              <div className="demo-total"><dt>Consultation fee</dt><dd>{amount} <span className="demo-cur">INR</span></dd></div>
+              <div className="demo-total"><dt>Consultation fee</dt><dd data-testid="checkout-amount">{amount} <span className="demo-cur">INR</span></dd></div>
             </dl>
-            <p className="demo-note">
-              This is a simulated checkout for demonstration only. No money is charged and no payment details are asked for
-              or stored. Your booking is confirmed by AgroConnect when you tap the button below.
-            </p>
             {state === 'processing' ? (
               <div className="demo-center" aria-live="polite">
                 <div className="demo-spinner" aria-hidden="true" />
-                <p className="demo-muted">Processing demo payment and confirming your booking…</p>
+                <p className="demo-muted">Processing payment…</p>
               </div>
             ) : (
               <div className="demo-actions">
                 <button type="button" className="btn btn-secondary demo-btn" onClick={cancel}>Cancel</button>
-                <button type="button" className="btn btn-primary demo-btn" onClick={confirm}>Confirm Demo Payment</button>
+                <button type="button" className="btn btn-primary demo-btn" onClick={confirm}>Pay {amount}</button>
               </div>
             )}
           </>
@@ -152,8 +157,8 @@ export default function DemoCheckout({ slotId, issue, onClose }) {
             </svg>
             <h2 id="demo-checkout-title" className="demo-title">Booking confirmed</h2>
             <p className="demo-muted">
-              Demo payment of {amount} recorded — no real money was charged. {payment.expert_name} will add a Google Meet
-              link before the session; you will be notified.
+              {formatWhen(payment)} · {amount}. {payment.expert_name} will add a Google Meet link before the session;
+              you will be notified.
             </p>
             <div className="demo-actions">
               <button type="button" className="btn btn-primary demo-btn" onClick={() => onClose({ booked: true, bookingId: payment.booking_id })}>

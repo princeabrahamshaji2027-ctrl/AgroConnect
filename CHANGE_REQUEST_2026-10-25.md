@@ -60,3 +60,8 @@ consultation, and push notifications are prepared (waiting for Firebase). Produc
 Video calls inside the app (Daily) were replaced by Google Meet links that the expert pastes; "Pay & Book" opens a
 clearly labelled demo checkout (no real money, no payment provider). Details and production order:
 `RELEASE_CHECKLIST.md`; tests: `TEST_RESULTS.md`.
+
+## Final pricing pass 2026-10-25 (staging only)
+Prices are now consistent: the expert sets one fee, farmers see it once and pay exactly it, bookings keep the agreed amount, 2 % commission
+is recorded per booking, and the admin website has a Consultations page for bookings, commission and reviews. The "demo" labels were
+removed from the user screens (the payment is still simulated; internal records and admin say so). See `RELEASE_CHECKLIST.md`.

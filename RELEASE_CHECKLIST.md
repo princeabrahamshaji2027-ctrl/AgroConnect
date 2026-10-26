@@ -97,3 +97,11 @@ exist or are needed.
 * Changing a password signs out the user's other devices (verified on staging).
 * Old app versions in users' hands will break against 05/11/12/14 (14 removes direct booking) — release the app
   together with the migrations.
+
+## Addendum 2026-10-25 (final pricing pass): migration 15
+| 15 | Expert-set consultation fee (`experts.consultation_fee_paise`, ₹1–₹1,00,000, only via `set_consultation_fee` / audited `admin_set_consultation_fee`), checkout quotes it and refuses a stale quote, 2 % platform commission snapshot per confirmed booking (`C = round-half-up(F × 2 %)`, `E = F − C`, immutable), refunds from the agreed fee, admin consultation reporting (server-side filters + pagination) | 05, 11–14 | applied to staging (2026-10-25, 18 bodies verified identical) | yes (backfill only fills NULLs) | adds a NOT NULL column to `experts` (backfill: most common slot rate, else ₹500 — **review each expert's fee before release**); adds columns to `demo_payments`; old direct slot-price UI removed | **yes** (app + admin must be released together) | `drop` the new functions/triggers, restore 14's bodies; the column and snapshot columns can stay |
+
+Production order is now 04 → 05 → 09 → 10 → 11 → 12 → 13 → 14 → **15**. Before release: have each production expert confirm their
+fee in the app (the backfill is only a starting value), publish the Terms text (Settings → Terms & Conditions, no acceptance is
+recorded) and decide whether to track acceptance. The payment flow is simulated: **no real money is collected, no commission
+is received, no expert is paid** — admin screens and `transaction_type = 'simulated'` say so; user screens deliberately do not.

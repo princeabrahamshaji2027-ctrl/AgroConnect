@@ -31,7 +31,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout, onClose, isO
       title: "Consultations",
       items: [
         // Appointments and Reviews are part of Meetings (filters + meeting details)
-        { id: "meetings", label: "Meetings", icon: "groups" }
+        { id: "meetings", label: "Bookings & Payments", icon: "groups" }
       ]
     },
     {

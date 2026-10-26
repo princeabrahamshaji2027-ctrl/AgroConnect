@@ -397,22 +397,26 @@ test.describe('account recovery (staging)', () => {
   });
 });
 
-// Final Catch Up flow (2026-10-25): DEMO checkout (no real money, no provider) and Google Meet links. Real staging
-// backend; the one MOCKED test only cuts the network for one request and says so.
-test.describe('demo checkout + Google Meet links (staging)', () => {
+// Final Catch Up flow (2026-10-25): expert fee (migration 15), checkout with a SIMULATED payment (no provider; the UI
+// shows no demo label by product decision) and Google Meet links. Real staging backend; the one MOCKED test only cuts
+// the network for one request and says so. These tests change expert1's fee: serial, restored afterwards.
+test.describe('expert fee, checkout + Google Meet links (staging)', () => {
+  test.describe.configure({ mode: 'serial' });
   test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
   const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  let farmer; let farmer2; let expert; let expertId; const slots = []; const bookings = [];
+  let farmer; let farmer2; let expert; let expertId; let originalFee; const slots = []; const bookings = [];
   const pad = (n) => String(n).padStart(2, '0');
   const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${pad(((h + 11) % 12) + 1)}:${pad(m)} ${h >= 12 ? 'PM' : 'AM'}`; };
-  // A slot later today (browser + server both use Asia/Kolkata) on a minute nobody else uses.
-  const newSlotToday = async (rate) => {
+  const inr = (paise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(paise / 100);
+  const setFee = async (paise) => expect((await expert.rpc('set_consultation_fee', { p_fee_paise: paise })).error).toBeNull();
+  // A slot later today (browser + server both use Asia/Kolkata) on a minute nobody else uses. No price on the slot.
+  const newSlotToday = async () => {
     for (let k = 0; k < 20; k++) {
       const d = new Date(Date.now() + (95 + k * 7) * 60000 + 330 * 60000);
       const date = d.toISOString().slice(0, 10); const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
       const [h, m] = time.split(':').map(Number); const e = (h * 60 + m + 30) % 1440; const end = `${pad(Math.floor(e / 60))}:${pad(e % 60)}`;
-      const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: date, start_time: time, end_time: end, rate }).select('id, slot_date, start_time, end_time').single();
-      if (!s.error) { slots.push(s.data.id); return { ...s.data, label: `${t12(time)} - ${t12(end)} (₹${rate})` }; }
+      const s = await expert.from('consultation_slots').insert({ expert_id: expertId, slot_date: date, start_time: time, end_time: end }).select('id, slot_date, start_time, end_time').single();
+      if (!s.error) { slots.push(s.data.id); return { ...s.data, label: `${t12(time)} - ${t12(end)}` }; }
     }
     throw new Error('no free slot minute');
   };
@@ -421,13 +425,15 @@ test.describe('demo checkout + Google Meet links (staging)', () => {
     await farmer.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
     await farmer2.auth.signInWithPassword({ email: fx('user2'), password: process.env.FIXTURE_PASSWORD });
     const e = await expert.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
-    expertId = (await expert.from('experts').select('id').eq('user_id', e.data.user.id).single()).data.id;
+    const row = (await expert.from('experts').select('id, consultation_fee_paise').eq('user_id', e.data.user.id).single()).data;
+    expertId = row.id; originalFee = row.consultation_fee_paise;
   });
   test.afterAll(async () => {
     const mine = await farmer.from('consultation_bookings').select('id').eq('status', 'Booked').in('slot_id', slots);
     for (const { id } of mine.data || []) bookings.push(id);
     for (const id of bookings) for (const c of [farmer, farmer2]) await c.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'E2E cleanup', p_offered_slots: [] });
     for (const id of slots) await expert.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
+    await expert.rpc('set_consultation_fee', { p_fee_paise: originalFee });
   });
   const openCheckout = async (page, slot, issue) => {
     await login(page, fx('user1'));
@@ -436,53 +442,91 @@ test.describe('demo checkout + Google Meet links (staging)', () => {
     await card.getByRole('button', { name: 'Book Consultation' }).click({ timeout: 20_000 });
     const day = String(Number(slot.slot_date.slice(8, 10)));
     await card.locator('div[style*="cursor: pointer"]').filter({ has: page.locator(`span:text-is("${day}")`) }).first().click();
-    await page.getByText(slot.label).click();
-    await expect(page.getByTestId('booking-fee')).toContainText('INR');
+    await page.getByText(slot.label, { exact: true }).click();
     await page.getByPlaceholder(/Explain the problem/).fill(issue);
     await page.getByRole('button', { name: 'Pay & Book' }).click();
-    await expect(page.getByText('DEMO PAYMENT — NO REAL MONEY CHARGED')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Confirm your consultation')).toBeVisible({ timeout: 15_000 });
   };
 
-  test('Pay & Book: demo checkout shows the server fee; cancel books nothing; confirm books once; no payment service is contacted', async ({ page }) => {
-    const slot = await newSlotToday(450);
+  test('one price everywhere: expert card = checkout; calendar, day cells and time buttons show no price; no demo wording', async ({ page }) => {
+    await setFee(73550);   // ₹735.50 — an amount no slot or fallback ever had
+    const slot = await newSlotToday();
     const hosts = new Set();
     page.on('request', (r) => hosts.add(new URL(r.url()).host));
-    await openCheckout(page, slot, 'E2E demo checkout');
-    await expect(page.getByText('₹450.00')).toBeVisible();
-    await expect(page.getByText('30 minutes')).toBeVisible();
-    await expect(page.getByText(/No money is charged and no payment details are asked for/)).toBeVisible();
-    await expect(page.locator('.demo-checkout input')).toHaveCount(0);   // no card / UPI / bank fields at all
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText('Demo payment cancelled. Nothing was booked.')).toBeVisible();
-    expect((await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data).toHaveLength(0);
-
+    await login(page, fx('user1'));
+    await nav(page, 'Catch Up').click();
+    const card = page.locator('.card', { hasText: 'Dr. Ramesh Expert' });
+    await expect(card.getByTestId('expert-fee')).toHaveText(`Consultation fee ${inr(73550)}`, { timeout: 20_000 });
+    await expect(card.getByText(/From ₹|per session/)).toHaveCount(0);
+    await card.getByRole('button', { name: 'Book Consultation' }).click();
+    const calendar = card.getByText('Select a Date').locator('xpath=ancestor::div[2]');
+    await expect(calendar).not.toContainText('₹');                                           // no prices in the calendar
+    const day = String(Number(slot.slot_date.slice(8, 10)));
+    await card.locator('div[style*="cursor: pointer"]').filter({ has: page.locator(`span:text-is("${day}")`) }).first().click();
+    const dialog = page.locator('.dialog-content');
+    await expect(dialog.getByText('Choose a time *')).toBeVisible();
+    await expect(dialog).not.toContainText('₹');                                             // no prices on dates/times
+    await dialog.getByText(slot.label, { exact: true }).click();
+    await page.getByPlaceholder(/Explain the problem/).fill('E2E one price');
     await page.getByRole('button', { name: 'Pay & Book' }).click();
-    const confirm = page.getByRole('button', { name: 'Confirm Demo Payment' });
-    await confirm.click();
-    await expect(page.getByText(/Processing demo payment/)).toBeVisible();
-    await expect(confirm).toHaveCount(0);                                   // cannot be tapped twice
+    await expect(page.getByTestId('checkout-amount')).toHaveText(`${inr(73550)} INR`, { timeout: 15_000 });
+    await expect(page.getByText('₹', { exact: false }).filter({ hasNotText: inr(73550) }).filter({ visible: true })).toHaveCount(0);
+    const payBtn = page.getByRole('button', { name: `Pay ${inr(73550)}` });
+    await expect(payBtn).toBeVisible();
+    await expect(page.locator('.demo-checkout input')).toHaveCount(0);   // no card / UPI / bank fields at all
+    await expect(page.locator('body')).not.toContainText(/demo|no real money|simulated/i);
+    await payBtn.click();
+    await expect(page.getByText('Processing payment…')).toBeVisible();
+    await expect(payBtn).toHaveCount(0);                                     // cannot be tapped twice
     await expect(page.getByText('Booking confirmed')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/no real money was charged/)).toBeVisible();
+    await expect(page.locator('.demo-checkout').getByText(inr(73550), { exact: false })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(/demo|no real money|simulated/i);
     await page.getByRole('button', { name: 'View my booking' }).click();
-    const booked = (await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data;
-    expect(booked).toHaveLength(1);
-    bookings.push(booked[0].id);
-    const upcoming = page.locator('.card', { hasText: 'E2E demo checkout' }).first();
-    await expect(upcoming.getByText('Waiting for expert to add meeting link')).toBeVisible({ timeout: 20_000 });
-    const pays = (await farmer.from('demo_payments').select('status').eq('slot_id', slot.id)).data.map((p) => p.status).sort();
-    expect(pays).toEqual(['cancelled', 'succeeded']);
+    const upcoming = page.locator('.card', { hasText: 'E2E one price' }).first();
+    await expect(upcoming.getByTestId('agreed-fee')).toHaveText(`Consultation fee ${inr(73550)}`, { timeout: 20_000 });
+    const pay = (await farmer.from('demo_payments').select('amount_paise, commission_paise, expert_share_paise, transaction_type').eq('slot_id', slot.id).eq('status', 'succeeded').single()).data;
+    expect(pay).toEqual({ amount_paise: 73550, commission_paise: 1471, expert_share_paise: 72079, transaction_type: 'simulated' });
+    // the expert raises the fee: the confirmed booking keeps its amount
+    await setFee(90000);
+    await page.reload();
+    await nav(page, 'Catch Up').click();
+    await page.getByRole('button', { name: /^Upcoming/ }).click();
+    await expect(page.locator('.card', { hasText: 'E2E one price' }).first().getByTestId('agreed-fee')).toHaveText(`Consultation fee ${inr(73550)}`, { timeout: 20_000 });
     const supabaseHost = new URL(process.env.STAGING_SUPABASE_URL).host;
     const unexpected = [...hosts].filter((h) => !['localhost:4174', supabaseHost, 'fonts.googleapis.com', 'fonts.gstatic.com'].includes(h));
-    expect(unexpected).toEqual([]);
+    expect(unexpected).toEqual([]);                                          // no payment service contacted
+  });
+
+  test('cancel books nothing; fee changed while on checkout → new amount shown and must be confirmed again', async ({ page }) => {
+    await setFee(50000);
+    const slot = await newSlotToday();
+    await openCheckout(page, slot, 'E2E stale quote');
+    await expect(page.getByTestId('checkout-amount')).toHaveText(`${inr(50000)} INR`);
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText('Payment cancelled. Nothing was booked.')).toBeVisible();
+    expect((await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data).toHaveLength(0);
+    await page.getByRole('button', { name: 'Pay & Book' }).click();
+    await expect(page.getByTestId('checkout-amount')).toHaveText(`${inr(50000)} INR`, { timeout: 15_000 });
+    await setFee(65000);                                                     // the expert changes the fee meanwhile
+    await page.getByRole('button', { name: `Pay ${inr(50000)}` }).click();
+    await expect(page.getByRole('alert')).toContainText(`changed from ${inr(50000)} to ${inr(65000)}`, { timeout: 20_000 });
+    await expect(page.getByTestId('checkout-amount')).toHaveText(`${inr(65000)} INR`);
+    expect((await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data).toHaveLength(0);   // nothing charged silently
+    await page.getByRole('button', { name: `Pay ${inr(65000)}` }).click();
+    await expect(page.getByText('Booking confirmed')).toBeVisible({ timeout: 20_000 });
+    const pays = (await farmer.from('demo_payments').select('status, amount_paise, failure_reason').eq('slot_id', slot.id)).data;
+    expect(pays.map((p) => `${p.status}:${p.amount_paise}:${p.failure_reason ?? ''}`).sort())
+      .toEqual(['cancelled:50000:cancelled_by_farmer', 'failed:50000:fee_changed', 'succeeded:65000:']);
   });
 
   test('MOCKED network failure on confirm: no false success; Try again (same attempt) books once', async ({ page }) => {
-    const slot = await newSlotToday(400);
+    await setFee(50000);
+    const slot = await newSlotToday();
     let cut = true;
     await page.route('**/rest/v1/rpc/confirm_demo_payment', (route) => (cut ? (cut = false, route.abort('failed')) : route.continue()));
     await openCheckout(page, slot, 'E2E network failure');
-    await page.getByRole('button', { name: 'Confirm Demo Payment' }).click();
-    await expect(page.getByText(/No connection\. Your demo payment was not confirmed yet/)).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: `Pay ${inr(50000)}` }).click();
+    await expect(page.getByText(/No connection\. Your payment was not confirmed yet/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Booking confirmed')).toHaveCount(0);
     expect((await farmer.from('consultation_bookings').select('id').eq('slot_id', slot.id)).data).toHaveLength(0);
     await page.getByRole('button', { name: 'Try again' }).click();
@@ -492,16 +536,56 @@ test.describe('demo checkout + Google Meet links (staging)', () => {
   });
 
   test('slot taken by another farmer during checkout: clear message, nothing booked for this farmer, back to slot choice', async ({ page }) => {
-    const slot = await newSlotToday(300);
+    await setFee(50000);
+    const slot = await newSlotToday();
     await openCheckout(page, slot, 'E2E slot conflict');
     const other = await demoBook(farmer2, slot.id, 'E2E other farmer wins');
     expect(other.error).toBeNull(); bookings.push(other.data);
-    await page.getByRole('button', { name: 'Confirm Demo Payment' }).click();
+    await page.getByRole('button', { name: `Pay ${inr(50000)}` }).click();
     await expect(page.getByText(/Another farmer booked this slot moments ago/)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText('Booking confirmed')).toHaveCount(0);
     await page.getByRole('button', { name: 'Choose another slot' }).click();
     await expect(page.getByText('Choose a time *')).toBeVisible();
-    await expect(page.getByText(slot.label)).toHaveCount(0);   // the taken slot is no longer offered
+    await expect(page.getByText(slot.label, { exact: true })).toHaveCount(0);   // the taken slot is no longer offered
+  });
+
+  test('expert sets the fee: invalid values refused, valid fee saved, 98 % / 2 % preview, farmers see the new fee', async ({ page }) => {
+    await setFee(50000);
+    await newSlotToday();   // so expert1 is listed for farmers
+    await login(page, fx('expert1'));
+    await nav(page, 'Catch Up').click();
+    await page.locator('.chip', { hasText: /Availability/ }).first().click();
+    const input = page.getByLabel(/Your fee per consultation/);
+    await expect(page.getByTestId('current-fee')).toHaveText(inr(50000), { timeout: 20_000 });
+    for (const [bad, msg] of [['0', /between ₹1 and ₹1,00,000/], ['-5', /Enter a fee in rupees/], ['abc', /Enter a fee in rupees/],
+      ['12.345', /Enter a fee in rupees/], ['100001', /between ₹1 and ₹1,00,000/], ['', /Enter your consultation fee/]]) {
+      await input.fill(bad);
+      await expect(page.getByRole('button', { name: /Save fee|Saved/ })).toBeDisabled();
+      await expect(page.getByRole('alert')).toContainText(msg);   // the reason is shown, not only a disabled button
+    }
+    await input.fill('1000');
+    await expect(page.getByTestId('fee-split')).toContainText(`You receive ${inr(98000)} (98%)`);
+    await expect(page.getByTestId('fee-split')).toContainText(`commission ${inr(2000)} (2%)`);
+    await page.getByRole('button', { name: 'Save fee' }).click();
+    await expect(page.getByTestId('current-fee')).toHaveText(inr(100000), { timeout: 15_000 });
+    expect((await expert.from('experts').select('consultation_fee_paise').eq('id', expertId).single()).data.consultation_fee_paise).toBe(100000);
+    const view = await createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    await view.auth.signInWithPassword({ email: fx('user2'), password: process.env.FIXTURE_PASSWORD });
+    expect((await view.from('experts').select('consultation_fee_paise').eq('id', expertId).single()).data.consultation_fee_paise).toBe(100000);
+    const sneaky = await farmer.from('experts').update({ consultation_fee_paise: 100 }).eq('id', expertId).select();
+    expect(sneaky.error || sneaky.data.length === 0).toBeTruthy();   // a farmer cannot change it
+  });
+
+  test('Terms & Conditions explain the 2 % commission (no acceptance recorded)', async ({ page }) => {
+    await login(page, fx('user1'));
+    await expect(nav(page, 'Profile')).toBeVisible({ timeout: 20_000 });
+    await nav(page, 'Profile').click();
+    await page.getByRole('button', { name: 'Profile menu' }).click();
+    await page.getByText('Settings', { exact: true }).first().click();
+    await page.getByText('Terms & Conditions').click();
+    await expect(page.getByText(/retains a platform commission of/)).toBeVisible();
+    await expect(page.getByText(/₹1,000\.00 gives a commission of ₹20\.00 and an expert share of ₹980\.00/)).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(/demo|no real money/i);
   });
 
   test('expert: invalid link refused, valid Google Meet link saved and kept after reload; farmer sees "link ready"', async ({ page }) => {

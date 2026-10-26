@@ -88,7 +88,7 @@ test.describe('change list 2026-10-25 (staging)', () => {
     await expect(page.getByText('Total Users')).toBeVisible({ timeout: 20_000 });
   };
 
-  test('menu: ☰ only while hidden; Appointments and Reviews are gone (part of Meetings)', async ({ page }) => {
+  test('menu: ☰ only while hidden; Appointments and Reviews are gone (part of Consultations)', async ({ page }) => {
     await signIn(page);
     await expect(page.getByRole('button', { name: 'Show menu' })).toHaveCount(0);
     await expect(page.getByText('Appointments', { exact: true })).toHaveCount(0);
@@ -99,16 +99,68 @@ test.describe('change list 2026-10-25 (staging)', () => {
     await expect(page.getByRole('button', { name: 'Hide menu' })).toBeVisible();
   });
 
-  test('meetings: All / Upcoming / History filters and a details view with the review', async ({ page }) => {
+  test('consultations: summary cards, server-side filters, pagination info, detail with accounting and review', async ({ page }) => {
     await signIn(page);
-    await page.getByText('Meetings', { exact: true }).first().click();
-    for (const f of ['All', 'Upcoming', 'History']) await expect(page.getByRole('tab', { name: new RegExp(`^${f} \\(`) })).toBeVisible();
-    await page.getByRole('tab', { name: /^History \(/ }).click();
-    const rows = page.locator('tbody tr[title="View meeting details"]');
+    await page.getByText('Bookings & Payments', { exact: true }).first().click();
+    const summary = page.getByTestId('consultation-summary');
+    await expect(summary).toBeVisible({ timeout: 15_000 });
+    for (const label of ['Total consultations', 'Awaiting meeting link', 'Platform commission (2%) recorded', 'Expert share recorded']) {
+      await expect(summary.getByText(label)).toBeVisible();
+    }
+    await expect(page.getByText(/no money has been received, collected or paid out/)).toBeVisible();   // honest internal label
+    await page.getByLabel('Booking status').selectOption('Completed');
+    await page.getByLabel('Review').selectOption('reviewed');
+    await page.getByRole('button', { name: 'Apply filters' }).click();
+    const rows = page.locator('tbody tr[title="Open details"]');
     await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    for (const t of await rows.locator('td:nth-child(5)').allTextContents()) expect(t.trim()).toBe('Completed');
+    await expect(page.getByTestId('pagination-info')).toContainText(/\d+ consultations? · page 1 of \d+/);
     await rows.first().click();
-    await expect(page.getByRole('dialog', { name: 'Meeting details' })).toBeVisible();
-    await expect(page.getByText("Farmer's review")).toBeVisible();
+    const dialog = page.getByRole('dialog', { name: 'Consultation details' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Booking accounting (snapshot, read-only)')).toBeVisible();
+    await expect(dialog.getByText("Farmer's review")).toBeVisible();
+    await expect(dialog.locator('input')).toHaveCount(0);   // accounting is not editable
+  });
+
+  test('a booking at ₹1,000 shows ₹20 commission and ₹980 share, also after the expert raises the fee to ₹1,200', async ({ page }) => {
+    const { createClient } = await import('@supabase/supabase-js');
+    const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const { demoBook } = await import('./demo-booking.mjs');
+    const expert = mk(); const farmer = mk();
+    const e = await expert.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
+    await farmer.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
+    const expertId = (await expert.from('experts').select('id, consultation_fee_paise').eq('user_id', e.data.user.id).single()).data;
+    const before = expertId.consultation_fee_paise;
+    // a slot far in the future so it is first in the admin list (newest slot date first)
+    let slot;
+    for (let k = 0; k < 30 && !slot; k++) {
+      const d = new Date(Date.now() + (400 + k) * 86400000).toISOString().slice(0, 10);
+      const r = await expert.from('consultation_slots').insert({ expert_id: expertId.id, slot_date: d, start_time: '06:07', end_time: '06:37' }).select('id').single();
+      if (!r.error) slot = r.data.id;
+    }
+    let booking;
+    try {
+      expect((await expert.rpc('set_consultation_fee', { p_fee_paise: 100000 })).error).toBeNull();
+      const b = await demoBook(farmer, slot, 'E2E admin accounting check');
+      expect(b.error).toBeNull(); booking = b.data;
+      expect((await expert.rpc('set_consultation_fee', { p_fee_paise: 120000 })).error).toBeNull();
+      await signIn(page);
+      await page.getByText('Bookings & Payments', { exact: true }).first().click();
+      const row = page.locator('tbody tr', { hasText: booking.slice(0, 8) });
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await expect(row).toContainText('₹1,000.00');
+      await expect(row).toContainText('₹20.00');
+      await expect(row).toContainText('₹980.00');
+      await row.click();
+      const dialog = page.getByRole('dialog', { name: 'Consultation details' });
+      await expect(dialog.getByText('2.00%')).toBeVisible();
+      await expect(dialog.getByText(/simulated — no money received or paid out/)).toBeVisible();
+      await expect(dialog).not.toContainText('₹1,200.00');
+    } finally {
+      if (booking) await farmer.rpc('cancel_consultation_booking', { p_booking_id: booking, p_reason: 'E2E cleanup', p_offered_slots: [] });
+      await expert.rpc('set_consultation_fee', { p_fee_paise: before });
+    }
   });
 
   test('experts: verified experts have a Remove expert action; reports has the expert leave requests tab', async ({ page }) => {

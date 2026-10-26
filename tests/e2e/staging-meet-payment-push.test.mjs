@@ -28,23 +28,27 @@ const plus30 = (t) => { const [h, m] = t.split(':').map(Number); const x = (h * 
 const A = {}; const bookings = []; const slots = [];
 before(async () => {
   if (skip) return;
-  for (const n of ['expert1', 'user1', 'user2']) A[n] = await signIn(n);
-  A.expertId = (await A.expert1.c.from('experts').select('id').eq('user_id', A.expert1.uid).single()).data.id;
+  for (const n of ['expert1', 'user1', 'user2', 'admin']) A[n] = await signIn(n);
+  const me = (await A.expert1.c.from('experts').select('id, consultation_fee_paise').eq('user_id', A.expert1.uid).single()).data;
+  A.expertId = me.id; A.originalFee = me.consultation_fee_paise;
+  assert.ifError((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: FEE })).error);
 });
 after(async () => {
   for (const id of bookings) for (const who of [A.user1, A.user2]) await who.c.rpc('cancel_consultation_booking', { p_booking_id: id, p_reason: 'meet/payment test cleanup', p_offered_slots: [] });
   for (const id of slots) await A.expert1.c.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
+  if (A.originalFee) await A.expert1?.c.rpc('set_consultation_fee', { p_fee_paise: A.originalFee });
   await A.user1?.c.rpc('unregister_push_device', { p_token: `test-token-${env.FIXTURE_EMAIL_TOKEN}-${'y'.repeat(30)}` });
 });
 const MEET = 'https://meet.google.com/stg-test-lnk';
+const FEE = 30000;   // ₹300 — set on expert1 for these tests, original fee restored afterwards
 const notesFor = async (who, booking) =>
   (await who.c.from('notifications').select('message').eq('user_id', who.uid).eq('related_id', booking)).data.map((n) => n.message);
 // another file may already use this minute for the same expert (unique_expert_slot): take the next free one
-async function freshSlot(min, rate = 300) {
+async function freshSlot(min) {   // no price on slots: the fee is the expert's (migration 15)
   let s;
   for (let k = 0; k < 6; k++) {
     const at = ist(min + k);
-    s = await A.expert1.c.from('consultation_slots').insert({ expert_id: A.expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time), rate }).select('id').single();
+    s = await A.expert1.c.from('consultation_slots').insert({ expert_id: A.expertId, slot_date: at.date, start_time: at.time, end_time: plus30(at.time) }).select('id').single();
     if (s.error?.code !== '23505') break;
   }
   assert.ifError(s.error); slots.push(s.data.id);
@@ -55,7 +59,7 @@ describe('demo payment checkout (staging) — no real money, no provider', { ski
   test('B: cancelled demo payment books nothing and notifies nobody; cancelled never becomes confirmed', async () => {
     const slot = await freshSlot(200);
     const p = (await A.user1.c.rpc('start_demo_checkout', { p_slot_id: slot, p_issue: 'scenario B', p_idempotency_key: crypto.randomUUID() })).data;
-    assert.deepEqual([p.status, p.demo, p.currency, p.amount_paise], ['pending', true, 'INR', 30000]);
+    assert.deepEqual([p.status, p.transaction_type, p.currency, p.amount_paise], ['pending', 'simulated', 'INR', FEE]);
     assert.equal((await A.user1.c.rpc('cancel_demo_payment', { p_payment_id: p.payment_id })).data.status, 'cancelled');
     assert.equal((await A.user1.c.rpc('confirm_demo_payment', { p_payment_id: p.payment_id })).data.status, 'cancelled');
     assert.equal((await A.expert1.c.from('consultation_slots').select('is_booked').eq('id', slot).single()).data.is_booked, false);
@@ -65,19 +69,19 @@ describe('demo payment checkout (staging) — no real money, no provider', { ski
   test('C: a failed confirmation shows no booking; a new checkout afterwards succeeds once', async () => {
     const slot = await freshSlot(210);
     const p = (await A.user1.c.rpc('start_demo_checkout', { p_slot_id: slot, p_issue: 'scenario C', p_idempotency_key: crypto.randomUUID() })).data;
-    assert.ifError((await A.expert1.c.from('consultation_slots').update({ rate: 350 }).eq('id', slot)).error);   // fee changed meanwhile
+    assert.ifError((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: FEE + 5000 })).error);   // fee changed meanwhile
     const failed = (await A.user1.c.rpc('confirm_demo_payment', { p_payment_id: p.payment_id })).data;
     assert.deepEqual([failed.status, failed.failure_reason, failed.booking_id], ['failed', 'fee_changed', null]);
     assert.equal((await A.expert1.c.from('consultation_bookings').select('id').eq('slot_id', slot)).data.length, 0);
     const ok = await demoBook(A.user1.c, slot, 'scenario C retry');
     assert.ifError(ok.error); bookings.push(ok.data);
-    assert.equal(ok.payment.amount_paise, 35000, 'new checkout uses the current fee');
+    assert.equal(ok.payment.amount_paise, FEE + 5000, 'new checkout uses the current fee');
     assert.equal((await notesFor(A.user1, ok.data)).length, 1, 'farmer booking notice exactly once');
     assert.equal((await notesFor(A.expert1, ok.data)).length, 1, 'expert booking notice exactly once');
     // G: after "restarting" (a new session) the authoritative state is read back from the server
     const again = await signIn('user1');
     const row = (await again.c.from('demo_payments').select('status, booking_id, amount_paise, currency').eq('id', ok.payment.payment_id).single()).data;
-    assert.deepEqual([row.status, row.booking_id, row.amount_paise, row.currency], ['succeeded', ok.data, 35000, 'INR']);
+    assert.deepEqual([row.status, row.booking_id, row.amount_paise, row.currency], ['succeeded', ok.data, FEE + 5000, 'INR']);
   });
 
   test('D: two farmers confirm the same slot at once: exactly one booking', async () => {
@@ -101,8 +105,63 @@ describe('demo payment checkout (staging) — no real money, no provider', { ski
     assert.ok((await A.user1.c.from('demo_payments').insert({ farmer_user_id: A.user1.uid, issue: 'x', amount_paise: 1, idempotency_key: crypto.randomUUID(), expires_at: new Date(Date.now() + 1e6).toISOString() })).error, 'payment inserted');
     assert.match((await A.user1.c.rpc('book_consultation_slot', { p_slot_id: slot, p_issue: 'skip' })).error?.message || '', /permission denied/);
     assert.ok((await A.user1.c.rpc('start_demo_checkout', { p_slot_id: slot, p_issue: 'x', p_idempotency_key: crypto.randomUUID(), p_amount: 1 })).error, 'client amount accepted');
-    assert.ok((await A.expert1.c.from('consultation_slots').update({ rate: 0 }).eq('id', slot)).error, 'invalid fee saved');
+    assert.ok((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: 0 })).error, 'invalid fee saved');
     await A.user1.c.rpc('cancel_demo_payment', { p_payment_id: p.payment_id });
+  });
+});
+
+describe('expert fee, 2 % commission and admin reporting (staging)', { skip }, () => {
+  test('fee: only the expert sets it (₹1–₹1,00,000); farmers and direct writes are refused; farmers can read it', async () => {
+    assert.equal((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: 100000 })).data, 100000);
+    for (const bad of [0, 99, -1, 10000001]) assert.ok((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: bad })).error, `accepted ${bad}`);
+    assert.match((await A.user1.c.rpc('set_consultation_fee', { p_fee_paise: 100 })).error?.message || '', /Only experts/);
+    const direct = await A.expert1.c.from('experts').update({ consultation_fee_paise: 5000 }).eq('id', A.expertId).select();
+    assert.match(direct.error?.message || '', /consultation fee setting/);
+    assert.ok((await A.admin.c.from('experts').update({ consultation_fee_paise: 5000 }).eq('id', A.expertId).select()).error, 'admin wrote the column directly');
+    const sneaky = await A.user1.c.from('experts').update({ consultation_fee_paise: 100 }).eq('id', A.expertId).select();
+    assert.ok(sneaky.error || sneaky.data.length === 0);
+    assert.equal((await A.user2.c.from('experts').select('consultation_fee_paise').eq('id', A.expertId).single()).data.consultation_fee_paise, 100000);
+    assert.match((await A.user1.c.rpc('admin_set_consultation_fee', { p_expert_id: A.expertId, p_fee_paise: 100, p_reason: 'x' })).error?.message || '', /Admin privileges/);
+  });
+
+  test('₹1,000 → commission ₹20, expert share ₹980; a later fee change leaves the booking as it was; admin sees the same', async () => {
+    const slot = await freshSlot(260);
+    assert.ifError((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: 100000 })).error);
+    const b = await demoBook(A.user1.c, slot, 'commission check'); assert.ifError(b.error); bookings.push(b.data);
+    assert.ifError((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: 120000 })).error);
+    const snap = (await A.user1.c.from('demo_payments').select('amount_paise, commission_bps, commission_paise, expert_share_paise, transaction_type').eq('booking_id', b.data).single()).data;
+    assert.deepEqual(snap, { amount_paise: 100000, commission_bps: 200, commission_paise: 2000, expert_share_paise: 98000, transaction_type: 'simulated' });
+    assert.ok((await A.user1.c.from('demo_payments').update({ commission_paise: 0 }).eq('booking_id', b.data).select()).error
+      || (await A.user1.c.from('demo_payments').select('commission_paise').eq('booking_id', b.data).single()).data.commission_paise === 2000, 'commission edited');
+    const list = (await A.admin.c.rpc('admin_consultations', { p_filters: { expert_id: A.expertId }, p_limit: 100, p_offset: 0 })).data;
+    const row = list.rows.find((r) => r.booking_id === b.data);
+    assert.deepEqual([row.amount_paise, row.commission_paise, row.expert_share_paise, row.transaction_type], [100000, 2000, 98000, 'simulated']);
+    assert.equal(row.amount_paise, row.commission_paise + row.expert_share_paise);
+    assert.equal(row.meeting_link, undefined, 'link in the list');
+    const detail = (await A.admin.c.rpc('admin_consultation_detail', { p_booking_id: b.data })).data;
+    assert.ok(detail.notifications.length >= 2 && detail.confirmed_at);
+    assert.ok((await A.admin.c.rpc('admin_set_consultation_fee', { p_expert_id: A.expertId, p_fee_paise: FEE, p_reason: 'restore test fee' })).data === FEE);
+    assert.ifError((await A.expert1.c.rpc('set_consultation_fee', { p_fee_paise: FEE })).error);
+  });
+
+  test('admin functions refuse farmers, experts and anonymous callers; summary equals the sum of its rows', async () => {
+    for (const [fn, args] of [['admin_consultations', {}], ['admin_consultation_summary', {}], ['admin_consultation_detail', { p_booking_id: A.expertId }]]) {
+      for (const who of [A.user1, A.expert1, { c: mk() }]) assert.ok((await who.c.rpc(fn, args)).error, `${fn} callable`);
+    }
+    const f = { expert_id: A.expertId };
+    const sum = (await A.admin.c.rpc('admin_consultation_summary', { p_filters: f })).data;
+    const first = (await A.admin.c.rpc('admin_consultations', { p_filters: f, p_limit: 100, p_offset: 0 })).data;
+    const all = { total: first.total, rows: [...first.rows] };
+    for (let off = 100; off < first.total; off += 100) all.rows.push(...(await A.admin.c.rpc('admin_consultations', { p_filters: f, p_limit: 100, p_offset: off })).data.rows);   // every page, nothing skipped
+    assert.equal(all.rows.length, first.total, 'pagination dropped rows');
+    assert.equal(sum.total, all.total);
+    const live = all.rows.filter((r) => r.payment_id && r.status !== 'Cancelled');
+    assert.equal(sum.value_paise, live.reduce((t, r) => t + r.amount_paise, 0));
+    assert.equal(sum.commission_paise + sum.expert_share_paise, sum.value_paise);
+    const page1 = (await A.admin.c.rpc('admin_consultations', { p_filters: f, p_limit: 3, p_offset: 0 })).data;
+    const page2 = (await A.admin.c.rpc('admin_consultations', { p_filters: f, p_limit: 3, p_offset: 3 })).data;
+    assert.equal(page1.total, sum.total);
+    assert.equal(new Set([...page1.rows, ...page2.rows].map((r) => r.booking_id)).size, page1.rows.length + page2.rows.length, 'pages overlap');
   });
 });
 
