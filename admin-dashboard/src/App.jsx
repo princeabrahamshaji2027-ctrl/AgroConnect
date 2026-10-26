@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabase';
+import { supabase, RECOVERY_FLAG } from './supabase';
 import Sidebar from './components/Sidebar';
 import TopNav from './components/TopNav';
 import ComingSoon from './components/ComingSoon';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Experts from './pages/Experts';
@@ -20,13 +21,18 @@ function App() {
   const [authError, setAuthError] = useState('');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const readRecovery = () => { try { return sessionStorage.getItem(RECOVERY_FLAG) === '1'; } catch { return false; } };
+  const [recovery, setRecovery] = useState(readRecovery);
+  const [notice, setNotice] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: sess } }) => {
+      if (!sess) { try { sessionStorage.removeItem(RECOVERY_FLAG); } catch { /* ignore */ } setRecovery(false); }
       setSession(sess);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       setSession(sess);
       if (!sess) {
         setProfile(null);
@@ -36,6 +42,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (recovery) return;   // the reset screen comes first; the admin check runs at the next sign-in
     if (!session?.user) {
       setProfile(null);
       return;
@@ -80,7 +87,16 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [session]);
+  }, [session, recovery]);
+
+  const finishRecovery = async (message) => {
+    try { sessionStorage.removeItem(RECOVERY_FLAG); } catch { /* ignore */ }
+    await supabase.auth.signOut();
+    setRecovery(false);
+    setSession(null);
+    setProfile(null);
+    setNotice(message);
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -89,8 +105,12 @@ function App() {
     setAuthError('');
   };
 
+  if (recovery && session) {
+    return <ResetPassword email={session.user?.email || ''} onDone={finishRecovery} />;
+  }
+
   if (!session) {
-    return <Login authError={authError} />;
+    return <Login authError={authError} notice={notice} />;
   }
 
   if (profile === undefined) {

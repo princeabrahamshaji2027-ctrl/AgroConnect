@@ -2,12 +2,34 @@ import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import logoImg from '../assets/logo.png';
 
-export default function Login({ authError: externalError }) {
+export default function Login({ authError: externalError, notice }) {
   // Never pre-fill or auto-submit credentials: they would ship in the public JS bundle.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forgot, setForgot] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+
+  // One request per click; the button stays disabled after a send (Supabase also rate-limits recovery e-mails).
+  const handleReset = async (e) => {
+    e.preventDefault();
+    const addr = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { setError('Please enter your admin email address.'); return; }
+    setError('');
+    setLoading(true);
+    const { error: err } = await supabase.auth.resetPasswordForEmail(addr, { redirectTo: window.location.origin });
+    setLoading(false);
+    if (err) {
+      setError(err.status === 429 || /rate limit/i.test(err.message || '')
+        ? 'Too many reset emails were requested. Please wait a few minutes and try again.'
+        : 'The reset email could not be sent. Please try again later.');
+      return;
+    }
+    setResetSent(true);
+    setResetMsg('If an account exists for this email, a password-reset link has been sent. Open it in this browser.');
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -41,6 +63,7 @@ export default function Login({ authError: externalError }) {
   };
 
   const displayError = error || externalError;
+  const displayNotice = resetMsg || notice;
 
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center px-4">
@@ -55,7 +78,12 @@ export default function Login({ authError: externalError }) {
           </div>
         </div>
 
-        <form onSubmit={handleLogin} className="flex flex-col gap-4 mt-2">
+        <form onSubmit={forgot ? handleReset : handleLogin} className="flex flex-col gap-4 mt-2">
+          {displayNotice && !displayError && (
+            <div className="bg-primary-container/15 border border-primary-container/40 text-on-surface rounded-xl p-4 text-[13px] text-center font-medium leading-5" role="status">
+              {displayNotice}
+            </div>
+          )}
           {displayError && (
             <div className="bg-error-container/20 border border-error/30 text-error rounded-xl p-4 text-[13px] text-center font-medium leading-5">
               {displayError}
@@ -77,7 +105,7 @@ export default function Login({ authError: externalError }) {
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
+          {!forgot && <div className="flex flex-col gap-2">
             <label className="font-label-md text-on-surface-variant font-bold">Password</label>
             <div className="relative">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">lock</span>
@@ -90,21 +118,32 @@ export default function Login({ authError: externalError }) {
                 className="w-full bg-[#1c221e] border border-outline-variant rounded-xl pl-10 pr-4 py-3 text-on-surface text-body-sm focus:outline-none focus:border-primary-container transition-colors placeholder:text-on-surface-variant/40"
               />
             </div>
-          </div>
+          </div>}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (forgot && resetSent)}
             className="w-full bg-primary-container hover:bg-primary-container/90 text-on-primary-container font-semibold py-3 px-4 rounded-xl mt-4 transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {loading ? (
               <span className="animate-spin h-5 w-5 border-2 border-on-primary-container border-t-transparent rounded-full" />
             ) : (
-              <>
-                <span className="material-symbols-outlined text-[18px]">login</span>
-                <span>Sign In to Dashboard</span>
-              </>
+              forgot ? (
+                <span>{resetSent ? 'Reset link sent' : 'Send reset link'}</span>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[18px]">login</span>
+                  <span>Sign In to Dashboard</span>
+                </>
+              )
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setForgot(!forgot); setError(''); setResetMsg(''); setResetSent(false); }}
+            className="text-primary-container text-body-sm font-semibold hover:underline self-center cursor-pointer"
+          >
+            {forgot ? 'Back to sign in' : 'Forgot password?'}
           </button>
         </form>
 
