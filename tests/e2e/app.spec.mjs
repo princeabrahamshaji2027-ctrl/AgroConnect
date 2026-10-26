@@ -35,6 +35,22 @@ test('splash leads to an empty login form; register validates', async ({ page })
   await expect(page.getByLabel(/Full name/i).first()).toHaveAttribute('aria-invalid', 'true');
 });
 
+test('register: district is a required choice of the three launch districts; no GPS, country or state fields', async ({ page }) => {
+  await toLogin(page);
+  await page.locator('.auth-link', { hasText: 'Sign Up' }).click();
+  await expect(page.getByRole('heading', { name: 'Create Account' })).toBeVisible();
+  const district = page.getByLabel(/District/);
+  await expect(district.locator('option')).toHaveText(['Choose your district', 'Kottayam', 'Pathanamthitta', 'Kannur']);
+  await expect(page.getByText(/Detect Location via GPS/)).toHaveCount(0);
+  await expect(page.getByLabel('Country', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('State', { exact: true })).toHaveCount(0);
+  await page.evaluate(() => document.querySelectorAll('form [required]').forEach((e) => e.removeAttribute('required')));
+  await page.locator('form button[type=submit]').click();
+  await expect(page.getByText('Please choose your district.')).toBeVisible();
+  await district.selectOption('Kannur');
+  await expect(page.getByText('Please choose your district.')).toHaveCount(0);
+});
+
 test('login: empty submit shows inline errors under the fields and no popup', async ({ page }) => {
   page.on('dialog', (d) => { throw new Error(`unexpected popup: ${d.message()}`); });
   await toLogin(page);
@@ -368,7 +384,7 @@ test.describe('account recovery (staging)', () => {
     const email = unique('chpw');
     const p1 = `Aa1!${Math.random().toString(36).slice(2, 10)}Zz`;
     const p2 = `Bb2@${Math.random().toString(36).slice(2, 10)}Yy`;
-    const su = await api.auth.signUp({ email, password: p1, options: { data: { full_name: 'Change Password Test' } } });
+    const su = await api.auth.signUp({ email, password: p1, options: { data: { full_name: 'Change Password Test', district: 'Kottayam' } } });   // as Register sends it
     if (su.error) throw su.error;
     try {
       await page.goto('/');
@@ -740,5 +756,100 @@ test.describe('cancellation & messaging 2026-10-26 (staging)', () => {
     await expect(page.getByRole('button', { name: 'Accept' })).toHaveCount(0, { timeout: 15_000 });
     const st = (await C[b].rpc('list_conversations', { p_box: 'inbox', p_limit: 200 })).data.find((r) => r.conversation_id === conv.conversation_id);
     expect(st?.state).toBe('normal');
+  });
+});
+
+// Launch districts (migration 20): local posts first, a prompt for users without a district.
+test.describe('districts 2026-10-26 (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  test.describe.configure({ mode: 'serial' });
+  const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  let u1; let u1Id; let u4; let u4Id; const mine = [];
+  test.beforeAll(async () => {
+    u1 = mk(); u4 = mk();
+    u1Id = (await u1.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD })).data.user.id;
+    u4Id = (await u4.auth.signInWithPassword({ email: fx('user4'), password: process.env.FIXTURE_PASSWORD })).data.user.id;
+    await u1.from('profiles').update({ district: 'Kottayam' }).eq('id', u1Id);
+  });
+  test.afterAll(async () => {
+    for (const id of mine) await u1.from('posts').delete().eq('id', id);
+    await u4.from('profiles').update({ district: 'Kottayam' }).eq('id', u4Id);   // keep the fixture's district
+  });
+
+  test('feed says "Posts from Kottayam first" and the first card is a Kottayam post', async ({ page }) => {
+    const r = await u1.from('posts').insert({ user_id: u1Id, caption: `E2E Kottayam post ${Date.now()}`, status: 'Approved' }).select('id').single();
+    mine.push(r.data.id);
+    await login(page, fx('user1'));
+    await expect(page.getByText('Posts from Kottayam first')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.card:has(.post-card-header)').first()).toContainText('Kottayam');
+  });
+
+  test('a user without a district is asked once; saving it reloads the feed with the new district first', async ({ page }) => {
+    await u4.from('profiles').update({ district: null }).eq('id', u4Id);
+    await login(page, fx('user4'));
+    await expect(page.getByRole('heading', { name: 'Choose your district' })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Please choose your district.')).toBeVisible();
+    await page.getByLabel('District', { exact: true }).selectOption('Pathanamthitta');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Posts from Pathanamthitta first')).toBeVisible({ timeout: 20_000 });
+    expect((await u4.from('profiles').select('district').eq('id', u4Id).single()).data.district).toBe('Pathanamthitta');
+  });
+});
+
+// Feed order for each launch district, and "Load more" pagination without repeats (staging data, own posts cleaned up).
+test.describe('district feed: three districts + pagination (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  test.describe.configure({ mode: 'serial' });
+  const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  const who = { user1: 'Kottayam', user2: 'Pathanamthitta', user3: 'Kannur' };
+  const C = {}; const mine = [];
+  const tag = `E2E feed ${Date.now() % 1e6}`;
+  test.beforeAll(async () => {
+    for (const [n, d] of Object.entries(who)) {
+      C[n] = mk();
+      C[`${n}Id`] = (await C[n].auth.signInWithPassword({ email: fx(n), password: process.env.FIXTURE_PASSWORD })).data.user.id;
+      await C[n].from('profiles').update({ district: d }).eq('id', C[`${n}Id`]);
+    }
+    // one post per district, then 22 more Kottayam posts so the feed has more than one page (20)
+    for (const n of Object.keys(who)) {
+      const r = await C[n].from('posts').insert({ user_id: C[`${n}Id`], caption: `${tag} ${who[n]}`, status: 'Approved' }).select('id').single();
+      mine.push([n, r.data.id]);
+    }
+    for (let i = 0; i < 22; i++) {
+      const r = await C.user1.from('posts').insert({ user_id: C.user1Id, caption: `${tag} page ${i}`, status: 'Approved' }).select('id').single();
+      mine.push(['user1', r.data.id]);
+    }
+  });
+  test.afterAll(async () => { for (const [n, id] of mine) await C[n].from('posts').delete().eq('id', id); });
+
+  for (const [n, d] of Object.entries(who)) {
+    test(`${d} user: "${d} first" and every local card comes before the first other-district card`, async ({ page }) => {
+      await login(page, fx(n));
+      await expect(page.getByText(`Posts from ${d} first`)).toBeVisible({ timeout: 20_000 });
+      const cards = page.locator('.card:has(.post-card-header)');
+      await expect(cards.first()).toContainText(d);
+      const metas = await cards.locator('.post-card-meta').allTextContents();
+      const isLocal = metas.map((m) => m.includes(d));
+      const lastLocal = isLocal.lastIndexOf(true);
+      const firstOther = isLocal.indexOf(false);
+      expect(lastLocal).toBeGreaterThanOrEqual(0);
+      if (firstOther > -1) expect(lastLocal).toBeLessThan(firstOther);   // no local card after another district's card
+    });
+  }
+
+  test('Load more appends the next page without repeating a post', async ({ page }) => {
+    await login(page, fx('user1'));
+    const cards = page.locator('.card:has(.post-card-header)');
+    await expect(page.getByRole('button', { name: 'Load more posts' })).toBeVisible({ timeout: 20_000 });
+    expect(await cards.count()).toBe(20);
+    const firstPage = await cards.locator('.post-card-header').allTextContents();
+    await page.getByRole('button', { name: 'Load more posts' }).click();
+    await expect.poll(() => cards.count(), { timeout: 15_000 }).toBeGreaterThan(20);
+    const ids = await page.evaluate(() => [...document.querySelectorAll('.card .post-card-header')].length);
+    expect(ids).toBe(await cards.count());
+    const contents = await cards.allTextContents();
+    expect(new Set(contents).size).toBe(contents.length);   // each card's text differs (unique captions)
+    expect(firstPage.length).toBe(20);
   });
 });

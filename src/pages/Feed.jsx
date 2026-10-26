@@ -5,6 +5,7 @@ import BottomSheet from '../components/BottomSheet';
 import { Button } from '../components/Button';
 import InputField from '../components/InputField';
 import { validateRequiredText } from '../utils/validation';
+import { PostCardSkeleton, SkeletonGroup, LoadError } from '../components/Skeleton';
 import { supabase } from '../supabase';
 import './pages.css';
 
@@ -26,12 +27,19 @@ export default function Feed({
   onProfileClick, 
   onCreatePostClick,
   onPeaAIClick,
-  onShowToast
+  onShowToast,
+  feedVersion = 0,
+  onChooseDistrict
 }) {
   const [posts, setPosts] = useState([]);
   const [usersDb, setUsersDb] = useState([]);
   const [connectedUserIds, setConnectedUserIds] = useState(new Set());
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [myDistrict, setMyDistrict] = useState(null);
+  const [loadState, setLoadState] = useState('loading');   // first load: loading | ready | error
+  const [cursor, setCursor] = useState(null);              // last row's { feed_rank, created_at, id }
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Pull to refresh simulation states
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -51,6 +59,32 @@ export default function Feed({
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
 
+  // One feed row (get_feed, migration 20) → the shape PostCard expects.
+  const mapRow = (post) => ({
+    id: post.id,
+    userId: post.user_id,
+    userName: post.author_name || 'Anonymous',
+    userAvatar: post.author_avatar || '/profile-placeholder.png',
+    userRole: post.author_role || 'Farmer',
+    content: post.caption,
+    image: post.image_path,
+    mediaType: post.media_type || 'image',
+    videoDuration: post.video_duration_seconds,
+    likes: post.like_count || 0,
+    commentCount: post.comment_count || 0,
+    category: post.category,
+    location: post.location,
+    district: post.district,
+    isLocal: post.feed_rank === 0,
+    time: formatTimeAgo(post.created_at),
+    liked: !!post.liked_by_me,
+    bookmarked: false,
+    comments: []
+  });
+  const PAGE = 20;
+
+  // The server orders the feed: the viewer's own district first (from their saved profile, never from the client),
+  // newest first inside each group, in pages that never repeat or skip a post.
   const fetchPosts = async () => {
     try {
       // the saved session is available at once after a relaunch; getUser() needs the network first, and while it
@@ -59,61 +93,51 @@ export default function Feed({
       const userId = session?.user?.id || (await supabase.auth.getUser()).data.user?.id;
       setCurrentUserId(userId);
 
-      let likedPostIds = new Set();
-      if (userId) {
-        const { data: likedRows } = await supabase
-          .from('likes')
-          .select('post_id')
-          .eq('user_id', userId);
-        likedPostIds = new Set(likedRows?.map(r => r.post_id) || []);
+      const [feedRes, followRes, meRes] = await Promise.all([
+        supabase.rpc('get_feed', { p_limit: PAGE, p_after_rank: null, p_after_created_at: null, p_after_id: null }),
+        userId ? supabase.from('followers').select('following_id').eq('follower_id', userId) : Promise.resolve({ data: [] }),
+        userId ? supabase.from('profiles').select('district').eq('id', userId).maybeSingle() : Promise.resolve({ data: null }),
+      ]);
+      if (feedRes.error) throw feedRes.error;
 
-        const { data: followRows } = await supabase
-          .from('followers')
-          .select('following_id')
-          .eq('follower_id', userId);
-        setConnectedUserIds(new Set(followRows?.map(r => r.following_id) || []));
-      }
-
-      const { data: postsData, error } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles:user_id (
-            full_name,
-            profile_image_path,
-            role
-          )
-        `)
-        .eq('status', 'Approved')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const formatted = (postsData || []).map(post => ({
-        id: post.id,
-        userId: post.user_id,
-        userName: post.profiles?.full_name || 'Anonymous',
-        userAvatar: post.profiles?.profile_image_path || '/profile-placeholder.png',
-        userRole: post.profiles?.role || 'Farmer',
-        content: post.caption,
-        image: post.image_path,
-        mediaType: post.media_type || 'image',
-        videoDuration: post.video_duration_seconds,
-        likes: post.like_count || 0,
-        commentCount: post.comment_count || 0,
-        category: post.category,
-        location: post.location,
-        time: formatTimeAgo(post.created_at),
-        liked: likedPostIds.has(post.id),
-        bookmarked: false,
-        comments: []
-      }));
-
-      setPosts(formatted);
+      setConnectedUserIds(new Set(followRes.data?.map(r => r.following_id) || []));
+      setMyDistrict(meRes.data?.district || null);
+      const rows = feedRes.data || [];
+      setPosts(rows.map(mapRow));
+      const last = rows.at(-1);
+      setCursor(last ? { feed_rank: last.feed_rank, created_at: last.created_at, id: last.id } : null);
+      setHasMore(rows.length === PAGE);
+      setLoadState('ready');
     } catch (err) {
       console.error('Error fetching posts:', err);
+      setLoadState(prev => (prev === 'ready' ? 'ready' : 'error'));
+      if (onShowToast && loadState === 'ready') onShowToast('Could not refresh the feed. Check your connection.');
     }
   };
+
+  const loadMore = async () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    const { data, error } = await supabase.rpc('get_feed', {
+      p_limit: PAGE, p_after_rank: cursor.feed_rank, p_after_created_at: cursor.created_at, p_after_id: cursor.id,
+    });
+    setLoadingMore(false);
+    if (error) { if (onShowToast) onShowToast('Could not load more posts. Check your connection.'); return; }
+    const rows = data || [];
+    setPosts(prev => {
+      const seen = new Set(prev.map(p => p.id));
+      return [...prev, ...rows.filter(r => !seen.has(r.id)).map(mapRow)];
+    });
+    const last = rows.at(-1);
+    if (last) setCursor({ feed_rank: last.feed_rank, created_at: last.created_at, id: last.id });
+    setHasMore(rows.length === PAGE);
+  };
+
+  // reload when the user's district changes (district prompt / edit profile)
+  useEffect(() => {
+    if (feedVersion > 0) fetchPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedVersion]);
 
   useEffect(() => {
     fetchPosts();
@@ -147,8 +171,13 @@ export default function Feed({
             .select('*, profiles:user_id(full_name, profile_image_path, role)')
             .eq('id', payload.new.id)
             .single()
-            .then(({ data: newPost }) => {
+            .then(async ({ data: newPost }) => {
               if (!newPost) return;
+              const { data: { session } } = await supabase.auth.getSession();
+              const { data: me } = session?.user
+                ? await supabase.from('profiles').select('district').eq('id', session.user.id).maybeSingle()
+                : { data: null };
+              const isLocal = !!me?.district && newPost.district === me.district;
               const formatted = {
                 id: newPost.id,
                 userId: newPost.user_id,
@@ -163,12 +192,22 @@ export default function Feed({
                 commentCount: newPost.comment_count || 0,
                 category: newPost.category,
                 location: newPost.location,
+                district: newPost.district,
+                isLocal,
                 time: 'Just now',
                 liked: false,
                 bookmarked: false,
                 comments: []
               };
-              setPosts(prev => [formatted, ...prev]);
+              // keep the server's order: a local post goes to the top, another district's post to the top of the
+              // non-local group (after all local posts)
+              setPosts(prev => {
+                if (prev.some(p => p.id === formatted.id)) return prev;
+                if (isLocal) return [formatted, ...prev];
+                const firstOther = prev.findIndex(p => !p.isLocal);
+                const at = firstOther === -1 ? prev.length : firstOther;
+                return [...prev.slice(0, at), formatted, ...prev.slice(at)];
+              });
             });
         }
       )
@@ -543,6 +582,36 @@ export default function Feed({
           </div>
         )}
 
+        {loadState === 'ready' && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 10px' }}>
+            {myDistrict ? (
+              <span><span className="material-symbols-outlined" style={{ fontSize: '14px', verticalAlign: 'middle', color: 'var(--primary-green)' }}>location_on</span> Posts from {myDistrict} first</span>
+            ) : (
+              <>
+                <span>Choose your district to see local posts first.</span>
+                {onChooseDistrict && (
+                  <button type="button" onClick={onChooseDistrict}
+                    style={{ background: 'transparent', border: '1px solid var(--primary-green)', color: 'var(--primary-green)', borderRadius: '12px', padding: '4px 10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                    Choose
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {loadState === 'loading' && (
+          <SkeletonGroup label="Loading posts…">{[0, 1, 2].map((i) => <PostCardSkeleton key={i} />)}</SkeletonGroup>
+        )}
+        {loadState === 'error' && (
+          <LoadError message="Could not load the community feed. Check your connection." onRetry={() => { setLoadState('loading'); fetchPosts(); }} />
+        )}
+        {loadState === 'ready' && posts.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
+            No posts yet. Tap the + button to share the first one.
+          </div>
+        )}
+
         {posts.map(post => (
           <div key={post.id}>
             <PostCard
@@ -557,6 +626,12 @@ export default function Feed({
             />
           </div>
         ))}
+
+        {loadState === 'ready' && hasMore && (
+          <Button variant="secondary" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? 'Loading…' : 'Load more posts'}
+          </Button>
+        )}
       </div>
 
       {/* Comments Bottom Sheet */}

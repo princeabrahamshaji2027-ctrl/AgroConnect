@@ -75,6 +75,38 @@ export default function InputField({
   );
 }
 
+// Dropdown with the same look and inline error as InputField (e.g. the district picker).
+export function SelectField({ label, value, onChange, onBlur, options, error, name, inputRef, required = false, placeholder, disabled = false }) {
+  const id = useId();
+  const errId = `${id}-err`;
+  return (
+    <div className="form-group">
+      {label && <label className="form-label" htmlFor={id}>{label}</label>}
+      <div className={`input-container${error ? ' has-error' : ''}`}>
+        <span className="material-symbols-outlined input-icon" aria-hidden="true">location_on</span>
+        <select
+          id={id}
+          name={name}
+          className="input-field"
+          value={value}
+          onChange={onChange}
+          onBlur={onBlur}
+          required={required}
+          disabled={disabled}
+          ref={inputRef}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errId : undefined}
+          style={{ appearance: 'auto', backgroundColor: 'transparent' }}
+        >
+          <option value="" disabled style={{ backgroundColor: '#1E1E1E' }}>{placeholder || 'Choose…'}</option>
+          {options.map((o) => <option key={o} value={o} style={{ backgroundColor: '#1E1E1E' }}>{o}</option>)}
+        </select>
+      </div>
+      {error && <p id={errId} className="field-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
 // Field error for custom controls (slot lists, star ratings, pickers) that are not an InputField.
 export function FieldError({ id, children }) {
   if (!children) return null;

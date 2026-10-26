@@ -117,7 +117,8 @@ export default function UserProfile({
           avatar: profile.profile_image_path || '/profile-placeholder.png',
           role: profile.role,
           bio: profile.bio || '',
-          location: profile.location || 'Punjab, India',
+          location: profile.location || '',
+          district: profile.district || null,
           isBanned: profile.is_banned || false,
           followerCount: profile.follower_count || 0
         });
@@ -472,8 +473,8 @@ export default function UserProfile({
               <span className="profile-stat-lbl">Connections</span>
             </div>
             <div className="profile-stat-box">
-              <span className="profile-stat-val" style={{ color: 'var(--text-primary)', fontSize: '12px' }}>{user.location}</span>
-              <span className="profile-stat-lbl">Location</span>
+              <span className="profile-stat-val" style={{ color: 'var(--text-primary)', fontSize: '12px' }}>{user.district || user.location || '—'}</span>
+              <span className="profile-stat-lbl">{user.district ? 'District' : 'Location'}</span>
             </div>
           </div>
 
@@ -577,7 +578,7 @@ export default function UserProfile({
             <InputField label="Degree / Major" placeholder="e.g. Plant Pathology" {...bindKyc(kyc1, 'degree', setDegree)} />
             <InputField label="Years of Experience" type="number" inputMode="numeric" placeholder="e.g. 5" {...bindKyc(kyc1, 'experience', setExperience)} />
             <InputField label="Specialization" placeholder="e.g. Soil health, Rice diseases" {...bindKyc(kyc1, 'specialization', setSpecialization)} />
-            <InputField label="Institution / University" placeholder="e.g. Punjab Agricultural University" {...bindKyc(kyc1, 'institution', setInstitution)} />
+            <InputField label="Institution / University" placeholder="e.g. Kerala Agricultural University" {...bindKyc(kyc1, 'institution', setInstitution)} />
             <InputField label="License No. (Optional)" placeholder="e.g. LIC-92019-IN" value={license} onChange={(e) => setLicense(e.target.value)} />
             <InputField label="LinkedIn URL (Optional)" placeholder="https://linkedin.com/in/username" value={linkedin} onChange={(e) => setLinkedin(e.target.value)} />
           </div>

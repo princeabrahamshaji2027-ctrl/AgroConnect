@@ -11,6 +11,7 @@ import PeaAI from './pages/PeaAI';
 import Search from './pages/Search';
 import Notifications from './pages/Notifications';
 import Chat from './pages/Chat';
+import DistrictPrompt from './components/DistrictPrompt';
 import Settings from './pages/Settings';
 import PrivacySecurity from './pages/PrivacySecurity';
 import Terms from './pages/Terms';
@@ -32,7 +33,10 @@ export default function App() {
   const [connectInitialBooking, setConnectInitialBooking] = useState(null);
   const [focusBookingId, setFocusBookingId] = useState(null); // opened from a push notification
   const [pendingPushTap, setPendingPushTap] = useState(null);  // tap that arrived before sign-in finished
-  const [focusConversation, setFocusConversation] = useState(null); // { id, otherUserId?, name?, avatar?, state? } to open in Chat
+  const [focusConversation, setFocusConversation] = useState(null);
+  // district (migration 20): users without one are asked once per app session; saving reloads the feed
+  const [districtPrompt, setDistrictPrompt] = useState(null);   // null | { userId }
+  const [feedVersion, setFeedVersion] = useState(0); // { id, otherUserId?, name?, avatar?, state? } to open in Chat
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
 
@@ -159,6 +163,25 @@ export default function App() {
     };
   }, [subScreen, viewingProfileId, activeTab]);
 
+  useEffect(() => {
+    if (screen !== 'appLayout') return;
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      let skipped = false;
+      try { skipped = sessionStorage.getItem('district_prompt_later') === '1'; } catch { /* storage unavailable */ }
+      if (skipped) return;
+      const { data } = await supabase.from('profiles').select('district, role').eq('id', session.user.id).maybeSingle();
+      if (!cancelled && data && data.role !== 'Admin' && !data.district) setDistrictPrompt({ userId: session.user.id });
+    })();
+    return () => { cancelled = true; };
+  }, [screen]);
+  const openDistrictPrompt = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) setDistrictPrompt({ userId: session.user.id });
+  };
+
   // Push notifications: listeners first (a tap can cold-start the app), registration once signed in.
   useEffect(() => {
     initPushListeners((tap) => setPendingPushTap(tap));
@@ -282,6 +305,8 @@ export default function App() {
     setSubScreen(null);
     setViewingProfileId(null);
     setFocusConversation(null);
+    setDistrictPrompt(null);
+    try { sessionStorage.removeItem('district_prompt_later'); } catch { /* ignore */ }
     showToastNotification('🔌 Logged out safely');
   };
 
@@ -321,6 +346,7 @@ export default function App() {
         <EditProfile 
           onSave={() => {
             setSubScreen(null);
+            setFeedVersion((n) => n + 1);   // the district may have changed
             showToastNotification('Profile updated successfully!');
           }} 
           onCancel={() => setSubScreen(null)} 
@@ -409,6 +435,8 @@ export default function App() {
             onCreatePostClick={() => setSubScreen('createPost')}
             onPeaAIClick={() => setSubScreen('peaAI')}
             onShowToast={showToastNotification}
+            feedVersion={feedVersion}
+            onChooseDistrict={openDistrictPrompt}
           />
         );
       case 'search':
@@ -493,6 +521,15 @@ export default function App() {
       )}
 
       {/* Broadcast System Announcement Modal */}
+      {screen === 'appLayout' && districtPrompt && (
+        <DistrictPrompt
+          isOpen
+          userId={districtPrompt.userId}
+          onSaved={(d) => { setDistrictPrompt(null); setFeedVersion((n) => n + 1); showToastNotification(`Your district is ${d}.`); }}
+          onLater={() => { setDistrictPrompt(null); try { sessionStorage.setItem('district_prompt_later', '1'); } catch { /* ignore */ } }}
+        />
+      )}
+
       {broadcastModalData && (
         <div style={{
           position: 'fixed',

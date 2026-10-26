@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
-import InputField, { FieldError, FormMessage } from '../components/InputField';
+import InputField, { FieldError, FormMessage, SelectField } from '../components/InputField';
+import { DISTRICTS } from '../utils/districts';
 import { FormSkeleton } from '../components/Skeleton';
 import { rules } from '../utils/formRules';
 import { useFormValidation } from '../utils/useFormValidation';
@@ -14,6 +15,8 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [location, setLocation] = useState('');
+  const [district, setDistrict] = useState('');
+  const [hadDistrict, setHadDistrict] = useState(false);
   const [phone, setPhone] = useState('');
   const [avatar, setAvatar] = useState('');
   const [loading, setLoading] = useState(true);
@@ -21,11 +24,13 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
   const [avatarError, setAvatarError] = useState(null);
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
-  const values = { name, phone, bio };
+  const values = { name, phone, bio, district };
   const v = useFormValidation({
     name: rules.name('Full name'),
     phone: rules.phone(false),
     bio: rules.maxLength(500, 'Please keep your bio under 500 characters.'),
+    // once a district is saved it can be changed but not cleared; an account without one may stay without
+    district: (val) => (!val && !hadDistrict ? null : rules.district(val)),
   });
   const fileInputRef = useRef(null);
 
@@ -46,6 +51,8 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
         setUsername(profile.full_name?.toLowerCase().replace(/\s+/g, '') || '');
         setBio(profile.bio || '');
         setLocation(profile.location || '');
+        setDistrict(profile.district || '');
+        setHadDistrict(!!profile.district);
         setPhone(profile.phone || '');
         setAvatar(profile.profile_image_path || '/profile-placeholder.png');
       }
@@ -119,6 +126,7 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
         full_name: nameVal.value,
         bio: bio.trim(),
         location: location.trim(),
+        district: district || null,
         phone: phoneVal.value,
         profile_image_path: avatar
       })
@@ -208,6 +216,15 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
           placeholder="Tell us about yourself..."
           onChange={(e) => { setBio(e.target.value); v.changed('bio', { ...values, bio: e.target.value }); }}
           {...v.field('bio', values)}
+        />
+
+        <SelectField
+          label="District"
+          placeholder="Choose your district"
+          options={DISTRICTS}
+          value={district}
+          onChange={(e) => { setDistrict(e.target.value); v.changed('district', { ...values, district: e.target.value }); }}
+          {...v.field('district', values)}
         />
 
         <InputField

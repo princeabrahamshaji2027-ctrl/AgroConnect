@@ -47,3 +47,10 @@ test('validateAllFields returns only the failing fields, in form order', () => {
   const errors = validateAllFields({ email: rules.email, password: rules.password }, { email: 'bad', password: 'secret' });
   assert.deepEqual(Object.keys(errors), ['email']);
 });
+
+test('district: only the three launch districts, canonical spelling', () => {
+  for (const ok of ['Kottayam', 'Pathanamthitta', 'Kannur']) assert.equal(rules.district(ok), null, ok);
+  for (const bad of ['', null, 'Ludhiana', 'Kottayam District', 'kottayam', 'കോട്ടയം']) {
+    assert.equal(rules.district(bad), 'Please choose your district.', String(bad));
+  }
+});

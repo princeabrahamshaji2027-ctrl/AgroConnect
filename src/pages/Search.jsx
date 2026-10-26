@@ -10,7 +10,8 @@ import './pages.css';
 export default function Search({ onProfileClick, onPostCommentClick }) {
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('posts'); // 'posts' | 'users' | 'communities'
-  const [recentSearches, setRecentSearches] = useState(['vermicompost', 'early blight', 'basmati price']);
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [myDistrict, setMyDistrict] = useState(null);
   const [posts, setPosts] = useState([]);
   const [users, setUsers] = useState([]);
   const [communities, setCommunities] = useState([]);
@@ -19,6 +20,11 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
 
   useEffect(() => {
     const loadSearchDb = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: me } = await supabase.from('profiles').select('district').eq('id', session.user.id).maybeSingle();
+        setMyDistrict(me?.district || null);
+      }
       // 1. Fetch posts with profiles
       const { data: postsData } = await supabase
         .from('posts')
@@ -55,7 +61,7 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
       // 2. Fetch users
       const { data: usersData } = await supabase
         .from('profiles')
-        .select('id, full_name, profile_image_path, role, location');
+        .select('id, full_name, profile_image_path, role, location, district');
 
       if (usersData) {
         setUsers(usersData.map(u => ({
@@ -64,7 +70,8 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
           username: u.full_name.toLowerCase().replace(/\s+/g, ''),
           avatar: u.profile_image_path || '/profile-placeholder.png',
           role: u.role,
-          location: u.location || 'Punjab, India'
+          location: u.location || '',
+          district: u.district || null
         })));
       }
 
@@ -213,49 +220,40 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
               </div>
             </div>
 
-            {/* 3. Nearby Experts */}
-            <div>
-              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nearby Experts (Ludhiana Region)</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {users.filter(u => u.role === 'Agronomist' || u.role === 'Expert').map((expert, i) => (
-                  <div 
-                    key={expert.id}
-                    onClick={() => onProfileClick && onProfileClick(expert.id)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '12px 16px', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
-                  >
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <img src={expert.avatar || DEFAULT_AVATAR} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
-                      <div>
-                        <div style={{ fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                          {expert.name}
-                          <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '14px' }}>verified</span>
+            {/* 3. Experts in the user's district (no invented distances) */}
+            {(() => {
+              const experts = users.filter(u => u.role === 'Expert' && (!myDistrict || u.district === myDistrict));
+              if (experts.length === 0) return null;
+              return (
+                <div>
+                  <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {myDistrict ? `Experts in ${myDistrict}` : 'Experts'}
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {experts.map((expert) => (
+                      <div
+                        key={expert.id}
+                        onClick={() => onProfileClick && onProfileClick(expert.id)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-card)', padding: '12px 16px', borderRadius: '16px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                      >
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          <img src={expert.avatar || DEFAULT_AVATAR} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              {expert.name}
+                              <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '14px' }}>verified</span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              Expert{expert.district ? ` • ${expert.district}` : ''}
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Specialist • {expert.location.split(',')[0]}</div>
                       </div>
-                    </div>
-                    <span style={{ fontSize: '11px', color: 'var(--primary-green)', fontWeight: '600' }}>{1.2 + i * 2.4} km away</span>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 4. Top Content & Articles */}
-            <div>
-              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Top Content</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[
-                  { title: 'Subsidies on Micro-Irrigation Kits 2026', readTime: '5 min read', category: 'Government Schemes' },
-                  { title: 'Managing Fall Armyworm in Maize Crops', readTime: '8 min read', category: 'Pest Control' }
-                ].map((art, i) => (
-                  <div key={i} style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '12px 16px', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--primary-green)', fontWeight: '600' }}>{art.category}</span>
-                    <h5 style={{ fontSize: '13.5px', fontWeight: '600', margin: '4px 0', color: 'white' }}>{art.title}</h5>
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{art.readTime}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
+                </div>
+              );
+            })()}
 
             {/* 6. Popular Posts */}
             <div>

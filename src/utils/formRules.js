@@ -3,6 +3,7 @@
 import { validateEmail, validatePassword, validateName, validatePhone, validateUsername } from './validation.js';
 import { parseFeeInput } from './money.js';
 import { normalizeMeetLink } from './meetLink.js';
+import { isDistrict } from './districts.js';
 
 const text = (v) => (typeof v === 'string' ? v.trim() : '');
 
@@ -43,6 +44,7 @@ export const rules = {
     if (!text(v)) return 'Please enter a meeting description.';
     return text(v).length > 1000 ? 'Please keep the description under 1000 characters.' : null;
   },
+  district: (v) => (isDistrict(v) ? null : 'Please choose your district.'),
   slot: (v) => (v ? null : 'Please select an available time slot.'),
   meetingDate: (v) => (v ? null : 'Please select a meeting date.'),
   fee: (v) => (parseFeeInput(v).error ? 'Please enter a valid consultation fee.' : null),

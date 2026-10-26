@@ -17,7 +17,7 @@ export default function CreatePost({ onPublish, onCancel }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('General');
-  const [location, setLocation] = useState('Punjab, India');
+  const [location, setLocation] = useState('');
   const [tagsInput, setTagsInput] = useState('');
 
   // Media selection states
@@ -33,20 +33,17 @@ export default function CreatePost({ onPublish, onCancel }) {
   const imageInputRef = useRef(null);
   const videoInputRef = useRef(null);
 
-  // Auto-detect GPS location on load
+  // Location starts from the author's saved profile (the post's district is set by the server from the profile)
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          setLocation(`Ludhiana, Punjab (GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)})`);
-        },
-        () => {
-          setLocation('Gill Village, Ludhiana, Punjab, India');
-        }
-      );
-    }
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      const { data } = await supabase.from('profiles').select('location, district').eq('id', session.user.id).maybeSingle();
+      if (cancelled || !data) return;
+      setLocation((prev) => prev || data.location || (data.district ? `${data.district}, Kerala` : ''));
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // ─── Capacitor camera/gallery picker ────────────────────────────────────────
@@ -394,7 +391,7 @@ export default function CreatePost({ onPublish, onCancel }) {
 
         {/* Location */}
         <InputField
-          label="Location (GPS Auto-detected)"
+          label="Location"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           icon="location_on"

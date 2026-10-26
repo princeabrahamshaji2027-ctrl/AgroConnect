@@ -10,6 +10,7 @@ import ConsultationFeeEditor from '../components/ConsultationFeeEditor';
 import InputField, { FieldError, FormMessage } from '../components/InputField';
 import { MeetingCardSkeleton, ExpertCardSkeleton, ListRowSkeleton, SkeletonGroup, LoadError } from '../components/Skeleton';
 import { rules } from '../utils/formRules';
+import { DISTRICTS } from '../utils/districts';
 import { useFormValidation } from '../utils/useFormValidation';
 import { formatInr } from '../utils/money';
 import JoinMeetingButton, { meetingStartMs } from '../components/JoinMeetingButton';
@@ -393,6 +394,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
   // Database States & Calendar States
   const [expertsList, setExpertsList] = useState([]);
+  const [myDistrict, setMyDistrict] = useState(null);
+  const [expertDistrictFilter, setExpertDistrictFilter] = useState('All');
   const [appointments, setAppointments] = useState([]);
   const [history, setHistory] = useState([]);
   const [historyShown, setHistoryShown] = useState(15); // render in pages; long histories froze Android
@@ -468,7 +471,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         supabase.from('experts')
           .select('id, meeting_duration_minutes, buffer_time_minutes, is_active, specialization, consultation_fee_paise')
           .eq('user_id', user.id).maybeSingle(),
-        supabase.from('profiles').select('full_name, profile_image_path, role, bio').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('full_name, profile_image_path, role, bio, district').eq('id', user.id).maybeSingle(),
         supabase.from('farmer_profiles').select('id').eq('user_id', user.id).maybeSingle(),
       ]);
       const firstError = meRes.error || profRes.error || farmerRes.error;
@@ -476,6 +479,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       if (seq !== loadSeqRef.current) return;
       const myExpert = meRes.data;
       const userProf = profRes.data;
+      setMyDistrict(userProf?.district || null);
       const farmerProfile = farmerRes.data;
 
       let activeExpertId = null;
@@ -520,7 +524,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           .order('slot_date', { ascending: true })
           .order('start_time', { ascending: true }),
         supabase.from('experts')
-          .select('id, user_id, rating, is_active, consultation_fee_paise, profiles:user_id ( full_name, profile_image_path, role, bio ), reviews ( count )'),
+          .select('id, user_id, rating, is_active, consultation_fee_paise, profiles:user_id ( full_name, profile_image_path, role, bio, district ), reviews ( count )'),
         activeExpertId
           ? supabase.from('consultation_bookings')
             .select(`${upcomingCols}, farmer_profiles:farmer_id ( id, user_id, profiles:user_id ( id, full_name, profile_image_path ) )`)
@@ -566,10 +570,13 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           avatar: exp.profiles?.profile_image_path || '/profile-placeholder.png',
           role: exp.profiles?.role || 'Expert',
           bio: exp.profiles?.bio || '',
+          district: exp.profiles?.district || null,
           rating: exp.rating ? Number(exp.rating).toFixed(1) : '5.0',
           feePaise: exp.consultation_fee_paise,   // the expert's fee: the only price shown before checkout
           reviewCount: (Array.isArray(exp.reviews) ? exp.reviews[0]?.count : exp.reviews?.count) || 0
-        })));
+        }))
+        // experts from the user's own district first; otherwise the existing order (stable sort)
+        .sort((a, b) => Number(b.district != null && b.district === userProf?.district) - Number(a.district != null && a.district === userProf?.district)));
 
       setAppointments((upcomingRes.data || []).map(b => (activeExpertId ? {
         id: b.id,
@@ -1196,14 +1203,28 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               </div>
             )}
             <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>Available Verified Experts</h3>
+            <div role="group" aria-label="Filter experts by district" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '-6px' }}>
+              {['All', ...DISTRICTS].map((d) => (
+                <button key={d} type="button" className={`chip ${expertDistrictFilter === d ? 'active' : ''}`}
+                  aria-pressed={expertDistrictFilter === d} onClick={() => setExpertDistrictFilter(d)}>
+                  {d === 'All' ? 'All districts' : d}{d !== 'All' && d === myDistrict ? ' (yours)' : ''}
+                </button>
+              ))}
+            </div>
             {listPlaceholder(ExpertCardSkeleton, 'Loading experts…')}
             {loadState === 'ready' && expertsList.length === 0 && (
               <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--text-secondary)', fontSize: '13px' }}>
                 No expert has open dates right now. Please check again later.
               </div>
             )}
-            
-            {expertsList.map((exp) => {
+            {loadState === 'ready' && expertsList.length > 0 && expertDistrictFilter !== 'All'
+              && !expertsList.some((e) => e.district === expertDistrictFilter) && (
+              <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                No expert in {expertDistrictFilter} has open dates right now.
+              </div>
+            )}
+
+            {expertsList.filter((e) => expertDistrictFilter === 'All' || e.district === expertDistrictFilter).map((exp) => {
               const expertSlots = allExpertSlotsMap[exp.id] || [];
 
               return (
@@ -1225,6 +1246,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                         <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)', fontSize: '16px' }}>verified</span>
                       </div>
                       <span className="badge-role" style={{ display: 'inline-block', marginTop: '2px' }}>{exp.role}</span>
+                      {exp.district && (
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '6px' }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle' }}>location_on</span> {exp.district}
+                        </span>
+                      )}
                       {exp.feePaise > 0 && (
                         <div data-testid="expert-fee" style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                           Consultation fee <strong style={{ color: 'var(--primary-green)' }}>{formatInr(exp.feePaise)}</strong>

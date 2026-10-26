@@ -19,6 +19,7 @@ export default function Dashboard({ onTabChange }) {
   const [topProducts, setTopProducts] = useState([]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [chatStats, setChatStats] = useState(null); // counts only — admins never see message text
+  const [districtStats, setDistrictStats] = useState(null); // users and posts per launch district
 
   const fetchDashboardData = async () => {
     try {
@@ -34,6 +35,7 @@ export default function Dashboard({ onTabChange }) {
         supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'Pending'),
         supabase.from('posts').select('user_id').gte('created_at', since30d),
         supabase.rpc('admin_messaging_stats'),
+        supabase.rpc('admin_district_stats'),
       ]);
       const [
         { count: usersCount },
@@ -43,8 +45,10 @@ export default function Dashboard({ onTabChange }) {
         { count: reportsCount },
         { data: recentPosters },
         { data: messaging },
+        { data: districts },
       ] = results;
       setChatStats(messaging || null);
+      setDistrictStats(Array.isArray(districts) ? districts : null);
       setDbReachable(results.slice(0, 6).every(r => !r.error)); // messaging stats are optional
 
       setStats({
@@ -280,6 +284,32 @@ export default function Dashboard({ onTabChange }) {
           )}
         </div>
       </div>
+
+      {districtStats && (
+        <div className="card-bg rounded-xl p-4 flex flex-col gap-3" data-testid="district-stats">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary-container" style={{ fontVariationSettings: "'FILL' 1" }}>location_on</span>
+            <span className="font-label-sm text-on-surface-variant">District overview</span>
+          </div>
+          <table className="w-full text-left text-body-sm">
+            <thead>
+              <tr className="text-on-surface-variant text-[11px] uppercase tracking-wider">
+                <th className="py-1 pr-4">District</th><th className="py-1 pr-4">Farmers</th><th className="py-1 pr-4">Experts</th>
+                <th className="py-1 pr-4">Posts</th><th className="py-1">Posts, last 7 days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {districtStats.map((d) => (
+                <tr key={d.district || 'none'} className="border-t border-outline-variant/30 text-on-surface">
+                  <td className="py-1.5 pr-4">{d.district || <span className="text-on-surface-variant">Not set</span>}</td>
+                  <td className="py-1.5 pr-4">{d.farmers}</td><td className="py-1.5 pr-4">{d.experts}</td>
+                  <td className="py-1.5 pr-4">{d.posts}</td><td className="py-1.5">{d.posts_7d}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {chatStats && (
         <div className="card-bg rounded-xl p-4 flex flex-wrap items-center gap-x-8 gap-y-2" data-testid="messaging-stats">

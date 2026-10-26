@@ -163,6 +163,21 @@ test.describe('change list 2026-10-25 (staging)', () => {
     }
   });
 
+  test('districts: dashboard overview, users and posts filter by district', async ({ page }) => {
+    await signIn(page);
+    const overview = page.getByTestId('district-stats');
+    await expect(overview).toBeVisible({ timeout: 15_000 });
+    for (const d of ['Kottayam', 'Pathanamthitta', 'Kannur', 'Not set']) await expect(overview.getByText(d, { exact: true })).toBeVisible();
+    await page.getByText('Users', { exact: true }).first().click();
+    await expect(page.getByRole('columnheader', { name: 'District' })).toBeVisible();
+    await page.getByLabel('District').selectOption('Kannur');
+    const rows = page.locator('tbody tr');
+    await expect(rows.first()).toBeVisible();
+    for (const t of await rows.locator('td:nth-child(4)').allTextContents()) expect(t.trim()).toBe('Kannur');
+    await page.getByText('Posts', { exact: true }).first().click();
+    await expect(page.getByLabel('District')).toBeVisible();
+  });
+
   test('dashboard: Pending Reports is red only when something is pending; messaging shows counts only', async ({ page }) => {
     await signIn(page);
     const status = page.getByTestId('reports-status');

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { DISTRICTS } from '../constants/districts';
 import { supabase } from '../supabase';
 import PostDetailModal from '../components/PostDetailModal';
 import UserProfileModal from '../components/UserProfileModal';
@@ -6,6 +7,7 @@ import defaultAvatar from '../assets/profile-placeholder.png';
 
 export default function Posts() {
   const [posts, setPosts] = useState([]);
+  const [districtFilter, setDistrictFilter] = useState('');   // '' = all, 'none' = not set
   const [loading, setLoading] = useState(true);
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
@@ -62,9 +64,21 @@ export default function Posts() {
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
-      <div>
-        <h1 className="font-headline-xl text-on-surface mb-1">Posts Moderation</h1>
-        <p className="font-body-sm text-on-surface-variant">Review community posts, comments, and click any post or author to view full details.</p>
+      <div className="flex justify-between items-center gap-4 flex-wrap">
+        <div>
+          <h1 className="font-headline-xl text-on-surface mb-1">Posts Moderation</h1>
+          <p className="font-body-sm text-on-surface-variant">Review community posts, comments, and click any post or author to view full details.</p>
+        </div>
+        <select
+          aria-label="District"
+          value={districtFilter}
+          onChange={(e) => setDistrictFilter(e.target.value)}
+          className="bg-[#171A1D] border border-outline-variant rounded-lg px-3 py-2 text-on-surface text-body-sm"
+        >
+          <option value="">All districts</option>
+          {DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+          <option value="none">District not set</option>
+        </select>
       </div>
 
       {loading ? (
@@ -76,7 +90,7 @@ export default function Posts() {
           {posts.length === 0 ? (
             <div className="col-span-full card-bg rounded-xl p-8 text-center text-on-surface-variant/50">No posts in community feed yet</div>
           ) : (
-            posts.map((post) => (
+            posts.filter((p) => (districtFilter === 'none' ? !p.district : !districtFilter || p.district === districtFilter)).map((post) => (
               <div
                 key={post.id}
                 onClick={() => setSelectedPostId(post.id)}
@@ -96,7 +110,7 @@ export default function Posts() {
                   />
                   <div className="flex flex-col">
                     <span className="font-bold text-on-surface text-body-sm hover:text-primary transition-colors">{post.profiles?.full_name || 'Anonymous'}</span>
-                    <span className="text-[10px] text-on-surface-variant uppercase font-bold">{post.profiles?.role || 'Farmer'} &bull; {new Date(post.created_at).toLocaleDateString()}</span>
+                    <span className="text-[10px] text-on-surface-variant uppercase font-bold">{post.profiles?.role || 'Farmer'} &bull; {post.district || 'No district'} &bull; {new Date(post.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
 

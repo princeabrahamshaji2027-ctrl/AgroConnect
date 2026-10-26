@@ -70,9 +70,18 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
               <span className="badge-role">{post.userRole}</span>
             </div>
             <div className="post-card-meta">
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>location_on</span>
-              <span>{post.location}</span>
-              <span>•</span>
+              {(() => {
+                // place text plus the post's district (set by the server) when the text does not already name it
+                const place = [post.location, post.district && !(post.location || '').includes(post.district) ? post.district : null]
+                  .filter(Boolean).join(' · ');
+                return place ? (
+                  <>
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>location_on</span>
+                    <span>{place}</span>
+                    <span>•</span>
+                  </>
+                ) : null;
+              })()}
               <span>{post.time}</span>
             </div>
           </div>

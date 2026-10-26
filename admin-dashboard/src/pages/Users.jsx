@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import UserProfileModal from '../components/UserProfileModal';
 import defaultAvatar from '../assets/profile-placeholder.png';
+import { DISTRICTS } from '../constants/districts';
 
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [districtFilter, setDistrictFilter] = useState('');   // '' = all, 'none' = not set
   const [showBanModal, setShowBanModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [banReason, setBanReason] = useState('');
@@ -81,11 +83,13 @@ export default function Users() {
 
   const filteredUsers = users.filter(user => {
     const term = searchQuery.toLowerCase();
+    if (districtFilter === 'none' ? !!user.district : districtFilter && user.district !== districtFilter) return false;
     return (
       user.full_name?.toLowerCase().includes(term) ||
       user.phone?.toLowerCase().includes(term) ||
       user.role?.toLowerCase().includes(term) ||
-      user.location?.toLowerCase().includes(term)
+      user.location?.toLowerCase().includes(term) ||
+      user.district?.toLowerCase().includes(term)
     );
   });
 
@@ -96,6 +100,17 @@ export default function Users() {
           <h1 className="font-headline-xl text-on-surface mb-1">Users</h1>
           <p className="font-body-sm text-on-surface-variant">Manage Agro Connect user accounts, view profiles, and handle bans.</p>
         </div>
+        <div className="flex items-center gap-3">
+        <select
+          aria-label="District"
+          value={districtFilter}
+          onChange={(e) => setDistrictFilter(e.target.value)}
+          className="bg-[#171A1D] border border-outline-variant rounded-lg px-3 py-2 text-on-surface text-body-sm"
+        >
+          <option value="">All districts</option>
+          {DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+          <option value="none">District not set</option>
+        </select>
         <div className="relative w-80">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
           <input
@@ -105,6 +120,7 @@ export default function Users() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+        </div>
         </div>
       </div>
 
@@ -120,6 +136,7 @@ export default function Users() {
                 <th className="p-4">User</th>
                 <th className="p-4">Phone</th>
                 <th className="p-4">Role</th>
+                <th className="p-4">District</th>
                 <th className="p-4">Location</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-right">Actions</th>
@@ -128,7 +145,7 @@ export default function Users() {
             <tbody className="text-body-sm divide-y divide-outline-variant/20">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="p-8 text-center text-on-surface-variant/50">No users found</td>
+                  <td colSpan="7" className="p-8 text-center text-on-surface-variant/50">No users found</td>
                 </tr>
               ) : (
                 filteredUsers.map((user) => (
@@ -154,6 +171,7 @@ export default function Users() {
                         {user.role}
                       </span>
                     </td>
+                    <td className="p-4 text-on-surface">{user.district || <span className="text-on-surface-variant/60">Not set</span>}</td>
                     <td className="p-4 text-on-surface-variant">{user.location || 'N/A'}</td>
                     <td className="p-4">
                       {user.is_banned ? (
