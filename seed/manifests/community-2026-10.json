@@ -3,42 +3,6 @@
   "note": "Synthetic demo profiles for the launch community. Not real people. Experts publish no availability.",
   "accounts": [
     {
-      "name": "Dr. Thomas Kurian",
-      "role": "Expert",
-      "district": "Kottayam",
-      "slug": "dr-thomas-kurian",
-      "email": "seed.dr-thomas-kurian@community.agroconnect.local",
-      "location": "Pala, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Dr. Asha Varghese",
-      "role": "Expert",
-      "district": "Kottayam",
-      "slug": "dr-asha-varghese",
-      "email": "seed.dr-asha-varghese@community.agroconnect.local",
-      "location": "Changanassery, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Dr. Rajesh Pillai",
-      "role": "Expert",
-      "district": "Pathanamthitta",
-      "slug": "dr-rajesh-pillai",
-      "email": "seed.dr-rajesh-pillai@community.agroconnect.local",
-      "location": "Ranni, Pathanamthitta, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Dr. Meera Nair",
-      "role": "Expert",
-      "district": "Pathanamthitta",
-      "slug": "dr-meera-nair",
-      "email": "seed.dr-meera-nair@community.agroconnect.local",
-      "location": "Konni, Pathanamthitta, Kerala",
-      "synthetic": true
-    },
-    {
       "name": "Dr. Sreejith Nambiar",
       "role": "Expert",
       "district": "Kannur",
@@ -57,21 +21,75 @@
       "synthetic": true
     },
     {
-      "name": "Arun Mathew",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "arun-mathew",
-      "email": "seed.arun-mathew@community.agroconnect.local",
-      "location": "Pala, Kottayam, Kerala",
+      "name": "Dr. Arjun Kannoth",
+      "role": "Expert",
+      "district": "Kannur",
+      "slug": "dr-arjun-kannoth",
+      "email": "seed.dr-arjun-kannoth@community.agroconnect.local",
+      "location": "Iritty, Kannur, Kerala",
       "synthetic": true
     },
     {
-      "name": "Anjali Joseph",
-      "role": "Farmer",
+      "name": "Dr. Swathi Kunhiraman",
+      "role": "Expert",
+      "district": "Kannur",
+      "slug": "dr-swathi-kunhiraman",
+      "email": "seed.dr-swathi-kunhiraman@community.agroconnect.local",
+      "location": "Taliparamba, Kannur, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Dr. Rajesh Pillai",
+      "role": "Expert",
       "district": "Pathanamthitta",
-      "slug": "anjali-joseph",
-      "email": "seed.anjali-joseph@community.agroconnect.local",
+      "slug": "dr-rajesh-pillai",
+      "email": "seed.dr-rajesh-pillai@community.agroconnect.local",
       "location": "Adoor, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Dr. Meera Nair",
+      "role": "Expert",
+      "district": "Pathanamthitta",
+      "slug": "dr-meera-nair",
+      "email": "seed.dr-meera-nair@community.agroconnect.local",
+      "location": "Thiruvalla, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Dr. Vinod Mathew",
+      "role": "Expert",
+      "district": "Pathanamthitta",
+      "slug": "dr-vinod-mathew",
+      "email": "seed.dr-vinod-mathew@community.agroconnect.local",
+      "location": "Ranni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Dr. Priya Oommen",
+      "role": "Expert",
+      "district": "Pathanamthitta",
+      "slug": "dr-priya-oommen",
+      "email": "seed.dr-priya-oommen@community.agroconnect.local",
+      "location": "Konni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Dr. Asha Varghese",
+      "role": "Expert",
+      "district": "Idukki",
+      "slug": "dr-asha-varghese",
+      "email": "seed.dr-asha-varghese@community.agroconnect.local",
+      "location": "Thodupuzha, Idukki, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Dr. Thomas Kurian",
+      "role": "Expert",
+      "district": "Kottayam",
+      "slug": "dr-thomas-kurian",
+      "email": "seed.dr-thomas-kurian@community.agroconnect.local",
+      "location": "Changanassery, Kottayam, Kerala",
       "synthetic": true
     },
     {
@@ -84,48 +102,12 @@
       "synthetic": true
     },
     {
-      "name": "Neethu Thomas",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "neethu-thomas",
-      "email": "seed.neethu-thomas@community.agroconnect.local",
-      "location": "Changanassery, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Jibin Varghese",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "jibin-varghese",
-      "email": "seed.jibin-varghese@community.agroconnect.local",
-      "location": "Thiruvalla, Pathanamthitta, Kerala",
-      "synthetic": true
-    },
-    {
       "name": "Reshma Philip",
       "role": "Farmer",
       "district": "Kannur",
       "slug": "reshma-philip",
       "email": "seed.reshma-philip@community.agroconnect.local",
       "location": "Payyanur, Kannur, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Biju Kuriakose",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "biju-kuriakose",
-      "email": "seed.biju-kuriakose@community.agroconnect.local",
-      "location": "Vaikom, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Sneha Abraham",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "sneha-abraham",
-      "email": "seed.sneha-abraham@community.agroconnect.local",
-      "location": "Ranni, Pathanamthitta, Kerala",
       "synthetic": true
     },
     {
@@ -138,48 +120,12 @@
       "synthetic": true
     },
     {
-      "name": "Divya Raj",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "divya-raj",
-      "email": "seed.divya-raj@community.agroconnect.local",
-      "location": "Ettumanoor, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Tony Chacko",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "tony-chacko",
-      "email": "seed.tony-chacko@community.agroconnect.local",
-      "location": "Konni, Pathanamthitta, Kerala",
-      "synthetic": true
-    },
-    {
       "name": "Aswathy Mohan",
       "role": "Farmer",
       "district": "Kannur",
       "slug": "aswathy-mohan",
       "email": "seed.aswathy-mohan@community.agroconnect.local",
       "location": "Taliparamba, Kannur, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Rahul Krishnan",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "rahul-krishnan",
-      "email": "seed.rahul-krishnan@community.agroconnect.local",
-      "location": "Pala, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Ancy Babu",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "ancy-babu",
-      "email": "seed.ancy-babu@community.agroconnect.local",
-      "location": "Adoor, Pathanamthitta, Kerala",
       "synthetic": true
     },
     {
@@ -192,48 +138,12 @@
       "synthetic": true
     },
     {
-      "name": "Liya Mariam",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "liya-mariam",
-      "email": "seed.liya-mariam@community.agroconnect.local",
-      "location": "Changanassery, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Sajeev Kumar",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "sajeev-kumar",
-      "email": "seed.sajeev-kumar@community.agroconnect.local",
-      "location": "Thiruvalla, Pathanamthitta, Kerala",
-      "synthetic": true
-    },
-    {
       "name": "Nimmy Paul",
       "role": "Farmer",
       "district": "Kannur",
       "slug": "nimmy-paul",
       "email": "seed.nimmy-paul@community.agroconnect.local",
       "location": "Payyanur, Kannur, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Abhijith Sasi",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "abhijith-sasi",
-      "email": "seed.abhijith-sasi@community.agroconnect.local",
-      "location": "Vaikom, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Merin Sebastian",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "merin-sebastian",
-      "email": "seed.merin-sebastian@community.agroconnect.local",
-      "location": "Ranni, Pathanamthitta, Kerala",
       "synthetic": true
     },
     {
@@ -246,48 +156,12 @@
       "synthetic": true
     },
     {
-      "name": "Athira Suresh",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "athira-suresh",
-      "email": "seed.athira-suresh@community.agroconnect.local",
-      "location": "Ettumanoor, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Joel Varghese",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "joel-varghese",
-      "email": "seed.joel-varghese@community.agroconnect.local",
-      "location": "Konni, Pathanamthitta, Kerala",
-      "synthetic": true
-    },
-    {
       "name": "Sandra Thampi",
       "role": "Farmer",
       "district": "Kannur",
       "slug": "sandra-thampi",
       "email": "seed.sandra-thampi@community.agroconnect.local",
       "location": "Taliparamba, Kannur, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Midhun Raj",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "midhun-raj",
-      "email": "seed.midhun-raj@community.agroconnect.local",
-      "location": "Pala, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Revathy Unni",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "revathy-unni",
-      "email": "seed.revathy-unni@community.agroconnect.local",
-      "location": "Adoor, Pathanamthitta, Kerala",
       "synthetic": true
     },
     {
@@ -300,48 +174,12 @@
       "synthetic": true
     },
     {
-      "name": "Gopika Ajith",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "gopika-ajith",
-      "email": "seed.gopika-ajith@community.agroconnect.local",
-      "location": "Changanassery, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Ajay Vinod",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "ajay-vinod",
-      "email": "seed.ajay-vinod@community.agroconnect.local",
-      "location": "Thiruvalla, Pathanamthitta, Kerala",
-      "synthetic": true
-    },
-    {
       "name": "Haritha Das",
       "role": "Farmer",
       "district": "Kannur",
       "slug": "haritha-das",
       "email": "seed.haritha-das@community.agroconnect.local",
       "location": "Payyanur, Kannur, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Sachin Balan",
-      "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "sachin-balan",
-      "email": "seed.sachin-balan@community.agroconnect.local",
-      "location": "Vaikom, Kottayam, Kerala",
-      "synthetic": true
-    },
-    {
-      "name": "Fathima Rasheed",
-      "role": "Farmer",
-      "district": "Pathanamthitta",
-      "slug": "fathima-rasheed",
-      "email": "seed.fathima-rasheed@community.agroconnect.local",
-      "location": "Ranni, Pathanamthitta, Kerala",
       "synthetic": true
     },
     {
@@ -354,21 +192,264 @@
       "synthetic": true
     },
     {
-      "name": "Ameena Kabeer",
+      "name": "Kiran Dev",
       "role": "Farmer",
-      "district": "Kottayam",
-      "slug": "ameena-kabeer",
-      "email": "seed.ameena-kabeer@community.agroconnect.local",
-      "location": "Ettumanoor, Kottayam, Kerala",
+      "district": "Kannur",
+      "slug": "kiran-dev",
+      "email": "seed.kiran-dev@community.agroconnect.local",
+      "location": "Taliparamba, Kannur, Kerala",
       "synthetic": true
     },
     {
-      "name": "Kiran Dev",
+      "name": "Sachin Balan",
+      "role": "Farmer",
+      "district": "Kannur",
+      "slug": "sachin-balan",
+      "email": "seed.sachin-balan@community.agroconnect.local",
+      "location": "Thalassery, Kannur, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Fathima Rasheed",
+      "role": "Farmer",
+      "district": "Kannur",
+      "slug": "fathima-rasheed",
+      "email": "seed.fathima-rasheed@community.agroconnect.local",
+      "location": "Payyanur, Kannur, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Ameena Kabeer",
+      "role": "Farmer",
+      "district": "Kannur",
+      "slug": "ameena-kabeer",
+      "email": "seed.ameena-kabeer@community.agroconnect.local",
+      "location": "Iritty, Kannur, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Akhil Kannan",
+      "role": "Farmer",
+      "district": "Kannur",
+      "slug": "akhil-kannan",
+      "email": "seed.akhil-kannan@community.agroconnect.local",
+      "location": "Taliparamba, Kannur, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Jibin Varghese",
       "role": "Farmer",
       "district": "Pathanamthitta",
-      "slug": "kiran-dev",
-      "email": "seed.kiran-dev@community.agroconnect.local",
+      "slug": "jibin-varghese",
+      "email": "seed.jibin-varghese@community.agroconnect.local",
+      "location": "Adoor, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Anjali Joseph",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "anjali-joseph",
+      "email": "seed.anjali-joseph@community.agroconnect.local",
+      "location": "Thiruvalla, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Biju Kuriakose",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "biju-kuriakose",
+      "email": "seed.biju-kuriakose@community.agroconnect.local",
+      "location": "Ranni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Divya Raj",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "divya-raj",
+      "email": "seed.divya-raj@community.agroconnect.local",
       "location": "Konni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Rahul Krishnan",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "rahul-krishnan",
+      "email": "seed.rahul-krishnan@community.agroconnect.local",
+      "location": "Adoor, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Liya Mariam",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "liya-mariam",
+      "email": "seed.liya-mariam@community.agroconnect.local",
+      "location": "Thiruvalla, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Abhijith Sasi",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "abhijith-sasi",
+      "email": "seed.abhijith-sasi@community.agroconnect.local",
+      "location": "Ranni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Athira Suresh",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "athira-suresh",
+      "email": "seed.athira-suresh@community.agroconnect.local",
+      "location": "Konni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Midhun Raj",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "midhun-raj",
+      "email": "seed.midhun-raj@community.agroconnect.local",
+      "location": "Adoor, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Gopika Ajith",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "gopika-ajith",
+      "email": "seed.gopika-ajith@community.agroconnect.local",
+      "location": "Thiruvalla, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Ajay Vinod",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "ajay-vinod",
+      "email": "seed.ajay-vinod@community.agroconnect.local",
+      "location": "Ranni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Merin Sebastian",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "merin-sebastian",
+      "email": "seed.merin-sebastian@community.agroconnect.local",
+      "location": "Konni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Tony Chacko",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "tony-chacko",
+      "email": "seed.tony-chacko@community.agroconnect.local",
+      "location": "Adoor, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Ancy Babu",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "ancy-babu",
+      "email": "seed.ancy-babu@community.agroconnect.local",
+      "location": "Thiruvalla, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Sajeev Kumar",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "sajeev-kumar",
+      "email": "seed.sajeev-kumar@community.agroconnect.local",
+      "location": "Ranni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Revathy Unni",
+      "role": "Farmer",
+      "district": "Pathanamthitta",
+      "slug": "revathy-unni",
+      "email": "seed.revathy-unni@community.agroconnect.local",
+      "location": "Konni, Pathanamthitta, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Joel Varghese",
+      "role": "Farmer",
+      "district": "Idukki",
+      "slug": "joel-varghese",
+      "email": "seed.joel-varghese@community.agroconnect.local",
+      "location": "Thodupuzha, Idukki, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Sneha Abraham",
+      "role": "Farmer",
+      "district": "Idukki",
+      "slug": "sneha-abraham",
+      "email": "seed.sneha-abraham@community.agroconnect.local",
+      "location": "Kattappana, Idukki, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Binoy Thomas",
+      "role": "Farmer",
+      "district": "Idukki",
+      "slug": "binoy-thomas",
+      "email": "seed.binoy-thomas@community.agroconnect.local",
+      "location": "Munnar, Idukki, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Ann Maria Jose",
+      "role": "Farmer",
+      "district": "Idukki",
+      "slug": "ann-maria-jose",
+      "email": "seed.ann-maria-jose@community.agroconnect.local",
+      "location": "Adimali, Idukki, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Arun Mathew",
+      "role": "Farmer",
+      "district": "Kottayam",
+      "slug": "arun-mathew",
+      "email": "seed.arun-mathew@community.agroconnect.local",
+      "location": "Pala, Kottayam, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Neethu Thomas",
+      "role": "Farmer",
+      "district": "Kottayam",
+      "slug": "neethu-thomas",
+      "email": "seed.neethu-thomas@community.agroconnect.local",
+      "location": "Changanassery, Kottayam, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Jomon Kurian",
+      "role": "Farmer",
+      "district": "Kottayam",
+      "slug": "jomon-kurian",
+      "email": "seed.jomon-kurian@community.agroconnect.local",
+      "location": "Vaikom, Kottayam, Kerala",
+      "synthetic": true
+    },
+    {
+      "name": "Sherin Philip",
+      "role": "Farmer",
+      "district": "Kottayam",
+      "slug": "sherin-philip",
+      "email": "seed.sherin-philip@community.agroconnect.local",
+      "location": "Ettumanoor, Kottayam, Kerala",
       "synthetic": true
     }
   ]
