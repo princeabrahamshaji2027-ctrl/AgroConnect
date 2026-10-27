@@ -35,3 +35,4 @@ test-results/
 playwright-report/
 dist-staging
 android/app/google-services.json
+private/

@@ -286,34 +286,66 @@ Because Render static site auto-deploy may be disabled or delayed:
 - **Public API Key Format**: Modern publishable key (`sb_publishable_...`)
 
 ### Accounts for Login & Testing
-* **Admin Account 1 (Primary)**:
-  - Email: `prince@agroconnect.com`
-  - Role: `Admin`
-  - Access: Full access to Admin Panel (`https://agroconnect-h7nj.onrender.com/`)
-* **Admin Account 2 (Owner)**:
-  - Email: Owner's registered Gmail account
-  - Role: `Admin`
-* **Expert Account 1**:
-  - Email: `expert@agroconnect.com`
-  - Name: Dr. Anita Rao
-  - Role: `Expert` (Consultation slots, Google Meet consultations)
-* **Expert Account 2**:
-  - Name: Anandh
-  - Role: `Expert`
-* **Farmer Account 1**:
-  - Email: `user1@agroconnect.com`
-  - Name: Ravi Kumar
-  - Role: `Farmer`
-* **Farmer Account 2**:
-  - Email: `user2@agroconnect.com`
-  - Name: Amita Singh
-  - Role: `Farmer`
 
-> **Note on Passwords**: Passwords for demo accounts can be reset anytime using the verified "Forgot password?" form on the login screen or through the Supabase Dashboard (`Authentication` → `Users` → `Send password recovery`).
+A Git-ignored credentials file has been created at:
+`private/demo-credentials.txt`
+
+| Role | Name | Email | Login Note |
+|---|---|---|---|
+| **Farmer (Normal User)** | Ravi Kumar | `user1@agroconnect.com` | Verified active farmer account |
+| **Expert** | Dr. Anita Rao | `expert@agroconnect.com` | Verified active expert (consultations & bookings) |
+| **Admin (Primary)** | Prince | `prince@agroconnect.com` | Preserved unchanged |
+| **Admin (Owner)** | Prince Abraham Shaji | *Owner personal Google account* | Super-admin access |
+
+*Note: All passwords are kept exclusively in `private/demo-credentials.txt` to prevent accidental exposure in Git logs.*
 
 ---
 
-## 10. Environment Variable Names Reference
+## 10. Google OAuth & Authentication Setup
+
+### Exact Callback & Redirect URLs
+* **Supabase OAuth Callback URL**:
+  `https://mgreapakfchcxcrauheq.supabase.co/auth/v1/callback`
+* **Android Deep-Link URL**:
+  `com.agroconnect.app://auth-callback`
+* **Web Origins**:
+  `https://agroconnect-h7nj.onrender.com`
+
+### Google Cloud Console Configuration Steps
+1. Navigate to [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**.
+2. Under **OAuth 2.0 Client IDs**, create or edit a **Web application** client ID.
+3. Under **Authorized JavaScript origins**, add:
+   - `https://agroconnect-h7nj.onrender.com`
+   - `https://mgreapakfchcxcrauheq.supabase.co`
+4. Under **Authorized redirect URIs**, add:
+   - `https://mgreapakfchcxcrauheq.supabase.co/auth/v1/callback`
+5. In the **Supabase Dashboard** (`mgreapakfchcxcrauheq`) → **Authentication** → **Providers** → **Google**:
+   - Toggle Google provider to **Enabled**.
+   - Paste the **Client ID** and **Client Secret** obtained from Google Cloud Console.
+6. In **Supabase Dashboard** → **Authentication** → **URL Configuration**:
+   - Set **Site URL** to `https://agroconnect-h7nj.onrender.com`.
+   - Add Redirect URLs:
+     - `https://agroconnect-h7nj.onrender.com/**`
+     - `com.agroconnect.app://auth-callback`
+
+---
+
+## 11. Kerala Districts & Feed Prioritization
+
+For this phase, the application operates for Kerala across 4 permitted districts:
+* **Kannur**
+* **Pathanamthitta**
+* **Idukki**
+* **Kottayam**
+
+### District-Prioritized Feed
+* When a farmer selects their district (e.g. Kannur), posts authored by users from Kannur appear first in their feed.
+* Posts from other districts follow in standard chronological order.
+* The district prompt modal automatically offers "Later" or allows selection upon registration.
+
+---
+
+## 12. Environment Variable Names Reference
 
 Never store values in version control. The application references these variables:
 
@@ -356,3 +388,4 @@ Never store values in version control. The application references these variable
 - **Mobile Web Bundle**: Built in `dist/`
 - **Android APK**: `android/app/build/outputs/apk/debug/app-debug.apk` (15 MB, versionCode 2, versionName 1.1)
 - **Handover Document**: `docs/AGROCONNECT_HANDOVER.md`
+
