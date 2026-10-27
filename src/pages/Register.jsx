@@ -44,7 +44,8 @@ export default function Register({ onRegisterSuccess, onGoToLogin }) {
     },
     confirmPassword: rules.confirmPassword('password'),
     district: rules.district,
-    city: rules.required('Please enter your city or village.'),
+    city: (val) => rules.required('Please enter your city or village.')(val)
+      || rules.maxLength(100, 'Please keep the city or village under 100 characters.')(val),
   });
   const setters = { name: setName, username: setUsername, email: setEmail, phone: setPhone, password: setPassword,
     confirmPassword: setConfirmPassword, district: setDistrict, city: setCity };

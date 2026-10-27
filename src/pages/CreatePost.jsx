@@ -247,14 +247,14 @@ export default function CreatePost({ onPublish, onCancel }) {
         <input
           ref={imageInputRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           style={{ display: 'none' }}
           onChange={handleWebImageChange}
         />
         <input
           ref={videoInputRef}
           type="file"
-          accept="video/*"
+          accept="video/mp4,video/webm,video/quicktime"
           style={{ display: 'none' }}
           onChange={handleWebVideoChange}
         />

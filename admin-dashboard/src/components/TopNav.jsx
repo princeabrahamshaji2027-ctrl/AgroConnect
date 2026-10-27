@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../supabase';
 import defaultAvatar from '../assets/profile-placeholder.png';
+import { validateImageFile } from '../utils/validation';
+import InlineNotice from './InlineNotice';
 
 export default function TopNav({ userProfile, onMenuClick, sidebarOpen, onProfileUpdate }) {
   const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -8,20 +10,28 @@ export default function TopNav({ userProfile, onMenuClick, sidebarOpen, onProfil
   const [previewUrl, setPreviewUrl] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
+  const [avatarError, setAvatarError] = useState('');
 
-  const handleFileChange = (e) => {
+  // Same rules as every other image upload: JPG/PNG/WEBP, max 5 MB, real image header (not a renamed file).
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image file size must be less than 5MB');
+    const check = await validateImageFile(file, 5);
+    if (!check.isValid) {
+      setAvatarError(check.error);
+      setSelectedFile(null);
+      setPreviewUrl('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
+    setAvatarError('');
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
   };
 
   const handleUploadAvatar = async () => {
     if (!selectedFile || !userProfile?.id) return;
+    setAvatarError('');
     setUploading(true);
     try {
       const ext = selectedFile.name.split('.').pop() || 'png';
@@ -57,7 +67,7 @@ export default function TopNav({ userProfile, onMenuClick, sidebarOpen, onProfil
       setSelectedFile(null);
       setPreviewUrl('');
     } catch (err) {
-      alert(`Avatar upload failed: ${err.message}`);
+      setAvatarError(/fetch|network/i.test(err.message || '') ? 'No connection. The photo was not saved.' : `Avatar upload failed: ${err.message}`);
     } finally {
       setUploading(false);
     }
@@ -134,7 +144,7 @@ export default function TopNav({ userProfile, onMenuClick, sidebarOpen, onProfil
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -146,6 +156,8 @@ export default function TopNav({ userProfile, onMenuClick, sidebarOpen, onProfil
                 <span className="material-symbols-outlined text-[18px]">file_upload</span>
                 <span>Select New Photo</span>
               </button>
+              <p className="text-[11px] text-on-surface-variant">JPG, PNG or WEBP, up to 5 MB.</p>
+              <InlineNotice notice={avatarError ? { type: 'error', text: avatarError } : null} className="w-full" />
             </div>
 
             <div className="flex justify-end gap-3 border-t border-outline-variant/30 pt-3">
@@ -154,6 +166,7 @@ export default function TopNav({ userProfile, onMenuClick, sidebarOpen, onProfil
                   setShowAvatarModal(false);
                   setSelectedFile(null);
                   setPreviewUrl('');
+                  setAvatarError('');
                 }}
                 className="bg-surface-variant text-on-surface px-4 py-2 rounded-lg font-label-md cursor-pointer"
               >

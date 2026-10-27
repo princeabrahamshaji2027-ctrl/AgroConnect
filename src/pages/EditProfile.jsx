@@ -177,7 +177,7 @@ export default function EditProfile({ onSave, onCancel, userId = 'user1' }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             style={{ display: 'none' }}
             onChange={handleAvatarFileChange}
           />

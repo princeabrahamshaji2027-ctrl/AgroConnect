@@ -11,6 +11,7 @@ import InputField, { FieldError, FormMessage } from '../components/InputField';
 import { MeetingCardSkeleton, ExpertCardSkeleton, ListRowSkeleton, SkeletonGroup, LoadError } from '../components/Skeleton';
 import { rules } from '../utils/formRules';
 import { DISTRICTS } from '../utils/districts';
+import { slotEndTime, slotStartsSoonEnough } from '../utils/slots';
 import { useFormValidation } from '../utils/useFormValidation';
 import { formatInr } from '../utils/money';
 import JoinMeetingButton, { meetingStartMs } from '../components/JoinMeetingButton';
@@ -59,15 +60,6 @@ function isBookableSlot(s) {
   if (s.slot_date !== today) return s.slot_date > today;
   const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   return (s.start_time || '').slice(0, 5) > hhmm;
-}
-
-function addOneHour(timeStr) {
-  if (!timeStr) return '10:00';
-  const parts = timeStr.split(':');
-  let h = parseInt(parts[0], 10);
-  const m = parts[1] || '00';
-  h = (h + 1) % 24;
-  return `${String(h).padStart(2, '0')}:${m}`;
 }
 
 function formatTime12h(timeStr) {
@@ -811,6 +803,19 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
     }
     const slotsToInsert = [];
     const today = new Date();
+    // Each slot lasts the expert's chosen meeting length (not a fixed hour), stays on one date, and starts at least
+    // 30 minutes from now (no slot that has already begun).
+    const tooLate = [];
+    for (const day of selectedDays) {
+      for (const slotObj of timesByDay[day] || []) {
+        const timeStr = typeof slotObj === 'string' ? slotObj : slotObj.time;
+        if (!slotEndTime(timeStr, meetingDuration)) tooLate.push(`${day} ${formatTime12h(timeStr)}`);
+      }
+    }
+    if (tooLate.length) {
+      if (onShowToast) onShowToast(`⚠️ A slot must end before midnight. Remove or move: ${tooLate.join(', ')}`);
+      return;
+    }
 
     for (let week = 0; week < 8; week++) {
       for (const day of selectedDays) {
@@ -818,10 +823,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         const daySlots = timesByDay[day] || [];
         for (const slotObj of daySlots) {
           const timeStr = typeof slotObj === 'string' ? slotObj : slotObj.time;
-          const endTimeStr = addOneHour(timeStr);
+          const dateStr = formatDateYYYYMMDD(date);
+          if (!slotStartsSoonEnough(dateStr, timeStr)) continue;
+          const endTimeStr = slotEndTime(timeStr, meetingDuration);
           slotsToInsert.push({
             expert_id: currentExpertId,
-            slot_date: formatDateYYYYMMDD(date),
+            slot_date: dateStr,
             start_time: timeStr,
             end_time: endTimeStr,   // no price per slot: the fee is the expert's consultation fee (migration 15)
             is_booked: false

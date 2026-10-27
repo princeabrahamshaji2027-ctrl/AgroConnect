@@ -147,17 +147,24 @@ export function validateRequiredText(text = '', fieldName = 'Field', minLen = 1,
 /**
  * Validates numeric inputs.
  */
-export function validateNumeric(value, { min = 0, max = Infinity, allowDecimal = true, fieldName = 'Value' } = {}) {
-  if (value === null || value === undefined || String(value).trim() === '') {
+export function validateNumeric(value, { min = 0, max = Infinity, allowDecimal = true, maxDecimals = 2, fieldName = 'Value' } = {}) {
+  const raw = value === null || value === undefined ? '' : String(value).trim();
+  if (raw === '') {
     return { isValid: false, error: `${fieldName} is required.` };
   }
-  const num = allowDecimal ? parseFloat(value) : parseInt(value, 10);
-  if (isNaN(num) || !isFinite(num)) {
+  // Plain digits only: no letters, exponents (1e3), spaces inside, or several dots. A minus sign is recognised so the
+  // message can say "at least …" instead of "not a number".
+  if (!/^-?\d+(\.\d+)?$/.test(raw)) {
     return { isValid: false, error: `${fieldName} must be a valid number.` };
   }
-  if (!allowDecimal && num !== parseFloat(value)) {
-    return { isValid: false, error: `${fieldName} must be a whole integer.` };
+  const decimals = raw.includes('.') ? raw.split('.')[1].length : 0;
+  if (!allowDecimal && decimals > 0) {
+    return { isValid: false, error: `${fieldName} must be a whole number.` };
   }
+  if (allowDecimal && decimals > maxDecimals) {
+    return { isValid: false, error: `${fieldName} can have at most ${maxDecimals} decimal places.` };
+  }
+  const num = Number(raw);
   if (num < min) {
     return { isValid: false, error: `${fieldName} must be at least ${min}.` };
   }

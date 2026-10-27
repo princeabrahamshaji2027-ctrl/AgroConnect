@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { validateRequiredText, validateNumeric } from '../utils/validation';
+import InlineNotice, { FieldError } from '../components/InlineNotice';
+import ConfirmDialog from '../components/ConfirmDialog';
+
+const PRICE_MAX = 100000;   // ₹1,00,000 (database check products_price_max)
+const STOCK_MAX = 100000;   // database check products_stock_max
 
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError] = useState('');
+  const [deleteId, setDeleteId] = useState(null);
 
   // Edit/Add Form Modal
   const [showModal, setShowModal] = useState(false);
@@ -40,6 +49,7 @@ export default function Products() {
       setSellers(sellersData || []);
     } catch (err) {
       console.error('Error fetching products data:', err);
+      setNotice({ type: 'error', text: 'Products could not be loaded. Please check your connection and try again.' });
     } finally {
       setLoading(false);
     }
@@ -61,6 +71,7 @@ export default function Products() {
       image_path: '',
       category: categories[0]?.name || 'Fertilizers'
     });
+    setFieldErrors({}); setFormError('');
     setShowModal(true);
   };
 
@@ -76,38 +87,46 @@ export default function Products() {
       image_path: p.image_path || '',
       category: p.category || ''
     });
+    setFieldErrors({}); setFormError('');
     setShowModal(true);
   };
 
-  const handleDelete = async (productId) => {
-    if (!window.confirm('Are you sure you want to delete this product?')) return;
+  const confirmDelete = async () => {
+    const productId = deleteId;
+    setDeleteId(null);
     try {
       const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw error;
+      setNotice({ type: 'success', text: 'Product deleted.' });
       fetchData();
     } catch (err) {
-      alert(err.message || 'Error deleting product');
+      setNotice({ type: 'error', text: err.message || 'Error deleting product' });
     }
+  };
+
+  // Every field is checked at once; each message appears under its field.
+  const validateForm = () => {
+    const errs = {};
+    const nameVal = validateRequiredText(form.product_name, 'Product Name', 2, 120);
+    if (!nameVal.isValid) errs.product_name = nameVal.error;
+    const priceVal = validateNumeric(form.price, { min: 0.01, max: PRICE_MAX, maxDecimals: 2, fieldName: 'Price' });
+    if (!priceVal.isValid) errs.price = priceVal.error;
+    const stockVal = validateNumeric(form.stock, { min: 0, max: STOCK_MAX, allowDecimal: false, fieldName: 'Stock Quantity' });
+    if (!stockVal.isValid) errs.stock = stockVal.error;
+    if (!form.seller_id) errs.seller_id = 'Please choose the seller shop.';
+    const img = (form.image_path || '').trim();
+    if (img && !/^https:\/\/[^\s]+$/i.test(img)) errs.image_path = 'Image URL must start with https:// and contain no spaces.';
+    if ((form.description || '').trim().length > 2000) errs.description = 'Please keep the description under 2000 characters.';
+    return { errs, nameVal, priceVal, stockVal };
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    const nameVal = validateRequiredText(form.product_name, 'Product Name', 2, 120);
-    if (!nameVal.isValid) {
-      alert(nameVal.error);
-      return;
-    }
-
-    const priceVal = validateNumeric(form.price, { min: 0.01, fieldName: 'Price' });
-    if (!priceVal.isValid) {
-      alert(priceVal.error);
-      return;
-    }
-
-    const stockVal = validateNumeric(form.stock, { min: 0, allowDecimal: false, fieldName: 'Stock Quantity' });
-    if (!stockVal.isValid) {
-      alert(stockVal.error);
+    setFormError('');
+    const { errs, nameVal, priceVal, stockVal } = validateForm();
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) {
+      document.getElementById(`product-${Object.keys(errs)[0]}`)?.focus();
       return;
     }
 
@@ -131,9 +150,10 @@ export default function Products() {
       }
 
       setShowModal(false);
+      setNotice({ type: 'success', text: isEditing ? 'Product updated.' : 'Product added.' });
       fetchData();
     } catch (err) {
-      alert(err.message || 'Error saving product');
+      setFormError(/fetch|network/i.test(err.message || '') ? 'No connection. The product was not saved.' : (err.message || 'Error saving product'));
     }
   };
 
@@ -152,6 +172,8 @@ export default function Products() {
           <span>Add Product</span>
         </button>
       </div>
+
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
 
       <div className="card-bg rounded-xl overflow-hidden border border-outline-variant">
         {loading ? (
@@ -211,7 +233,7 @@ export default function Products() {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDelete(p.id)}
+                          onClick={() => setDeleteId(p.id)}
                           className="bg-error/10 text-error hover:bg-error/20 border border-error/30 px-3 py-1.5 rounded font-label-sm transition-colors cursor-pointer"
                         >
                           Delete
@@ -234,37 +256,50 @@ export default function Products() {
               {isEditing ? 'Edit Product' : 'Add Product'}
             </h2>
 
+            <InlineNotice notice={formError ? { type: 'error', text: formError } : null} />
+
             <div className="flex flex-col gap-1">
-              <label className="font-label-md text-on-surface-variant font-bold">Product Name</label>
+              <label htmlFor="product-product_name" className="font-label-md text-on-surface-variant font-bold">Product Name</label>
               <input
+                id="product-product_name"
                 type="text"
-                required
+                maxLength={120}
+                aria-invalid={!!fieldErrors.product_name}
                 value={form.product_name}
                 onChange={(e) => setForm({ ...form, product_name: e.target.value })}
                 className="w-full bg-[#1c221e] border border-outline-variant rounded-lg p-2.5 text-on-surface text-body-sm focus:outline-none focus:border-primary-container"
               />
+              <FieldError message={fieldErrors.product_name} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1">
-                <label className="font-label-md text-on-surface-variant font-bold">Price (₹)</label>
+                <label htmlFor="product-price" className="font-label-md text-on-surface-variant font-bold">Price (₹)</label>
                 <input
-                  type="number"
-                  required
+                  id="product-price"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g. 249.50"
+                  aria-invalid={!!fieldErrors.price}
                   value={form.price}
                   onChange={(e) => setForm({ ...form, price: e.target.value })}
                   className="w-full bg-[#1c221e] border border-outline-variant rounded-lg p-2.5 text-on-surface text-body-sm focus:outline-none focus:border-primary-container"
                 />
+                <FieldError message={fieldErrors.price} />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="font-label-md text-on-surface-variant font-bold">Stock Quantity</label>
+                <label htmlFor="product-stock" className="font-label-md text-on-surface-variant font-bold">Stock Quantity</label>
                 <input
-                  type="number"
-                  required
+                  id="product-stock"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="e.g. 40"
+                  aria-invalid={!!fieldErrors.stock}
                   value={form.stock}
                   onChange={(e) => setForm({ ...form, stock: e.target.value })}
                   className="w-full bg-[#1c221e] border border-outline-variant rounded-lg p-2.5 text-on-surface text-body-sm focus:outline-none focus:border-primary-container"
                 />
+                <FieldError message={fieldErrors.stock} />
               </div>
             </div>
 
@@ -291,6 +326,7 @@ export default function Products() {
             <div className="flex flex-col gap-1">
               <label className="font-label-md text-on-surface-variant font-bold">Associated Seller Shop</label>
               <select
+                id="product-seller_id"
                 value={form.seller_id}
                 onChange={(e) => setForm({ ...form, seller_id: e.target.value })}
                 className="w-full bg-[#1c221e] border border-outline-variant rounded-lg p-2.5 text-on-surface text-body-sm focus:outline-none focus:border-primary-container"
@@ -299,26 +335,32 @@ export default function Products() {
                   <option key={s.id} value={s.id}>{s.shop_name} ({s.profiles?.full_name})</option>
                 ))}
               </select>
+              <FieldError message={fieldErrors.seller_id} />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="font-label-md text-on-surface-variant font-bold">Image URL</label>
               <input
-                type="text"
+                id="product-image_path"
+                type="url"
                 value={form.image_path}
                 onChange={(e) => setForm({ ...form, image_path: e.target.value })}
                 placeholder="https://example.com/product.jpg"
                 className="w-full bg-[#1c221e] border border-outline-variant rounded-lg p-2.5 text-on-surface text-body-sm focus:outline-none focus:border-primary-container"
               />
+              <FieldError message={fieldErrors.image_path} />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="font-label-md text-on-surface-variant font-bold">Description</label>
               <textarea
+                id="product-description"
+                maxLength={2000}
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 className="w-full bg-[#1c221e] border border-outline-variant rounded-lg p-2.5 text-on-surface text-body-sm focus:outline-none focus:border-primary-container h-16"
               />
+              <FieldError message={fieldErrors.description} />
             </div>
 
             <div className="flex justify-end gap-3 border-t border-outline-variant/30 pt-3 mt-2">
@@ -339,6 +381,16 @@ export default function Products() {
           </form>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteId}
+        danger
+        title="Delete this product?"
+        message="The product is removed from the shop. This cannot be undone."
+        confirmLabel="Delete product"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }
