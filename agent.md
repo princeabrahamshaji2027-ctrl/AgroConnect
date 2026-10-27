@@ -1,141 +1,328 @@
-# PROMPT FOR ANTIGRAVITY — Fix Blocked/Ambiguous Appium Scenarios (Expert Lifecycle)
+"AGROCONNECT — FINAL RECOVERY, LIVE FIX, PHONE SETUP & COMPLETE HANDOVER
+IMPORTANT: My Claude subscription is about to expire. This may be my final session. I need you to work autonomously and complete as much as possible in one continuous run. Do not waste the session repeating previous investigations or giving me a plan without executing it.
+I am a beginner. I need a working project, verified deployment, and a complete written handover guide so I can continue without Claude.
+1. PROJECT DETAILS
+Production admin URL:
+https://agroconnect-h7nj.onrender.com/
+GitHub repository:
+https://github.com/princeabrahamshaji2027-ctrl/AgroConnect.git
+Production Supabase project URL:
+https://mgreapakfchcxcrauheq.supabase.co
+Production Supabase project reference:
+mgreapakfchcxcrauheq
+Known admin directory:
+admin-dashboard/ — verify the actual repository structure.
+Screenshot shows:
 
-Scope: this touches only test data and the two blocked/ambiguous scenarios below. Do not modify
-unrelated app functionality, UI, or the wider test suite. Do not re-run Appium scenarios that already
-passed — only Scenario D and Scenario E (split into E1/E2/E3 below).
+* Agro Connect Admin Panel.
+* Email field is populated with my existing admin email.
+* Password is entered.
+* Error: "Invalid API key".
+* "Forgot password?" is visible but does not work for me.
 
-## Why the current test data is the problem, not the app
+Previous reported commit:
+f0e9c76 on main.
+Previous reported changes:
 
-- **Scenario D (BLOCKED)**: no approved Expert account exists to log in with.
-- **Scenario E (ambiguous PASS)**: `user2` apparently already has an expert application in some
-  state, so "Become an Expert" wasn't actually exercised as a fresh flow — this scenario didn't prove
-  what it claims to prove.
+* Migration to the new Supabase publishable key.
+* Admin password recovery screen.
+* SPA direct-link fallback.
+* Changes to admin-dashboard/src/supabase.js, admin-dashboard/src/App.jsx, admin-dashboard/src/pages/Login.jsx, admin-dashboard/src/pages/ResetPassword.jsx, admin-dashboard/vite.config.js, src/supabase.js and keep-alive.js.
 
-The fix is dedicated, fixed-state test accounts — not repeatedly mutating one account's role to make
-whichever scenario is running next pass.
+These are previous reports, not guaranteed facts about the currently deployed version. Verify the actual Git repository and live site.
+2. MAIN OBJECTIVE
+Fix the production admin login and password recovery. Deploy the corrected build if authorized. Test the actual live website. Then create a detailed, beginner-friendly handover document covering GitHub, Render, Supabase, Android installation on my phone, rebuilding, troubleshooting and maintenance.
+I will seed demo users separately. Do not seed users as part of this task.
+3. FIRST: VERIFY THE REAL LIVE FAILURE
+Do not assume "Invalid API key" is caused by a password problem.
 
----
+1. Inspect the actual repository root, branch, Git status, latest commits, and whether this directory is a Git worktree.
+2. Inspect the current live website and its loaded JavaScript bundle.
+3. Verify whether commit f0e9c76 and subsequent fixes are deployed.
+4. Determine the actual Render service configuration: repository, branch, root directory, build command, publish directory, environment variable names, and latest deployment status.
+5. Inspect the Supabase client initialization in both the admin website and Android app.
+6. Verify which key format the installed Supabase SDK and each client expects.
+7. Check whether the frontend is using the correct production URL and public API key. Never print actual key values.
+8. Check browser network requests and response bodies safely to find the precise origin of "Invalid API key".
+9. Distinguish between a Supabase gateway error, a bad/missing API key, an application-generated error, an environment-variable problem, and invalid login credentials.
+10. Check whether the browser bundle is stale, whether environment variables were injected at build time, and whether Render serves the expected build output.
+11. Do not test using my real password or send repeated recovery emails. Use fake credentials only for negative authentication tests.
+12. Record evidence for the root cause before changing code.
 
-## STEP 1 — Reuse the existing seed infrastructure, don't build a second one
+4. FIX LOGIN END TO END
+Inspect and repair the real root cause.
 
-This project already has a seed system at `seed/` (`seed/lib/supabaseAdmin.js`,
-`seed/generators/users.js`, `seed/cleanup.js`) using the Supabase Admin API with `is_test` flagging.
-**Do not write a separate ad-hoc script or a new Supabase client for this** — import and reuse
-`seed/lib/supabaseAdmin.js` exactly as the existing generators do.
+* Verify the Supabase URL and key configuration used by the deployed admin app.
+* Use the supported public/publishable key format if compatible with the installed SDK and project.
+* Preserve the correct variable names or update every relevant reference consistently.
+* Check for hardcoded stale keys, incorrect environment variables, staging configuration, localhost URLs, and duplicate Supabase clients.
+* Never put a secret/service-role key in browser code or an Android client.
+* Do not disable RLS, authentication, role checks, or other security controls.
+* Make errors informative without exposing keys, tokens, credentials, or sensitive server responses.
+* Verify the login flow against a real authorized session if available. Do not claim real admin login works unless it has actually been verified.
+* Ensure protected admin routes still reject unauthorized users.
+* Keep the existing user roles and authorization rules intact.
 
-Create a new file, `seed/test-fixtures.js`, separate from the random bulk-data generators (these are
-fixed, memorable accounts for manual/automated testing, not random demo filler — keep them in their
-own file so they're never overwritten or duplicated by a `npm run seed` bulk run):
+5. FIX FORGOT PASSWORD AND RECOVERY
+The Forgot password link is visible but is not working for me. Diagnose both the UI and backend redirect behavior.
+Inspect:
 
-```js
-const supabaseAdmin = require('./lib/supabaseAdmin');
+* The Login component and form handlers.
+* Supabase resetPasswordForEmail usage.
+* Supabase Site URL and Redirect URLs.
+* The actual recovery URL generated by the deployed app.
+* The recovery screen and updateUser password operation.
+* Session detection and recovery-token handling.
+* Browser console/network errors.
+* Email rate limits and provider configuration.
+* The Android authentication callback, if applicable.
 
-const FIXTURES = [
-  { email: 'user1@agroconnect.local', role: 'Farmer', expertStatus: null },
-  { email: 'user2@agroconnect.local', role: 'Farmer', expertStatus: 'Pending' },
-  { email: 'expert1@agroconnect.local', role: 'Expert', expertStatus: 'Approved' },
-  { email: 'user3@agroconnect.local', role: 'Farmer', expertStatus: null }, // fresh, no application
-  { email: 'user4@agroconnect.local', role: 'Farmer', expertStatus: 'Rejected' },
-];
-```
+Implement a complete recovery flow appropriate for the existing authentication architecture:
 
-Before writing the creation logic, **inspect the actual current schema first** — run
-`select column_name, data_type from information_schema.columns where table_name = 'expert_applications';`
-and confirm the real column names and the `application_status` enum's exact values (established
-earlier in this project as `Pending` / `Approved` / `Rejected` — confirm this is still accurate rather
-than assuming it). Do the same for `experts` and `profiles.role`. Do not invent or rename a field —
-use exactly what's already there.
+1. Clicking "Forgot password?" opens a usable form.
+2. The form validates the email and gives a clear result.
+3. It sends at most one recovery request per user submission.
+4. The redirect uses the correct deployed HTTPS origin and an existing recovery route.
+5. The recovery page securely accepts the valid recovery session.
+6. The user can enter and confirm a new password.
+7. Password update errors are shown clearly.
+8. After a successful reset, the user can sign in normally.
+9. Existing role-based admin authorization still applies.
 
-For each fixture:
-1. Create the `auth.users` account via `supabaseAdmin.auth.admin.createUser(...)` (same pattern as
-   `seed/generators/users.js`), with `is_test: true` on the resulting `profiles` row.
-2. For `expertStatus: 'Pending'`, `'Approved'`, or `'Rejected'` — insert a matching row into
-   `expert_applications` with that exact `status` value and realistic `qualification`,
-   `experience`, and a real (small, valid) PDF at `cv_file_path` in the `expert-cvs` bucket, since the
-   CV-PDF check constraint added in an earlier migration requires a `.pdf` path.
-3. For `expertStatus: 'Approved'` specifically — also insert the matching `experts` row and set
-   `profiles.role = 'Expert'`, exactly what `approve_expert_application()` does for a real approval,
-   so this account is indistinguishable from one that went through the real approval flow. Also
-   ensure this account has at least 2-3 real rows in `consultation_slots` (some booked, some open) and
-   at least one row in `consultation_bookings`, so the Expert Catch Up / meeting history / availability
-   screens have real data to render instead of appearing empty.
-4. For `expertStatus: null` (user1, user3) — no `expert_applications` row at all, confirming these are
-   genuinely fresh accounts.
+Do not repeatedly request recovery emails or try to bypass rate limits. Do not change my password automatically. Do not hardcode recovery tokens. If a Supabase Dashboard change is required and cannot be made through available authorized tools, provide the exact setting and value in the handover.
+Do not claim password recovery is verified unless a real recovery flow has been completed. If email delivery or my inbox is required, test all independent parts and clearly identify the final manual step.
+6. FIX DEPLOYMENT AND ROUTING
 
-Add an npm script:
-```json
-"seed:fixtures": "node seed/test-fixtures.js",
-"seed:fixtures:reset": "node seed/test-fixtures.js --reset"
-```
-`--reset` should delete and recreate all five fixture accounts from scratch (same approach as
-`seed/cleanup.js`, scoped to only these five emails) — this is the "how to reset test accounts" step
-the test report needs to document.
+* Build the actual production admin frontend.
+* Run the applicable lint, type-check, test, and build commands.
+* Fix any failures caused by your changes.
+* Check the deployment root and publish directory.
+* Verify root, login, forgot-password, recovery and existing dashboard routes.
+* Fix SPA routing using the actual framework and hosting configuration. Prefer the correct Render rewrite rule over a workaround if supported.
+* Avoid duplicate rewrites and avoid unnecessary changes to other services.
+* Check for stale bundles and missing assets.
+* Commit only relevant changes.
+* Inspect the complete diff for secrets and unrelated modifications.
+* Push to the intended branch only after tests pass and the diff is safe.
+* Trigger the existing Render deployment if authorized tools permit it.
+* Wait for deployment completion and verify the actual live site.
+* If access or approval is unavailable, finish everything possible and give the exact remaining manual action.
 
----
+Live site:
+https://agroconnect-h7nj.onrender.com/
+Also test:
+https://agroconnect-h7nj.onrender.com/users
+Do not claim the site is fixed merely because the code was committed or pushed.
+7. ANDROID APP — GET IT ON MY PHONE
+Inspect the existing Android project and identify the correct production app configuration.
+My goal is to install and run AgroConnect on my own Android phone.
 
-## STEP 2 — Fix the internal inconsistency in the existing report before adding new results
+1. Verify the Android application ID, package name, production/staging flavors, Supabase configuration and version.
+2. Verify the Java, Android SDK, Gradle and Android Gradle Plugin requirements from the actual project.
+3. Build a production APK if the environment and signing setup allow it.
+4. Preserve the existing production package identity and signing setup.
+5. Do not fabricate a release keystore, replace the original keystore, or overwrite release credentials.
+6. If a signed release APK cannot be produced, build the safest available artifact and explain its exact limitations.
+7. Verify the APK exists, its size, package identity and signing status.
+8. Find the exact artifact path and create a convenient, clearly named copy only if safe and useful.
+9. Do not claim the app was installed on my phone unless a real device connection confirms it.
+10. Explain USB debugging and installation steps for macOS in beginner-friendly language.
+11. Explain how to connect my phone by USB, authorize the computer, verify it with adb, install the APK and launch the app.
+12. Also explain the alternative of transferring the APK to the phone and installing it manually.
+13. Include common fixes for unauthorized devices, missing adb, install conflicts, signature mismatch, Android security prompts, app crashes and network/authentication errors.
+14. Ensure the phone app uses the intended production Supabase project without exposing privileged secrets.
 
-The current report has a contradiction: an assertion says *"Verify email/password fields present"*
-but the evidence recorded is *"Found 0 input fields"*, and the scenario is still marked PASS. A
-scenario can't pass evidence that contradicts its own assertion. Before running anything new, find
-this Appium test case, determine which is actually true (are the fields present or not), fix the
-assertion or the PASS/FAIL result so they agree, and note in the report which one it was and why.
+If the original release keystore is missing, explain how to locate the existing signing configuration and what recovery options exist. Do not generate a replacement as if it were the original key.
+8. COMPLETE GIT AND GITHUB HANDOVER
+Create a beginner-friendly Git guide specific to this repository, not a generic tutorial.
+Include:
 
----
+* Repository URL.
+* How to open the correct local project directory.
+* How to confirm the current branch, remote, latest commit and working-tree status.
+* How to fetch, pull, commit, push and inspect changes.
+* How to create a feature branch.
+* How to recover from an accidental edit.
+* How to inspect and resolve a merge conflict safely.
+* How to see commit history and compare changes.
+* How to confirm a commit is on GitHub.
+* How to avoid force-pushing over existing work.
+* How to avoid accidentally committing `.env` files, API keys, passwords, keystores or APK signing secrets.
+* How to restore a known-good commit without deleting unrelated work.
+* How to distinguish local changes, GitHub source code and the live Render deployment.
+* How to check GitHub Actions/CI and diagnose failed builds.
+* The exact commands that are safe for this repository and the expected output of important checks.
 
-## STEP 3 — Run only these Appium scenarios, not the full suite
+Verify the actual branch names, remote and project structure before documenting them. Do not invent a remote, branch, command output, or file path.
+9. COMPLETE RENDER AND SUPABASE HANDOVER
+Write an exact beginner guide for:
+Render
 
-**Scenario D — Expert View** (login as `expert1@agroconnect.local`):
-```
-Login → Verify Expert dashboard/home → Open Catch Up → Verify expert meeting view →
-Open Expert Menu → Verify expert-specific options → Open meeting/booking history →
-Verify availability/date customization is visible → Verify a "Leave Expert" or equivalent option exists
-```
+* Open the existing AgroConnect admin service.
+* Find environment variables, build settings, deploy logs and service status.
+* Manually deploy the latest commit.
+* Confirm which commit is deployed.
+* Diagnose failed builds and stale frontend assets.
+* Configure SPA rewrites only if required by the actual app.
+* Verify the live site and routes.
+* Explain the difference between deploying code and changing environment variables.
 
-**Scenario E1 — Fresh Expert Application** (login as `user3@agroconnect.local`):
-```
-Login → Profile → Confirm "Become an Expert" is visible and enabled →
-Fill application → Upload CV → Submit → Verify resulting status shows Pending
-```
+Supabase
 
-**Scenario E2 — Pending Application Display** (login as `user2@agroconnect.local`, already fixtured
-as Pending):
-```
-Login → Profile → Verify "Become an Expert" is NOT shown/enabled (already applied) →
-Verify the UI displays "Pending Review" status text correctly
-```
+* Identify the production and staging projects.
+* Find API keys and distinguish public/publishable keys from privileged secret keys.
+* Explain where Site URL and Redirect URLs are configured.
+* Explain Auth Users, SQL Editor, database tables, logs and rate limits.
+* Explain how to inspect errors without exposing credentials.
+* Explain safe backup and migration practices.
+* Explain how to verify the deployed app uses the correct project.
+* Explain why a new authentication user does not automatically become an administrator.
+* Do not include any real secret values in the guide.
 
-**Scenario E3 — Rejected Application Display** (login as `user4@agroconnect.local`) — this state
-wasn't in the original report at all; add it since the fixture now exists and the app should handle it
-distinctly from Pending, not silently show the same "Become an Expert" prompt as a fresh user:
-```
-Login → Profile → Verify the UI shows a Rejected status (not silently treated as "no application")
-```
+Clearly identify which dashboard URLs are verified and which are inferred.
+10. CREATE A PERSISTENT HANDOVER DOCUMENT
+Create a Markdown file in the repository, for example:
+`docs/AGROCONNECT_HANDOVER.md`
+If `docs/` does not exist, inspect the structure and create it only if appropriate.
+This document must contain:
 
-Do not re-run any scenario before D that already reported PASS.
+1. Project overview and verified architecture.
+2. Current production status.
+3. Root cause and exact fix for the login problem.
+4. Password recovery setup and verification.
+5. Exact build and test commands.
+6. Android phone installation guide.
+7. Git/GitHub guide.
+8. Render deployment guide.
+9. Supabase configuration and safety guide.
+10. Environment variable NAMES only, never values.
+11. Troubleshooting guide.
+12. Known limitations and unresolved tasks.
+13. Last verified commit and deployment status.
+14. Exact locations of generated artifacts.
+15. A simple daily workflow for opening, testing, changing and deploying the project without Claude.
 
----
+The handover must be grounded in the actual repository. Do not document imaginary commands or claim an action succeeded if it did not.
+Keep the guide useful even after this Claude session ends. Do not include credentials or secret values. If committing the guide is safe and consistent with the project workflow, include it in a focused commit.
+11. SAFETY REQUIREMENTS
+This is a live production app.
 
-## STEP 4 — Report back
+* Do not seed demo users or posts.
+* Do not create or delete accounts.
+* Do not promote or demote any user.
+* Do not modify user passwords.
+* Do not delete or reset production data.
+* Do not apply unrelated database migrations.
+* Do not modify bookings, payments, refunds or commission logic.
+* Do not disable RLS or weaken authorization.
+* Do not regenerate keys without an approved rotation plan.
+* Do not print secret keys, passwords, tokens or private environment values.
+* Preserve unrelated user changes.
+* Inspect changes before committing.
+* If an action risks data loss, irreversible access changes or downtime, do not guess; report the blocker.
 
-Update `REPORT.md` with:
-1. Where the fixture accounts were created (`seed/test-fixtures.js`) and the exact command to run/
-   reset them.
-2. The five fixture emails and their intended states (no real passwords need to be shared in the
-   report itself — reference that they're in `seed/test-fixtures.js`, not retyped in `REPORT.md`,
-   consistent with not committing real credentials in plaintext).
-3. The actual schema fields/enum values used, confirmed from Step 1's inspection (don't just restate
-   this prompt's guess at them).
-4. Pass/fail for Scenario D, E1, E2, and E3, with screenshots.
-5. Confirmation that Step 2's assertion/evidence contradiction was fixed, and what the correct
-   result actually was.
+12. REQUIRED FINAL REPORT
+At the end, provide:
+A. The verified root cause of the live Invalid API key error.
+B. Exact fixes implemented.
+C. Test/build/lint results.
+D. Commit hash and push status.
+E. Render deployment status and the exact live commit.
+F. Live login and password recovery verification status.
+G. Android build result, package, artifact path and signing status.
+H. Exact phone installation steps.
+I. The location of `docs/AGROCONNECT_HANDOVER.md`.
+J. Remaining manual steps, if any.
+K. Confirmation that no demo users were seeded and no production user roles/passwords/data were intentionally changed.
+Do not give me another long plan instead of execution. Work in one continuous run, prioritize login and recovery first, then deployment, Android and handover. If an external authorization is unavailable, complete all independent tasks before reporting it.
+START NOW. Verify the current state before making changes."
+I checked the repository state: the repo is on the main branch and the latest published commit is 1289b3e3d574b9c3b30e5465f088baa3d91bff56, with message:
 
-## Do NOT
+“fix(admin): always use the publishable key for production, even if the host injects the legacy anon key”
 
-- Do not modify any existing production/demo account.
-- Do not change `Login.jsx`, `App.jsx`, or any other already-verified-correct file as part of this
-  task — this is test-data and test-scenario work only.
-- Do not re-run the full Appium suite — only D, E1, E2, E3.
-- Do not invent new database fields — if something genuinely doesn't exist yet (e.g. no clean way to
-  represent "Rejected" distinctly in the UI), report that as a finding rather than silently patching
-  the schema to make a test pass.
+The code already contains the critical fix for the live Invalid API key issue. In other words, the previous AI did not stop before the core problem was fixed; it already changed the relevant files and committed them.
+
+What is already completed in the repo
+- Production Supabase fallback logic already fixed in:
+  - admin-dashboard/src/supabase.js
+  - src/supabase.js
+- Login/password-recovery UI already updated in:
+  - admin-dashboard/src/pages/Login.jsx
+  - admin-dashboard/src/pages/ResetPassword.jsx
+- SPA fallback already added in:
+  - admin-dashboard/vite.config.js
+
+The exact code already present matches the root cause fix:
+- admin-dashboard/src/supabase.js: lines 3–24
+  - Uses PROD_URL = https://mgreapakfchcxcrauheq.supabase.co
+  - Uses PROD_PUBLISHABLE_KEY = sb_publishable_JbBPE8eek75KWPjpViDa_A_K4hCuTyZ
+  - Uses:
+    const configuredKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const supabaseAnonKey = supabaseUrl === PROD_URL && (!configuredKey || configuredKey.startsWith('eyJ'))
+      ? PROD_PUBLISHABLE_KEY
+      : configuredKey;
+  - Rejects secret/service-role keys before client creation.
+- src/supabase.js: lines 3–18
+  - Defaults to the production URL and publishable key.
+- admin-dashboard/src/pages/Login.jsx: lines 15–68
+  - Uses resetPasswordForEmail with redirectTo: window.location.origin
+  - Prevents repeated requests
+  - Shows clear invalid API key/rate-limit fallback wording
+- admin-dashboard/src/pages/ResetPassword.jsx: lines 7–31
+  - Validates password and confirm password
+  - Calls supabase.auth.updateUser({ password })
+  - Handles expired/invalid session message
+- admin-dashboard/vite.config.js: lines 6–15
+  - Copies index.html to 404.html for SPA refresh/direct-link fallback
+
+So the new model should not “invent” a different fix. It should verify, validate, deploy, and finish the remaining work without redoing the already-applied root-cause fix.
+
+Use this exact prompt for the next model:
+
+“Continue from the current repo state on main. Do not re-implement the Supabase publishable-key fix or the password-recovery UI unless verification shows it is missing. The repo already contains the key fix and recovery work in:
+- admin-dashboard/src/supabase.js (lines 3–24)
+- src/supabase.js (lines 3–18)
+- admin-dashboard/src/pages/Login.jsx (lines 15–68)
+- admin-dashboard/src/pages/ResetPassword.jsx (lines 7–31)
+- admin-dashboard/vite.config.js (lines 6–15)
+
+Verify the live deployment and complete the remaining production work only.
+
+Requirements:
+1. Verify the actual live site at https://agroconnect-h7nj.onrender.com/ and also /users.
+2. Confirm whether Render is serving the latest committed build and whether the deployed bundle still contains the legacy key or the publishable key.
+3. Check Render service settings: repo, branch, root directory, build command, publish directory, environment variables, and deployment status.
+4. Do not print or expose any real secret/Supabase keys in output.
+5. Validate that the admin app is using the production Supabase URL and public publishable key only, not a service-role or secret key.
+6. Check browser console/network requests to confirm the root cause is resolved and that the Invalid API key error is gone.
+7. Run the correct build/test commands for this repo and confirm they pass.
+8. If build or runtime issues remain, fix them in the minimal allowed scope only.
+9. Keep the existing admin role checks and security rules unchanged.
+10. Confirm the Forgot password flow works end-to-end as implemented:
+   - form validates email
+   - reset link sends once per click
+   - redirect target is the deployed origin
+   - reset screen accepts the valid session
+   - new password updates successfully
+   - user can sign in normally afterward
+11. Create or update the handover document at docs/AGROCONNECT_HANDOVER.md with actual repo findings, build/test commands, Android install guidance, Git/GitHub and Render/Supabase instructions, no secret values, and verified current status.
+12. Build the Android artifact only if the project supports it safely, preserving the original signing config. Do not fabricate a keystore or replace release credentials.
+13. Keep changes focused. Only commit relevant files. Do not seed demo users or production data.
+14. At the end, provide:
+   - root cause and exact fix
+   - test/build status
+   - commit hash
+   - push status
+   - Render deployment status
+   - login and recovery verification status
+   - Android artifact status
+   - the file path of docs/AGROCONNECT_HANDOVER.md
+   - remaining manual steps, if any
+   - explicit confirmation that no demo users were seeded and no production user roles/passwords/data were intentionally changed
+
+Important:
+- Do not assume the fix is still broken.
+- Do not redo the known Supabase key fix unless a verification step proves it is absent.
+- Do not claim success without checking the live site, deployment status, and actual build output.
+- Work from the repository as it exists now; do not guess paths, branch names, or environment variable names.”
+
