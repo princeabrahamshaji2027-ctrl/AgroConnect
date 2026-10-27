@@ -36,3 +36,5 @@ playwright-report/
 dist-staging
 android/app/google-services.json
 private/
+.venv/
+demo.pptx
