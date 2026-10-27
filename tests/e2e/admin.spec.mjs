@@ -167,7 +167,7 @@ test.describe('change list 2026-10-25 (staging)', () => {
     await signIn(page);
     const overview = page.getByTestId('district-stats');
     await expect(overview).toBeVisible({ timeout: 15_000 });
-    for (const d of ['Kottayam', 'Pathanamthitta', 'Kannur', 'Not set']) await expect(overview.getByText(d, { exact: true })).toBeVisible();
+    for (const d of ['Kannur', 'Pathanamthitta', 'Idukki', 'Kottayam', 'Not set']) await expect(overview.getByText(d, { exact: true })).toBeVisible();
     await page.getByText('Users', { exact: true }).first().click();
     await expect(page.getByRole('columnheader', { name: 'District' })).toBeVisible();
     await page.getByLabel('District').selectOption('Kannur');

@@ -1,7 +1,7 @@
 // District-priority feed (migration 20) on STAGING, through the same RPC the app calls. Synthetic accounts only.
 //   node --test tests/e2e/staging-districts.test.mjs
 // The fixtures keep their districts afterwards (the app asks users without one to choose, which would cover the
-// screens other UI tests drive): user1 + user4 + expert1 Kottayam, user2 Pathanamthitta, user3 Kannur.
+// screens other UI tests drive): user1 + expert1 Kottayam, user2 Pathanamthitta, user3 Kannur, user4 Idukki.
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
@@ -20,7 +20,7 @@ async function signIn(name) {
   if (error) throw new Error(`sign-in ${name}: ${error.message}`);
   return { c, uid: data.user.id };
 }
-export const FIXTURE_DISTRICTS = { user1: 'Kottayam', user2: 'Pathanamthitta', user3: 'Kannur', user4: 'Kottayam', expert1: 'Kottayam' };
+export const FIXTURE_DISTRICTS = { user1: 'Kottayam', user2: 'Pathanamthitta', user3: 'Kannur', user4: 'Idukki', expert1: 'Kottayam' };
 
 const A = {};
 const created = [];
@@ -60,7 +60,8 @@ describe('district-priority feed (staging)', { skip }, () => {
     await post('user3', 'kannur-post');
     await post('user1', 'kottayam-post');
     await post('user2', 'pathanamthitta-post');
-    for (const [n, d] of [['user1', 'Kottayam'], ['user2', 'Pathanamthitta'], ['user3', 'Kannur']]) {
+    await post('user4', 'idukki-post');
+    for (const [n, d] of [['user1', 'Kottayam'], ['user2', 'Pathanamthitta'], ['user3', 'Kannur'], ['user4', 'Idukki']]) {
       const rows = await feed(n);
       const firstOther = rows.findIndex((r) => r.district !== d);
       assert.ok(firstOther > 0, `${n}: no local post first`);
@@ -91,7 +92,8 @@ describe('district-priority feed (staging)', { skip }, () => {
     assert.ok((await A.user1.c.rpc('admin_district_stats')).error, 'farmer read admin stats');
     const s = await A.admin.c.rpc('admin_district_stats');
     assert.ifError(s.error);
-    assert.deepEqual(s.data.map((r) => r.district), ['Kannur', 'Kottayam', 'Pathanamthitta', null]);
-    assert.ok(s.data.find((r) => r.district === 'Kottayam').farmers >= 2);
+    assert.deepEqual(s.data.map((r) => r.district), ['Idukki', 'Kannur', 'Kottayam', 'Pathanamthitta', null]);
+    assert.ok(s.data.find((r) => r.district === 'Kottayam').farmers >= 1);
+    assert.ok(s.data.find((r) => r.district === 'Idukki').farmers >= 1);
   });
 });

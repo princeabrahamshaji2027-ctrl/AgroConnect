@@ -35,12 +35,12 @@ test('splash leads to an empty login form; register validates', async ({ page })
   await expect(page.getByLabel(/Full name/i).first()).toHaveAttribute('aria-invalid', 'true');
 });
 
-test('register: district is a required choice of the three launch districts; no GPS, country or state fields', async ({ page }) => {
+test('register: district is a required choice of the four launch districts; no GPS, country or state fields', async ({ page }) => {
   await toLogin(page);
   await page.locator('.auth-link', { hasText: 'Sign Up' }).click();
   await expect(page.getByRole('heading', { name: 'Create Account' })).toBeVisible();
   const district = page.getByLabel(/District/);
-  await expect(district.locator('option')).toHaveText(['Choose your district', 'Kottayam', 'Pathanamthitta', 'Kannur']);
+  await expect(district.locator('option')).toHaveText(['Choose your district', 'Kannur', 'Pathanamthitta', 'Idukki', 'Kottayam']);
   await expect(page.getByText(/Detect Location via GPS/)).toHaveCount(0);
   await expect(page.getByLabel('Country', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('State', { exact: true })).toHaveCount(0);
@@ -773,7 +773,7 @@ test.describe('districts 2026-10-26 (staging)', () => {
   });
   test.afterAll(async () => {
     for (const id of mine) await u1.from('posts').delete().eq('id', id);
-    await u4.from('profiles').update({ district: 'Kottayam' }).eq('id', u4Id);   // keep the fixture's district
+    await u4.from('profiles').update({ district: 'Idukki' }).eq('id', u4Id);   // keep the fixture's district
   });
 
   test('feed says "Posts from Kottayam first" and the first card is a Kottayam post', async ({ page }) => {
@@ -790,19 +790,19 @@ test.describe('districts 2026-10-26 (staging)', () => {
     await expect(page.getByRole('heading', { name: 'Choose your district' })).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Please choose your district.')).toBeVisible();
-    await page.getByLabel('District', { exact: true }).selectOption('Pathanamthitta');
+    await page.getByLabel('District', { exact: true }).selectOption('Idukki');
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Posts from Pathanamthitta first')).toBeVisible({ timeout: 20_000 });
-    expect((await u4.from('profiles').select('district').eq('id', u4Id).single()).data.district).toBe('Pathanamthitta');
+    await expect(page.getByText('Posts from Idukki first')).toBeVisible({ timeout: 20_000 });
+    expect((await u4.from('profiles').select('district').eq('id', u4Id).single()).data.district).toBe('Idukki');
   });
 });
 
 // Feed order for each launch district, and "Load more" pagination without repeats (staging data, own posts cleaned up).
-test.describe('district feed: three districts + pagination (staging)', () => {
+test.describe('district feed: four districts + pagination (staging)', () => {
   test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
   test.describe.configure({ mode: 'serial' });
   const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  const who = { user1: 'Kottayam', user2: 'Pathanamthitta', user3: 'Kannur' };
+  const who = { user1: 'Kottayam', user2: 'Pathanamthitta', user3: 'Kannur', user4: 'Idukki' };
   const C = {}; const mine = [];
   const tag = `E2E feed ${Date.now() % 1e6}`;
   test.beforeAll(async () => {

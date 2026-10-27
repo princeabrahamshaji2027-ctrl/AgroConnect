@@ -48,9 +48,9 @@ test('validateAllFields returns only the failing fields, in form order', () => {
   assert.deepEqual(Object.keys(errors), ['email']);
 });
 
-test('district: only the three launch districts, canonical spelling', () => {
-  for (const ok of ['Kottayam', 'Pathanamthitta', 'Kannur']) assert.equal(rules.district(ok), null, ok);
-  for (const bad of ['', null, 'Ludhiana', 'Kottayam District', 'kottayam', 'കോട്ടയം']) {
+test('district: only the four launch districts, canonical spelling', () => {
+  for (const ok of ['Kannur', 'Pathanamthitta', 'Idukki', 'Kottayam']) assert.equal(rules.district(ok), null, ok);
+  for (const bad of ['', null, 'Ludhiana', 'Kottayam District', 'kottayam', 'idukki', 'Idukki ', 'Wayanad', 'കോട്ടയം']) {
     assert.equal(rules.district(bad), 'Please choose your district.', String(bad));
   }
 });
