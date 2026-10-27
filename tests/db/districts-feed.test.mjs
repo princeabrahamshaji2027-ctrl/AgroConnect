@@ -1,6 +1,6 @@
 // SQL behaviour tests for supabase/proposed/20 (launch districts + district-priority feed) on the REAL production
 // schema in PGlite. Run with: npm run test:db
-// Owner rules (2026-10-26): districts are exactly Kottayam, Pathanamthitta, Kannur; the viewer's own district comes
+// Owner rules (2026-10-26, Idukki added 2026-10-27 by 21): districts are Kannur, Pathanamthitta, Idukki, Kottayam; the viewer's own district comes
 // first, newest first inside each group; a post's district is the author's, set by the server; no district → chronological.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -136,5 +136,82 @@ describe('20 — districts on profiles and sign-up', () => {
     const { applyProposed } = await import('./harness.mjs');
     await applyProposed(db, '20');
     assert.equal((await feed(db, ids.farmerA))[0].caption, 'K-new');
+  });
+});
+
+// ── 21: Idukki added (owner decision 2026-10-27: Kannur, Pathanamthitta, Idukki, Kottayam) ───────────────────────
+const setup21 = async () => {
+  const db = await createDb({ proposed: [...ALL, '09', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21'] });
+  await seed(db);
+  return db;
+};
+// one author per district; the local post is always the OLDEST, so only the district rule can put it first
+const FOUR = [
+  ['Kannur', ids.farmerA, 'kannur-1min', 1],
+  ['Pathanamthitta', ids.farmerB, 'pathanamthitta-2min', 2],
+  ['Idukki', ids.expertUser, 'idukki-3min', 3],
+  ['Kottayam', ids.admin, 'kottayam-10min', 10],
+];
+async function fourDistricts(db) {
+  for (const [d, uid] of FOUR) await setDistrict(db, uid, d);
+  for (const [, uid, caption, mins] of FOUR) await post(db, uid, caption, mins);
+}
+
+describe('21 — four launch districts', () => {
+  test('every district sees its own post first even when it is the oldest; the rest newest-first', async () => {
+    const db = await setup21(); await fourDistricts(db);
+    for (const [d, viewer, ownCaption] of FOUR) {
+      const rows = await feed(db, viewer);
+      assert.equal(rows[0].caption, ownCaption, `${d}: own district first`);
+      assert.equal(rows[0].district, d);
+      assert.equal(rows[0].feed_rank, 0);
+      const rest = rows.slice(1);
+      assert.equal(rest.length, 3, `${d}: other districts are not hidden`);
+      assert.ok(rest.every((r) => r.feed_rank === 1 && r.district !== d));
+      for (let i = 1; i < rest.length; i++) assert.ok(new Date(rest[i - 1].created_at) >= new Date(rest[i].created_at), `${d}: newest first`);
+    }
+  });
+
+  test('equal timestamps are ordered by id (deterministic), and pages of 1 equal one page with no repeats', async () => {
+    const db = await setup21(); await fourDistricts(db);
+    const extra = await post(db, ids.farmerB, 'pathanamthitta-same-time', 2);
+    await db.query(`update public.posts set created_at = (select created_at from public.posts where caption = 'pathanamthitta-2min') where id = $1`, [extra]);
+    const all = await feed(db, ids.farmerA);
+    const same = all.filter((r) => r.caption.startsWith('pathanamthitta'));
+    assert.equal(same.length, 2);
+    assert.ok(same[0].id > same[1].id, 'tie broken by id desc');
+    assert.deepEqual((await feed(db, ids.farmerA)).map((r) => r.id), all.map((r) => r.id), 'same order on every call');
+    const paged = []; let after = {};
+    for (let i = 0; i < 20; i++) {
+      const page = await feed(db, ids.farmerA, 1, after);
+      if (!page.length) break;
+      paged.push(...page);
+      const last = page.at(-1);
+      after = { rank: last.feed_rank, created_at: last.created_at, id: last.id };
+    }
+    assert.deepEqual(paged.map((r) => r.id), all.map((r) => r.id));
+    assert.equal(new Set(paged.map((r) => r.id)).size, paged.length);
+  });
+
+  test('Idukki is accepted everywhere; any other district is still rejected', async () => {
+    const db = await setup21();
+    await setDistrict(db, ids.farmerA, 'Idukki');
+    await rejects(db.query(`update public.profiles set district = 'Wayanad' where id = $1`, [ids.farmerA]), /profiles_district_check/);
+    await rejects(db.query(`update public.profiles set district = 'idukki' where id = $1`, [ids.farmerA]), /profiles_district_check/);
+    const u = randomUUID();
+    await signUp(db, u, 'idukki@example.test', { district: 'Idukki', location: 'Thodupuzha, Idukki, Kerala' });
+    assert.equal((await db.query('select district from public.profiles where id = $1', [u])).rows[0].district, 'Idukki');
+    const p = await post(db, ids.farmerA, 'idukki-post', 1);
+    assert.equal((await db.query('select district from public.posts where id = $1', [p])).rows[0].district, 'Idukki');
+    const stats = (await as(db, ids.admin, 'select public.admin_district_stats() s')).rows[0].s;
+    assert.deepEqual(stats.map((r) => r.district), ['Idukki', 'Kannur', 'Kottayam', 'Pathanamthitta', null]);
+    assert.equal(stats.find((r) => r.district === 'Idukki').farmers, 2);
+  });
+
+  test('21 is re-runnable', async () => {
+    const db = await setup21(); await fourDistricts(db);
+    const { applyProposed } = await import('./harness.mjs');
+    await applyProposed(db, '21');
+    assert.equal((await feed(db, ids.farmerA))[0].caption, 'kannur-1min');
   });
 });

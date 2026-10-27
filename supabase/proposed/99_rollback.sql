@@ -68,6 +68,66 @@ drop function if exists public.protect_profile_privileged_columns();
 drop trigger if exists guard_experts_insert on public.experts;
 drop function if exists public.guard_experts_insert();
 
+-- ---- undo 23 (numeric ranges) --------------------------------------------------------------------------------
+alter table public.experts drop constraint if exists experts_meeting_duration_range;
+alter table public.experts drop constraint if exists experts_buffer_time_range;
+alter table public.products drop constraint if exists products_price_max;
+alter table public.products drop constraint if exists products_stock_max;
+alter table public.farmer_profiles drop constraint if exists farmer_profiles_farm_size_range;
+alter table public.posts drop constraint if exists posts_video_duration_range;
+alter table public.video_meetings drop constraint if exists video_meetings_duration_range;
+alter table public.consultation_bookings drop constraint if exists consultation_bookings_refund_amount_nonneg;
+
+-- ---- undo 22 (storage file limits) ---------------------------------------------------------------------------
+update storage.buckets set allowed_mime_types = null, file_size_limit = null
+ where id in ('expert-cvs', 'avatars', 'product-images', 'community-images', 'news-images', 'disease-images', 'post-images');
+
+-- ---- undo 21 (Idukki) -----------------------------------------------------------------------------------------
+-- Back to the three districts of 20. Refuses while any profile or post uses 'Idukki' (that data would be invalid).
+do $$ begin
+  -- only where 20 was applied (the district columns exist)
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'profiles' and column_name = 'district') then
+    if exists (select 1 from public.profiles where district = 'Idukki') or exists (select 1 from public.posts where district = 'Idukki') then
+      raise exception 'undo 21: Idukki is in use; reassign those rows first';
+    end if;
+    alter table public.profiles drop constraint if exists profiles_district_check;
+    alter table public.profiles add constraint profiles_district_check
+      check (district is null or district in ('Kottayam', 'Pathanamthitta', 'Kannur'));
+    alter table public.posts drop constraint if exists posts_district_check;
+    alter table public.posts add constraint posts_district_check
+      check (district is null or district in ('Kottayam', 'Pathanamthitta', 'Kannur'));
+  end if;
+end $$;
+-- the sign-up trigger and the report as in 20
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path to '' as $$
+declare v_d text := nullif(btrim(new.raw_user_meta_data->>'district'), '');
+begin
+  insert into public.profiles (id, full_name, role, district, phone, location)
+  values (new.id,
+          coalesce(new.raw_user_meta_data->>'full_name', ''),
+          'Farmer'::public.user_role,                                   -- never from metadata (AUD-003b)
+          case when v_d in ('Kottayam', 'Pathanamthitta', 'Kannur') then v_d end,
+          left(nullif(btrim(new.raw_user_meta_data->>'phone'), ''), 15),
+          left(nullif(btrim(new.raw_user_meta_data->>'location'), ''), 150));
+  return new;
+end $$;
+create or replace function public.admin_district_stats() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Access denied: Admin privileges required.' using errcode = '42501'; end if;
+  return (select coalesce(jsonb_agg(row_to_json(x) order by x.district nulls last), '[]'::jsonb) from (
+    select d.district,
+           (select count(*) from public.profiles p where p.district is not distinct from d.district and p.role = 'Farmer') as farmers,
+           (select count(*) from public.profiles p join public.experts e on e.user_id = p.id and coalesce(e.is_active, true)
+             where p.district is not distinct from d.district and p.role = 'Expert') as experts,
+           (select count(*) from public.posts po where po.district is not distinct from d.district and po.status = 'Approved') as posts,
+           (select count(*) from public.posts po where po.district is not distinct from d.district and po.status = 'Approved'
+              and po.created_at > now() - interval '7 days') as posts_7d
+    from (values ('Kottayam'), ('Pathanamthitta'), ('Kannur'), (null)) d(district)) x);
+end $$;
+
+
 -- ---- undo 20 (districts / district feed) ----------------------------------------------------------------------
 -- Restores the sign-up trigger body that was live before 20 (md5 1328337ccb5a7ff8559b25ec69edaad1) and removes the
 -- feed/report functions. The district columns and their values are kept (dropping them would lose user choices);

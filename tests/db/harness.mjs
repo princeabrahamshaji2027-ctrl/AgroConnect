@@ -30,6 +30,9 @@ export const PROPOSED = {
   '18': 'supabase/proposed/18_cancellation_and_refunds.sql',
   '19': 'supabase/proposed/19_messaging_keep_normal_chats.sql',
   '20': 'supabase/proposed/20_districts_and_district_feed.sql',
+  '21': 'supabase/proposed/21_add_idukki_district.sql',
+  '22': 'supabase/proposed/22_storage_file_limits.sql',
+  '23': 'supabase/proposed/23_numeric_ranges.sql',
   '99': 'supabase/proposed/99_rollback.sql',
 };
 export const ALL = ['01', '02', '03', '04', '05', '07', '08'];
