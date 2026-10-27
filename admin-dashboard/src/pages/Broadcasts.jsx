@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { validateRequiredText, validateImageFile } from '../utils/validation';
+import InlineNotice from '../components/InlineNotice';
 
 export default function Broadcasts() {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
   const [broadcasts, setBroadcasts] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -11,7 +13,6 @@ export default function Broadcasts() {
   const [message, setMessage] = useState('');
   const [targetType, setTargetType] = useState('all'); // 'all' | 'Expert' | 'Farmer' | 'Seller' | 'user'
   const [targetUserId, setTargetUserId] = useState('');
-  const [actionType, setActionType] = useState('dismissible'); // 'dismissible' | 'forced'
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -64,7 +65,7 @@ export default function Broadcasts() {
 
     const imgVal = await validateImageFile(file, 5);
     if (!imgVal.isValid) {
-      alert(imgVal.error);
+      setNotice({ type: 'error', text: imgVal.error });
       e.target.value = '';
       return;
     }
@@ -78,17 +79,17 @@ export default function Broadcasts() {
 
     const titleVal = validateRequiredText(title, 'Broadcast Title', 2, 150);
     if (!titleVal.isValid) {
-      alert(titleVal.error);
+      setNotice({ type: 'error', text: titleVal.error });
       return;
     }
 
     const messageVal = validateRequiredText(message, 'Message Content', 5, 3000);
     if (!messageVal.isValid) {
-      alert(messageVal.error);
+      setNotice({ type: 'error', text: messageVal.error });
       return;
     }
     if (targetType === 'user' && !targetUserId) {
-      alert('Please select a specific target user.');
+      setNotice({ type: 'error', text: 'Please select a specific target user.' });
       return;
     }
 
@@ -120,12 +121,12 @@ export default function Broadcasts() {
         p_image_path: imagePath,
         p_target_role: targetRole,
         p_target_user_id: targetType === 'user' ? targetUserId : null,
-        p_action_type: actionType
+        p_action_type: 'dismissible'   // every announcement can be closed by the user
       });
 
       if (rpcError) throw rpcError;
 
-      alert('📢 Broadcast sent successfully to target recipients!');
+      setNotice({ type: 'success', text: 'Broadcast sent to the selected recipients.' });
       setTitle('');
       setMessage('');
       setImageFile(null);
@@ -133,10 +134,9 @@ export default function Broadcasts() {
       setTargetType('all');
       setTargetUserId('');
       setSelectedUserObj(null);
-      setActionType('dismissible');
       fetchBroadcasts();
     } catch (err) {
-      alert(`Broadcast failed: ${err.message}`);
+      setNotice({ type: 'error', text: `Broadcast failed: ${err.message}` });
     } finally {
       setSubmitting(false);
     }
@@ -144,9 +144,10 @@ export default function Broadcasts() {
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
       <div>
         <h1 className="font-headline-xl text-on-surface mb-1">System Broadcasts</h1>
-        <p className="font-body-sm text-on-surface-variant">Send system announcements, alerts, and forced notices to users across Agro Connect.</p>
+        <p className="font-body-sm text-on-surface-variant">Send system announcements and alerts to users across Agro Connect. Users can always close them.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -189,7 +190,7 @@ export default function Broadcasts() {
               <div className="flex items-center gap-3">
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   onChange={handleImageChange}
                   className="bg-[#1c221e] border border-outline-variant rounded-xl p-2 text-body-sm text-on-surface-variant file:bg-surface-variant file:text-on-surface file:border-none file:px-3 file:py-1 file:rounded-lg file:cursor-pointer"
                 />
@@ -267,47 +268,6 @@ export default function Broadcasts() {
               )}
             </div>
 
-            {/* Action Type Selector */}
-            <div className="flex flex-col gap-2 border-t border-outline-variant/30 pt-3">
-              <label className="font-label-md text-on-surface-variant font-bold">Action / Dismiss Behavior</label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className={`flex flex-col gap-1 p-3 rounded-xl border cursor-pointer transition-colors ${
-                  actionType === 'dismissible'
-                    ? 'bg-primary-container/10 border-primary-container text-primary-container'
-                    : 'bg-[#1c221e] border-outline-variant/40 text-on-surface-variant'
-                }`}>
-                  <div className="flex items-center gap-2 font-bold text-body-sm">
-                    <input
-                      type="radio"
-                      name="actionType"
-                      checked={actionType === 'dismissible'}
-                      onChange={() => setActionType('dismissible')}
-                      className="accent-primary-container"
-                    />
-                    <span>Dismissible (Cancel)</span>
-                  </div>
-                  <span className="text-[11px] opacity-80">User sees a Cancel button and can close notice to continue.</span>
-                </label>
-
-                <label className={`flex flex-col gap-1 p-3 rounded-xl border cursor-pointer transition-colors ${
-                  actionType === 'forced'
-                    ? 'bg-error/10 border-error text-error'
-                    : 'bg-[#1c221e] border-outline-variant/40 text-on-surface-variant'
-                }`}>
-                  <div className="flex items-center gap-2 font-bold text-body-sm">
-                    <input
-                      type="radio"
-                      name="actionType"
-                      checked={actionType === 'forced'}
-                      onChange={() => setActionType('forced')}
-                      className="accent-error"
-                    />
-                    <span>Forced ("Leave App")</span>
-                  </div>
-                  <span className="text-[11px] opacity-80">User cannot dismiss. Only button is "Leave App" (force quit).</span>
-                </label>
-              </div>
-            </div>
 
             <button
               type="submit"

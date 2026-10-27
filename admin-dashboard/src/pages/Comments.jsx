@@ -3,8 +3,12 @@ import { supabase } from '../supabase';
 import PostDetailModal from '../components/PostDetailModal';
 import UserProfileModal from '../components/UserProfileModal';
 import defaultAvatar from '../assets/profile-placeholder.png';
+import InlineNotice from '../components/InlineNotice';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function Comments() {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
+  const [confirm, confirmDialog] = useConfirm();   // was window.confirm
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPostId, setSelectedPostId] = useState(null);
@@ -33,7 +37,7 @@ export default function Comments() {
 
   const handleDeleteComment = async (e, commentId) => {
     e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this comment?')) return;
+    if (!(await confirm({ title: 'Are you sure you want to delete this comment?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       const { data: deleted, error } = await supabase
         .from('comments')
@@ -56,12 +60,14 @@ export default function Comments() {
 
       fetchComments();
     } catch (err) {
-      alert(err.message || 'Error deleting comment');
+      setNotice({ type: 'error', text: err.message || 'Error deleting comment' });
     }
   };
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
+      {confirmDialog}
       <div>
         <h1 className="font-headline-xl text-on-surface mb-1">Comments Moderation</h1>
         <p className="font-body-sm text-on-surface-variant">Monitor and remove abusive or spam comments. Click post context to view the full thread, or user to view profile.</p>

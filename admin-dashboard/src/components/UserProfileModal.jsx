@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import defaultAvatar from '../assets/profile-placeholder.png';
+import InlineNotice from './InlineNotice';
 
 export default function UserProfileModal({ userId, onClose, onRefresh }) {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
   const [userProfile, setUserProfile] = useState(null);
   const [userPosts, setUserPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +77,7 @@ export default function UserProfileModal({ userId, onClose, onRefresh }) {
       fetchUserData();
       if (onRefresh) onRefresh();
     } catch (err) {
-      alert(`Error banning user: ${err.message}`);
+      setNotice({ type: 'error', text: `Error banning user: ${err.message}` });
     } finally {
       setActionLoading(false);
     }
@@ -102,7 +104,7 @@ export default function UserProfileModal({ userId, onClose, onRefresh }) {
       fetchUserData();
       if (onRefresh) onRefresh();
     } catch (err) {
-      alert(`Error unbanning user: ${err.message}`);
+      setNotice({ type: 'error', text: `Error unbanning user: ${err.message}` });
     } finally {
       setActionLoading(false);
     }
@@ -124,7 +126,7 @@ export default function UserProfileModal({ userId, onClose, onRefresh }) {
       if (onRefresh) onRefresh();
       onClose();
     } catch (err) {
-      alert(`Error deleting user: ${err.message}`);
+      setNotice({ type: 'error', text: `Error deleting user: ${err.message}` });
     } finally {
       setActionLoading(false);
     }
@@ -135,6 +137,7 @@ export default function UserProfileModal({ userId, onClose, onRefresh }) {
   return (
     <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="max-w-2xl w-full card-bg rounded-2xl border border-outline-variant p-6 flex flex-col gap-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <InlineNotice notice={notice} onClose={() => setNotice(null)} />
         
         {/* Header */}
         <div className="flex justify-between items-center border-b border-outline-variant/30 pb-4">

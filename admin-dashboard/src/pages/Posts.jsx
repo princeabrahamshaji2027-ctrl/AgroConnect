@@ -4,8 +4,12 @@ import { supabase } from '../supabase';
 import PostDetailModal from '../components/PostDetailModal';
 import UserProfileModal from '../components/UserProfileModal';
 import defaultAvatar from '../assets/profile-placeholder.png';
+import InlineNotice from '../components/InlineNotice';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function Posts() {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
+  const [confirm, confirmDialog] = useConfirm();   // was window.confirm
   const [posts, setPosts] = useState([]);
   const [districtFilter, setDistrictFilter] = useState('');   // '' = all, 'none' = not set
   const [loading, setLoading] = useState(true);
@@ -35,7 +39,7 @@ export default function Posts() {
 
   const handleDeletePost = async (e, postId) => {
     e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this post?')) return;
+    if (!(await confirm({ title: 'Are you sure you want to delete this post?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       const { data: deleted, error } = await supabase
         .from('posts')
@@ -58,12 +62,14 @@ export default function Posts() {
 
       fetchPosts();
     } catch (err) {
-      alert(err.message || 'Error deleting post');
+      setNotice({ type: 'error', text: err.message || 'Error deleting post' });
     }
   };
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
+      {confirmDialog}
       <div className="flex justify-between items-center gap-4 flex-wrap">
         <div>
           <h1 className="font-headline-xl text-on-surface mb-1">Posts Moderation</h1>

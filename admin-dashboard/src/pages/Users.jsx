@@ -3,8 +3,10 @@ import { supabase } from '../supabase';
 import UserProfileModal from '../components/UserProfileModal';
 import defaultAvatar from '../assets/profile-placeholder.png';
 import { DISTRICTS } from '../constants/districts';
+import InlineNotice from '../components/InlineNotice';
 
 export default function Users() {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,7 +55,7 @@ export default function Users() {
       setShowBanModal(false);
       fetchUsers();
     } catch (err) {
-      alert(err.message || 'Error banning user');
+      setNotice({ type: 'error', text: err.message || 'Error banning user' });
     }
   };
 
@@ -77,7 +79,7 @@ export default function Users() {
 
       fetchUsers();
     } catch (err) {
-      alert(err.message || 'Error unbanning user');
+      setNotice({ type: 'error', text: err.message || 'Error unbanning user' });
     }
   };
 
@@ -95,6 +97,7 @@ export default function Users() {
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-headline-xl text-on-surface mb-1">Users</h1>

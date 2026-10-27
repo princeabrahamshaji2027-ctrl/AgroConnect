@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import defaultAvatar from '../assets/profile-placeholder.png';
+import InlineNotice from '../components/InlineNotice';
 
 export default function Sellers() {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,12 +41,13 @@ export default function Sellers() {
       }
       fetchSellers();
     } catch (err) {
-      alert(err.message || 'Error updating seller status');
+      setNotice({ type: 'error', text: err.message || 'Error updating seller status' });
     }
   };
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
       <div>
         <h1 className="font-headline-xl text-on-surface mb-1">Sellers</h1>
         <p className="font-body-sm text-on-surface-variant">Review and manage marketplace seller shops and verification statuses.</p>

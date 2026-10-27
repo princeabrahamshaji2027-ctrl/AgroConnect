@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import defaultAvatar from '../assets/profile-placeholder.png';
 import { supabase } from '../supabase';
+import InlineNotice from '../components/InlineNotice';
 
 export default function Dashboard({ onTabChange }) {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -124,7 +126,7 @@ export default function Dashboard({ onTabChange }) {
       if (error) throw error;
       fetchDashboardData();
     } catch (err) {
-      alert(err.message || 'Error approving application');
+      setNotice({ type: 'error', text: err.message || 'Error approving application' });
     }
   };
 
@@ -134,7 +136,7 @@ export default function Dashboard({ onTabChange }) {
       if (error) throw error;
       fetchDashboardData();
     } catch (err) {
-      alert(err.message || 'Error rejecting application');
+      setNotice({ type: 'error', text: err.message || 'Error rejecting application' });
     }
   };
 
@@ -163,6 +165,7 @@ export default function Dashboard({ onTabChange }) {
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
       {/* Page Header */}
       <div className="flex justify-between items-end">
         <div>

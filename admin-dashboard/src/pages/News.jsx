@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { validateRequiredText } from '../utils/validation';
+import InlineNotice from '../components/InlineNotice';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function News() {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
+  const [confirm, confirmDialog] = useConfirm();   // was window.confirm
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -35,13 +39,13 @@ export default function News() {
 
     const titleVal = validateRequiredText(title, 'Announcement Title', 2, 150);
     if (!titleVal.isValid) {
-      alert(titleVal.error);
+      setNotice({ type: 'error', text: titleVal.error });
       return;
     }
 
     const contentVal = validateRequiredText(content, 'Announcement Text', 5, 5000);
     if (!contentVal.isValid) {
-      alert(contentVal.error);
+      setNotice({ type: 'error', text: contentVal.error });
       return;
     }
 
@@ -58,20 +62,22 @@ export default function News() {
       setContent('');
       fetchNews();
     } catch (err) {
-      alert(err.message || 'Error publishing news');
+      setNotice({ type: 'error', text: err.message || 'Error publishing news' });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this news item?')) return;
+    if (!(await confirm({ title: 'Delete this news item?', confirmLabel: 'Delete', danger: true }))) return;
     const { error } = await supabase.from('news').delete().eq('id', id);
     if (!error) fetchNews();
   };
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
+      {confirmDialog}
       <div>
         <h1 className="font-headline-xl text-on-surface mb-1">News & Announcements</h1>
         <p className="font-body-sm text-on-surface-variant">Publish news updates visible to all AgroConnect users.</p>

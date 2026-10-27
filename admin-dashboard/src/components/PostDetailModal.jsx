@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import defaultAvatar from '../assets/profile-placeholder.png';
+import InlineNotice from './InlineNotice';
+import { useConfirm } from './ConfirmDialog';
 
 export default function PostDetailModal({ postId, onClose, onUserClick, onRefresh }) {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
+  const [confirm, confirmDialog] = useConfirm();   // was window.confirm
   const [post, setPost] = useState(null);
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +44,7 @@ export default function PostDetailModal({ postId, onClose, onUserClick, onRefres
   }, [postId]);
 
   const handleDeleteComment = async (commentId) => {
-    if (!window.confirm('Delete this comment?')) return;
+    if (!(await confirm({ title: 'Delete this comment?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       const { data: deleted, error } = await supabase.from('comments').delete().eq('id', commentId).select('id');
       // RLS filters denied rows without an error, so confirm a row was really deleted
@@ -57,12 +61,12 @@ export default function PostDetailModal({ postId, onClose, onUserClick, onRefres
       fetchPostDetails();
       if (onRefresh) onRefresh();
     } catch (err) {
-      alert(`Error deleting comment: ${err.message}`);
+      setNotice({ type: 'error', text: `Error deleting comment: ${err.message}` });
     }
   };
 
   const handleDeletePost = async () => {
-    if (!window.confirm('Are you sure you want to delete this post?')) return;
+    if (!(await confirm({ title: 'Are you sure you want to delete this post?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       const { data: deleted, error } = await supabase.from('posts').delete().eq('id', postId).select('id');
       // RLS filters denied rows without an error, so confirm a row was really deleted
@@ -79,13 +83,15 @@ export default function PostDetailModal({ postId, onClose, onUserClick, onRefres
       if (onRefresh) onRefresh();
       onClose();
     } catch (err) {
-      alert(`Error deleting post: ${err.message}`);
+      setNotice({ type: 'error', text: `Error deleting post: ${err.message}` });
     }
   };
 
   return (
     <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="max-w-xl w-full card-bg rounded-2xl border border-outline-variant p-6 flex flex-col gap-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <InlineNotice notice={notice} onClose={() => setNotice(null)} />
+        {confirmDialog}
         <div className="flex justify-between items-center border-b border-outline-variant/30 pb-3">
           <h2 className="font-headline-lg text-on-surface flex items-center gap-2">
             <span className="material-symbols-outlined text-primary-container">article</span>

@@ -577,30 +577,6 @@ export default function App() {
             </p>
 
             <div style={{ display: 'flex', gap: '12px', marginTop: '8px', justifyContent: 'center' }}>
-              {broadcastModalData.action_type === 'forced' ? (
-                <button
-                  onClick={() => {
-                    if (window.Capacitor?.Plugins?.App) {
-                      window.Capacitor.Plugins.App.exitApp();
-                    } else {
-                      document.body.innerHTML = '<div style="background:#121212;color:white;height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;"><h2>App Closed by Administrator Announcement</h2></div>';
-                    }
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    borderRadius: '14px',
-                    backgroundColor: 'var(--error)',
-                    color: 'white',
-                    fontWeight: '700',
-                    border: 'none',
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Leave App
-                </button>
-              ) : (
                 <button
                   onClick={() => setBroadcastModalData(null)}
                   style={{
@@ -615,9 +591,8 @@ export default function App() {
                     cursor: 'pointer'
                   }}
                 >
-                  Cancel
+                  Close
                 </button>
-              )}
             </div>
           </div>
         </div>

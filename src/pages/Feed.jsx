@@ -8,6 +8,7 @@ import { validateRequiredText } from '../utils/validation';
 import { PostCardSkeleton, SkeletonGroup, LoadError } from '../components/Skeleton';
 import { supabase } from '../supabase';
 import './pages.css';
+import Dialog from '../components/Dialog';
 
 const formatTimeAgo = (dateStr) => {
   const date = new Date(dateStr);
@@ -450,8 +451,10 @@ export default function Feed({
     setPosts(prev => prev.map(p => p.id === selectedPost.id ? updatedPost : p));
   };
 
-  const handleDeleteComment = async (commentId, parentId = null) => {
-    if (!window.confirm('Delete comment permanently?')) return;
+  // Asks first (in-app dialog, not window.confirm); deleteCommentNow runs after "Delete".
+  const [commentToDelete, setCommentToDelete] = useState(null);
+  const handleDeleteComment = (commentId, parentId = null) => setCommentToDelete({ commentId, parentId });
+  const deleteCommentNow = async (commentId, parentId = null) => {
 
     // RLS silently filters rows it denies, so check that a row was actually removed.
     const { data: deletedRows, error } = await supabase
@@ -894,6 +897,14 @@ export default function Feed({
           </div>
         )}
       </BottomSheet>
+      <Dialog
+        isOpen={!!commentToDelete}
+        title="Delete comment?"
+        message="The comment is deleted permanently."
+        confirmText="Delete"
+        onCancel={() => setCommentToDelete(null)}
+        onConfirm={() => { const c = commentToDelete; setCommentToDelete(null); deleteCommentNow(c.commentId, c.parentId); }}
+      />
     </div>
   );
 }

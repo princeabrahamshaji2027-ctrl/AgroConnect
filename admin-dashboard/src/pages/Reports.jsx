@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import InlineNotice from '../components/InlineNotice';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function Reports() {
+  const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
+  const [confirm, confirmDialog] = useConfirm();   // was window.confirm
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('posts'); // 'posts' | 'resignations'
@@ -21,11 +25,11 @@ export default function Reports() {
   };
 
   const handleApproveResignation = async (r) => {
-    if (!window.confirm(`Approve ${r.profiles?.full_name || 'this expert'}'s request? Their expert badge and expert tools are removed, upcoming meetings are cancelled with a full refund and the farmers are notified.`)) return;
+    if (!(await confirm({ title: `Approve ${r.profiles?.full_name || 'this expert'}'s request?`, message: 'Their expert badge and expert tools are removed, upcoming meetings are cancelled with a full refund and the farmers are notified.', confirmLabel: 'Approve', danger: true }))) return;
     setBusy(r.id);
     const { error } = await supabase.rpc('approve_expert_resignation', { p_resignation_id: r.id });
     setBusy(null);
-    if (error) { alert(error.message); return; }
+    if (error) { setNotice({ type: 'error', text: error.message }); return; }
     fetchResignations();
   };
 
@@ -33,7 +37,7 @@ export default function Reports() {
     setBusy(rejecting.id);
     const { error } = await supabase.rpc('reject_expert_resignation', { p_resignation_id: rejecting.id, p_notes: rejectNotes || null });
     setBusy(null);
-    if (error) { alert(error.message); return; }
+    if (error) { setNotice({ type: 'error', text: error.message }); return; }
     setRejecting(null);
     setRejectNotes('');
     fetchResignations();
@@ -83,12 +87,14 @@ export default function Reports() {
       if (error) throw error;
       fetchReports();
     } catch (err) {
-      alert(err.message || 'Error resolving report');
+      setNotice({ type: 'error', text: err.message || 'Error resolving report' });
     }
   };
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
+      <InlineNotice notice={notice} onClose={() => setNotice(null)} />
+      {confirmDialog}
       <div>
         <h1 className="font-headline-xl text-on-surface mb-1">Reports Moderation</h1>
         <p className="font-body-sm text-on-surface-variant">Manage reports submitted by users and experts' requests to leave expert mode.</p>

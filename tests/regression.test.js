@@ -146,9 +146,8 @@ test('inline validation: no blocking alert()/confirm() popups in the user app pa
     for (const f of readdirSync(join(root, dir)).filter((n) => n.endsWith('.jsx'))) {
       const src = read(`${dir}/${f}`).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
       assert.doesNotMatch(src, /(^|[^.\w])(window\.)?alert\(/m, `${dir}/${f} uses alert()`);
-      // the only confirm() left is the deliberate "Delete comment permanently?" check before a destructive action
-      const confirms = src.match(/window\.confirm\(/g) || [];
-      assert.equal(confirms.length, f === 'Feed.jsx' ? 1 : 0, `${dir}/${f} uses confirm()`);
+      // deleting a comment now asks in an in-app Dialog too: no window.confirm() anywhere
+      assert.doesNotMatch(src, /window\.confirm\(/, `${dir}/${f} uses confirm()`);
     }
   }
 });
@@ -222,5 +221,32 @@ test('feed uses the district-priority server function; seed scripts have no defa
     const src = read(f);
     assert.match(src, /confirmProduction\(REFS\.production\)/, `${f}: production writes need the typed confirmation`);
     assert.match(src, /process\.stdin\.isTTY/, `${f}: never from a pipe or CI`);
+  }
+});
+
+test('no location tracking: the app never asks for GPS (district is chosen by the user)', () => {
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  assert.equal(pkg.dependencies?.['@capacitor/geolocation'], undefined);
+  for (const f of readdirSync(join(root, 'src'), { recursive: true }).filter((x) => /\.(jsx?|mjs)$/.test(x))) {
+    assert.doesNotMatch(readFileSync(join(root, 'src', f), 'utf8'), /Geolocation|getCurrentPosition/, f);
+  }
+  assert.doesNotMatch(readFileSync(join(root, 'android/app/src/main/AndroidManifest.xml'), 'utf8'), /LOCATION/);
+});
+
+test('admin broadcasts can always be closed (no forced "Leave App" screen)', () => {
+  const app = readFileSync(join(root, 'src/App.jsx'), 'utf8');
+  const modal = app.slice(app.indexOf('{broadcastModalData && ('));
+  assert.doesNotMatch(modal.slice(0, modal.indexOf('\n      )}')), /exitApp\(|Leave App/);   // (back twice to exit is fine)
+  assert.doesNotMatch(app, /document\.body\.innerHTML/);
+  assert.match(modal, /Close/);
+  assert.doesNotMatch(readFileSync(join(root, 'admin-dashboard/src/pages/Broadcasts.jsx'), 'utf8'), /setActionType\('forced'\)/);
+});
+
+test('no browser alert()/confirm() popups in the admin site or the app pages', () => {
+  for (const dir of ['admin-dashboard/src', 'src/pages', 'src/components']) {
+    for (const f of readdirSync(join(root, dir), { recursive: true }).filter((x) => /\.jsx?$/.test(x))) {
+      const src = readFileSync(join(root, dir, f), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      assert.doesNotMatch(src, /(?<![\w.])alert\(|window\.confirm\(/, `${dir}/${f}`);
+    }
   }
 });
