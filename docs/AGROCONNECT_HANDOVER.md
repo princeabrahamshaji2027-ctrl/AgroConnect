@@ -332,18 +332,20 @@ A Git-ignored credentials file has been created at:
 
 ## 11. Kerala Districts & Feed Prioritization
 
-For this phase, the application operates for Kerala across 4 permitted districts:
-* **Kannur**
-* **Pathanamthitta**
-* **Idukki**
-* **Kottayam**
+The launch districts are **Kannur, Pathanamthitta, Idukki and Kottayam** (owner decision 2026-10-27).
 
-### District-Prioritized Feed
-* When a farmer selects their district (e.g. Kannur), posts authored by users from Kannur appear first in their feed.
-* Posts from other districts follow in standard chronological order.
-* The district prompt modal automatically offers "Later" or allows selection upon registration.
+* Code: `src/utils/districts.js` and `admin-dashboard/src/constants/districts.js` (one list, used by every screen).
+* Database: CHECK constraints `profiles_district_check` / `posts_district_check`, sign-up trigger `handle_new_user`,
+  admin report `admin_district_stats` — migration 20 (three districts) + **migration 21 (adds Idukki)**.
+* Status: migration 21 is applied on **staging**; on **production it waits for the owner's approval** (until then the
+  production database still refuses `Idukki`, so the app's fourth choice would fail to save there).
 
----
+### District-Prioritized Feed (`public.get_feed`, migration 20)
+* The viewer's district is read on the server from their own profile (never sent by the app).
+* Posts from the viewer's district come first even when older; then all other posts, newest first; ties by post id.
+* Pages of 20 ("Load more posts") continue exactly where the previous page stopped (no repeats, no reordering).
+* A post's district is the author's district when it is posted, set by the server.
+* Users without a district see the plain newest-first feed and are asked once to choose ("Later" is allowed).
 
 ## 12. Environment Variable Names Reference
 
