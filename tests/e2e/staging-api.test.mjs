@@ -57,12 +57,17 @@ describe('staging: normal user (user1)', { skip }, () => {
   before(async () => { u = await signIn(fx('user1')); });
 
   test('loads own profile and persists an edit', async () => {
-    const bio = `e2e ${Date.now()}`;
-    const { error } = await u.c.from('profiles').update({ bio }).eq('id', u.uid);
-    assert.ifError(error);
-    const { data } = await u.c.from('profiles').select('bio, role').eq('id', u.uid).single();
-    assert.equal(data.bio, bio);
-    assert.equal(data.role, 'Farmer');
+    const { data: before } = await u.c.from('profiles').select('bio').eq('id', u.uid).single();
+    const bio = `Grows pepper and vegetables (${Date.now()})`;
+    try {
+      const { error } = await u.c.from('profiles').update({ bio }).eq('id', u.uid);
+      assert.ifError(error);
+      const { data } = await u.c.from('profiles').select('bio, role').eq('id', u.uid).single();
+      assert.equal(data.bio, bio);
+      assert.equal(data.role, 'Farmer');
+    } finally {
+      await u.c.from('profiles').update({ bio: before?.bio ?? null }).eq('id', u.uid);   // leave the profile as it was
+    }
   });
 
   test('cannot promote itself, forge notifications or call admin/scheduler functions', async () => {

@@ -37,3 +37,6 @@ delete from public.consultation_slots s
  where s.expert_id in (select e.id from public.experts e where e.user_id in (select id from _fx))
    and s.slot_date < current_date and not s.is_booked
    and not exists (select 1 from public.consultation_bookings b where b.slot_id = s.id);
+-- R6 test wording left in a test account's own profile fields (an older staging-api test wrote "e2e <time>" into bio)
+update public.profiles set bio = null where id in (select id from _fx) and bio ~* '(\me2e\M|\mtest\M|staging)';
+update public.profiles set location = null where id in (select id from _fx) and location ~* '(\me2e\M|\mtest\M|staging)';

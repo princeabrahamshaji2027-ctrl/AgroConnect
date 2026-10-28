@@ -311,3 +311,18 @@ It needs the 50 seed accounts, so it is **blocked until the staging service key 
 2. `node scripts/production/seed-feed.mjs --target staging` (dry run)
 3. `node scripts/production/seed-feed.mjs --target staging --execute`
 4. C5 staging and phone checks.
+
+### Phone test (2026-10-28, Nothing Phone (2), Android 16, staging APK 1.2-staging)
+- `scripts/staging/visible-text-audit.py` (new) reads every visible text on feed, search, Catch Up, chat and profile as
+  the test farmer and the test expert, and flags test-looking text.
+  - First run: 5 findings, all created by the same day's test runs: "E2E hello …" chats, "Meeting Cancelled: E2E
+    cleanup", and an "e2e <time>" bio written by `staging-api`. That test now restores the bio.
+  - A rule R6 (profile fields) was added to the clean-up SQL; after the clean-up, the audit is clean (10/10 screens).
+- `scripts/staging/device-smoke.py` with the renamed accounts: **19/19 PASS** on the first run. No ANR, no crash, the
+  production app is unchanged. Afterwards the clean-up removed the run's traffic (24 notifications, 3 chats, 2
+  bookings) and the audit was clean again.
+- The notifications screen was not reached by the audit (the bell's tap target was not found). Rows R2 remove all
+  test-account notifications anyway.
+- Still visible: the old staging post "Best Source of Protein / Almost 50g protine" by the test expert, with location
+  "Gill Village, Ludhiana, Punjab, India" (2026-10-25). It is not covered by the approved rules, so it was not deleted.
+- Feed and demo users: still blocked by the missing `STAGING_SUPABASE_SERVICE_ROLE_KEY`.
