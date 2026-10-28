@@ -225,7 +225,8 @@ test.describe('post media (staging)', () => {
   const publish = async (page, { kind, file, title }) => {
     await page.getByRole('button', { name: 'Floating action button' }).or(page.locator('.fab')).first().click();
     if (kind === 'video') await page.getByRole('button', { name: /videocam\s*video/i }).click();
-    if (file) await page.locator(`input[type=file][accept="${kind}/*"]`).setInputFiles(file);
+    const accept = kind === 'video' ? 'video/mp4,video/webm,video/quicktime' : 'image/jpeg,image/png,image/webp';
+    if (file) await page.locator(`input[type=file][accept="${accept}"]`).setInputFiles(file);
     await page.getByPlaceholder('e.g. Pest damage on Rice crop leaves').fill(`${tag} ${title}`);
     await page.locator('textarea').first().fill('Synthetic caption for the post media test');
     await page.getByRole('button', { name: 'Publish Post' }).click();
@@ -256,7 +257,7 @@ test.describe('post media (staging)', () => {
     // a photo picked as a video is refused before anything is uploaded
     await page.getByRole('button', { name: 'Floating action button' }).or(page.locator('.fab')).first().click();
     await page.getByRole('button', { name: /videocam\s*video/i }).click();
-    await page.locator('input[type=file][accept="video/*"]').setInputFiles({ name: 'photo.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not really a video') });
+    await page.locator('input[type=file][accept="video/mp4,video/webm,video/quicktime"]').setInputFiles({ name: 'photo.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not really a video') });
     await expect(page.getByText(/does not look like a video/)).toBeVisible();
 
     // media survives a reload
