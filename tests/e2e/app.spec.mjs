@@ -102,6 +102,39 @@ test.describe('authenticated (staging)', () => {
     await expect(page.getByText('Resume updated. The admin can now view it.')).toBeVisible({ timeout: 30_000 });
   });
 
+  test('expert1: Send an Announcement validates the form and sends it to the admin for approval', async ({ page }) => {
+    test.skip(!process.env.E2E_ADMIN_EMAIL || !process.env.STAGING_SUPABASE_URL, 'needs the staging admin account');
+    await login(page, fx('expert1'));
+    await nav(page, 'Catch Up').click();
+    await page.getByRole('button', { name: 'Expert Menu' }).click();
+    await page.getByText('Send an Announcement').click();
+    const form = page.getByTestId('expert-broadcast-form');
+    await expect(form).toBeVisible();
+    await page.getByRole('button', { name: 'Send for approval' }).click();
+    await expect(form.getByText('Please add a title (at least 2 characters).')).toBeVisible();
+    await expect(form.getByText('Please write the announcement (at least 5 characters).')).toBeVisible();
+    const title = `Monsoon drainage tip ${Date.now() % 100000}`;
+    await form.getByPlaceholder('e.g. Rhinoceros beetle alert').fill(title);
+    await form.getByPlaceholder('What should farmers know or do?').fill('Clear field channels before the heavy rain this week.');
+    await form.getByRole('button', { name: 'Farmers' }).click();
+    await page.getByRole('button', { name: 'Send for approval' }).click();
+    await expect(page.getByText('Announcement sent to the admin for approval.')).toBeVisible({ timeout: 20_000 });
+    // reopen: listed as waiting for the admin; then the admin rejects it and removes the test row
+    await page.getByRole('button', { name: 'Expert Menu' }).click();
+    await page.getByText('Send an Announcement').click();
+    await expect(page.getByTestId('my-broadcast').filter({ hasText: title })).toContainText('Waiting for admin');
+    const admin = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    await admin.auth.signInWithPassword({ email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD });
+    const { data: rows } = await admin.from('broadcasts').select('id, status, target_role').eq('title', title);
+    expect(rows).toEqual([expect.objectContaining({ status: 'pending', target_role: 'Farmer' })]);
+    await admin.rpc('review_broadcast', { p_broadcast_id: rows[0].id, p_approve: false, p_note: 'test run' });
+    const me = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    await me.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
+    await me.from('notifications').delete().eq('related_id', rows[0].id);
+    await admin.from('notifications').delete().eq('related_id', rows[0].id);
+    await admin.from('broadcasts').delete().eq('id', rows[0].id);
+  });
+
   test('expert1: Catch Up opens in expert mode with availability tools', async ({ page }) => {
     await login(page, fx('expert1'));
     await nav(page, 'Catch Up').click();
@@ -792,12 +825,12 @@ test.describe('districts 2026-10-26 (staging)', () => {
     await u4.from('profiles').update({ district: 'Idukki' }).eq('id', u4Id);   // keep the fixture's district
   });
 
-  test('feed says "Posts from Kottayam first" and the first card is a Kottayam post', async ({ page }) => {
+  test('the first card is a Kottayam post (no "first" banner; the order shows it)', async ({ page }) => {
     const r = await u1.from('posts').insert({ user_id: u1Id, caption: `E2E Kottayam post ${Date.now()}`, status: 'Approved' }).select('id').single();
     mine.push(r.data.id);
     await login(page, fx('user1'));
-    await expect(page.getByText('Posts from Kottayam first')).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.card:has(.post-card-header)').first()).toContainText('Kottayam');
+    await expect(page.locator('.card:has(.post-card-header)').first()).toContainText('Kottayam', { timeout: 20_000 });
+    await expect(page.getByText(/Posts from \w+ first/)).toHaveCount(0);
   });
 
   test('a user without a district is asked once; saving it reloads the feed with the new district first', async ({ page }) => {
@@ -808,7 +841,7 @@ test.describe('districts 2026-10-26 (staging)', () => {
     await expect(page.getByText('Please choose your district.')).toBeVisible();
     await page.getByLabel('District', { exact: true }).selectOption('Idukki');
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Posts from Idukki first')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Choose your district to see local posts first.')).toHaveCount(0, { timeout: 20_000 });
     expect((await u4.from('profiles').select('district').eq('id', u4Id).single()).data.district).toBe('Idukki');
   });
 });
@@ -840,17 +873,22 @@ test.describe('district feed: four districts + pagination (staging)', () => {
   test.afterAll(async () => { for (const [n, id] of mine) await C[n].from('posts').delete().eq('id', id); });
 
   for (const [n, d] of Object.entries(who)) {
-    test(`${d} user: "${d} first" and every local card comes before the first other-district card`, async ({ page }) => {
+    test(`${d} user: local posts first, and posts from all four districts are visible`, async ({ page }) => {
       await login(page, fx(n));
-      await expect(page.getByText(`Posts from ${d} first`)).toBeVisible({ timeout: 20_000 });
       const cards = page.locator('.card:has(.post-card-header)');
-      await expect(cards.first()).toContainText(d);
+      await expect(cards.first()).toContainText(d, { timeout: 20_000 });
+      await expect(page.getByText(/Posts from \w+ first/)).toHaveCount(0);
       const metas = await cards.locator('.post-card-meta').allTextContents();
       const isLocal = metas.map((m) => m.includes(d));
       const lastLocal = isLocal.lastIndexOf(true);
       const firstOther = isLocal.indexOf(false);
       expect(lastLocal).toBeGreaterThanOrEqual(0);
       if (firstOther > -1) expect(lastLocal).toBeLessThan(firstOther);   // no local card after another district's card
+      // visibility is never limited to the own district: after loading every page, all four districts are there
+      const more = page.getByRole('button', { name: 'Load more posts' });
+      for (let i = 0; i < 10 && await more.isVisible(); i++) { await more.click(); await page.waitForTimeout(1500); }
+      const all = (await cards.locator('.post-card-meta').allTextContents()).join(' | ');
+      for (const other of Object.values(who)) expect(all, `${other} missing for a ${d} user`).toContain(other);
     });
   }
 

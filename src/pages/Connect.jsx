@@ -5,6 +5,7 @@ import Dialog from '../components/Dialog';
 import BottomSheet from '../components/BottomSheet';
 import ExpertMenuSheet from '../components/ExpertMenuSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
+import ExpertBroadcastDialog from '../components/ExpertBroadcastDialog';
 import ResumeUploadDialog from '../components/ResumeUploadDialog';
 import DemoCheckout from '../components/DemoCheckout';
 import ConsultationFeeEditor from '../components/ConsultationFeeEditor';
@@ -325,6 +326,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   // Expert Menu & Leave Expert Mode states
   const [isMenuSheetOpen, setIsMenuSheetOpen] = useState(false);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isBroadcastDialogOpen, setIsBroadcastDialogOpen] = useState(false);
   const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
 
   // Meeting Detail Sheet & Cancellation states
@@ -388,7 +390,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
   // Database States & Calendar States
   const [expertsList, setExpertsList] = useState([]);
-  const [myDistrict, setMyDistrict] = useState(null);
   const [expertDistrictFilter, setExpertDistrictFilter] = useState('All');
   const [appointments, setAppointments] = useState([]);
   const [history, setHistory] = useState([]);
@@ -473,7 +474,6 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       if (seq !== loadSeqRef.current) return;
       const myExpert = meRes.data;
       const userProf = profRes.data;
-      setMyDistrict(userProf?.district || null);
       const farmerProfile = farmerRes.data;
 
       let activeExpertId = null;
@@ -553,11 +553,15 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         slotsGrouped[s.expert_id].push(s);
       });
       setAllExpertSlotsMap(slotsGrouped);
-      // Only experts with at least one open future slot are listed (no empty calendars); never yourself
+      // Every active (approved) expert from every district is listed — never yourself. Order: the user's own district
+      // first, then experts with open times, then by name (deterministic). Experts without open times are shown too,
+      // with "No open times yet" instead of a Book button, so a district is never hidden just because of the calendar.
       const hasUpcomingAvailability = (expertId) => (slotsGrouped[expertId] || []).some(isBookableSlot);
+      const myDistrictNow = userProf?.district || null;
       setExpertsList((expertsRes.data || [])
-        .filter(exp => exp.is_active !== false && exp.id !== activeExpertId && hasUpcomingAvailability(exp.id))
+        .filter(exp => exp.is_active !== false && exp.id !== activeExpertId && exp.profiles)
         .map(exp => ({
+          hasOpenTimes: hasUpcomingAvailability(exp.id),
           id: exp.id,
           userId: exp.user_id,
           name: exp.profiles?.full_name || 'Expert',
@@ -569,8 +573,12 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
           feePaise: exp.consultation_fee_paise,   // the expert's fee: the only price shown before checkout
           reviewCount: (Array.isArray(exp.reviews) ? exp.reviews[0]?.count : exp.reviews?.count) || 0
         }))
-        // experts from the user's own district first; otherwise the existing order (stable sort)
-        .sort((a, b) => Number(b.district != null && b.district === userProf?.district) - Number(a.district != null && a.district === userProf?.district)));
+        .sort((a, b) => {
+          const local = Number(b.district != null && b.district === myDistrictNow) - Number(a.district != null && a.district === myDistrictNow);
+          if (local) return local;
+          if (a.hasOpenTimes !== b.hasOpenTimes) return a.hasOpenTimes ? -1 : 1;
+          return a.name.localeCompare(b.name) || String(a.id).localeCompare(String(b.id));
+        }));
 
       setAppointments((upcomingRes.data || []).map(b => (activeExpertId ? {
         id: b.id,
@@ -677,6 +685,29 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep meetings current while this screen is open: every booking change (new booking, Meet link saved, cancelled,
+  // completed) notifies the other side, so reload on those and when the app comes back to the foreground.
+  const fetchDataRef = useRef(fetchData);
+  fetchDataRef.current = fetchData;
+  useEffect(() => {
+    let channel = null;
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled || !session?.user) return;
+      channel = supabase.channel(`catchup-bookings-${session.user.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${session.user.id}` },
+          (payload) => { if (payload.new?.type === 'booking') fetchDataRef.current(); })
+        .subscribe();
+    });
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchDataRef.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // Opened from a push notification: show that booking if it is still upcoming for this user (the list is loaded
@@ -1216,20 +1247,20 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               {['All', ...DISTRICTS].map((d) => (
                 <button key={d} type="button" className={`chip ${expertDistrictFilter === d ? 'active' : ''}`}
                   aria-pressed={expertDistrictFilter === d} onClick={() => setExpertDistrictFilter(d)}>
-                  {d === 'All' ? 'All districts' : d}{d !== 'All' && d === myDistrict ? ' (yours)' : ''}
+                  {d === 'All' ? 'All districts' : d}
                 </button>
               ))}
             </div>
             {listPlaceholder(ExpertCardSkeleton, 'Loading experts…')}
             {loadState === 'ready' && expertsList.length === 0 && (
               <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                No expert has open dates right now. Please check again later.
+                No verified experts yet. Please check again later.
               </div>
             )}
             {loadState === 'ready' && expertsList.length > 0 && expertDistrictFilter !== 'All'
               && !expertsList.some((e) => e.district === expertDistrictFilter) && (
               <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                No expert in {expertDistrictFilter} has open dates right now.
+                No verified expert in {expertDistrictFilter} yet.
               </div>
             )}
 
@@ -1274,6 +1305,9 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
 
                   {(() => {
                     const dates = [...new Set(expertSlots.filter(isBookableSlot).map(s => s.slot_date))].sort();
+                    if (!dates.length) {
+                      return <span data-testid="expert-no-times" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>No open times yet</span>;
+                    }
                     return (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
                         <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Available:</span>
@@ -1293,7 +1327,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
                       <strong>{exp.rating}</strong> ({exp.reviewCount} reviews)
                     </div>
                     
-                    {expandedExpertId !== exp.id && (
+                    {expandedExpertId !== exp.id && exp.hasOpenTimes && (
                       <Button 
                         onClick={() => {
                           // jump to the first month with an open slot, so the calendar never opens empty
@@ -2304,6 +2338,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         onMeetingHistory={() => setActiveSubTab('history')}
         onExpertProfile={() => setIsExpertProfileEditOpen(true)}
         onUpdateResume={() => setIsResumeDialogOpen(true)}
+        onSendAnnouncement={() => setIsBroadcastDialogOpen(true)}
         onLeaveExpertMode={() => setIsLeaveModalOpen(true)}
       />
 
@@ -2573,6 +2608,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         open={isResumeDialogOpen}
         onClose={() => setIsResumeDialogOpen(false)}
         onDone={() => { setIsResumeDialogOpen(false); onShowToast?.('✅ Resume updated. The admin can now view it.'); }}
+      />
+      <ExpertBroadcastDialog
+        isOpen={isBroadcastDialogOpen}
+        onClose={() => setIsBroadcastDialogOpen(false)}
+        onShowToast={onShowToast}
       />
       <LeaveExpertDialog
         isOpen={isLeaveModalOpen}

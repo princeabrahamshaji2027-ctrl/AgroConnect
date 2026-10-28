@@ -134,6 +134,15 @@ export default function Feed({
     setHasMore(rows.length === PAGE);
   };
 
+  // reload when the app/tab comes back to the front, so posts published meanwhile by anyone (any district) show up
+  // even if a realtime event was missed while the phone was asleep
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchPosts(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // reload when the user's district changes (district prompt / edit profile)
   useEffect(() => {
     if (feedVersion > 0) fetchPosts();
@@ -510,10 +519,7 @@ export default function Feed({
 
   const rightActions = (
     <>
-      <button className="feed-header-icon" onClick={onPeaAIClick} style={{ display: 'flex', marginRight: '6px' }}>
-        <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>eco</span>
-      </button>
-      <button className="feed-header-icon" onClick={onNotificationClick}>
+      <button className="feed-header-icon" onClick={onNotificationClick} aria-label="Notifications">
         <span className="material-symbols-outlined">notifications</span>
       </button>
     </>
@@ -585,20 +591,15 @@ export default function Feed({
           </div>
         )}
 
-        {loadState === 'ready' && (
+        {/* the order itself shows the district priority; only users without a district are asked to choose one */}
+        {loadState === 'ready' && !myDistrict && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 10px' }}>
-            {myDistrict ? (
-              <span><span className="material-symbols-outlined" style={{ fontSize: '14px', verticalAlign: 'middle', color: 'var(--primary-green)' }}>location_on</span> Posts from {myDistrict} first</span>
-            ) : (
-              <>
-                <span>Choose your district to see local posts first.</span>
-                {onChooseDistrict && (
-                  <button type="button" onClick={onChooseDistrict}
-                    style={{ background: 'transparent', border: '1px solid var(--primary-green)', color: 'var(--primary-green)', borderRadius: '12px', padding: '4px 10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
-                    Choose
-                  </button>
-                )}
-              </>
+            <span>Choose your district to see local posts first.</span>
+            {onChooseDistrict && (
+              <button type="button" onClick={onChooseDistrict}
+                style={{ background: 'transparent', border: '1px solid var(--primary-green)', color: 'var(--primary-green)', borderRadius: '12px', padding: '4px 10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                Choose
+              </button>
             )}
           </div>
         )}

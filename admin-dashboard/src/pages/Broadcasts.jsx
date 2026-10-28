@@ -27,7 +27,7 @@ export default function Broadcasts() {
       setLoading(true);
       const { data, error } = await supabase
         .from('broadcasts')
-        .select('*')
+        .select('*, sender:profiles!broadcasts_sent_by_fkey(full_name, role)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       setBroadcasts(data || []);
@@ -40,7 +40,40 @@ export default function Broadcasts() {
 
   useEffect(() => {
     fetchBroadcasts();
+    // an expert's submission notifies every admin (supabase/proposed/25); refresh the list when one arrives
+    let channel = null;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      channel = supabase.channel('admin-broadcast-reviews')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+          () => fetchBroadcasts())
+        .subscribe();
+    });
+    return () => { if (channel) supabase.removeChannel(channel); };
   }, []);
+
+  const pending = broadcasts.filter(b => b.status === 'pending');
+  const history = broadcasts.filter(b => b.status !== 'pending');
+  const [reviewingId, setReviewingId] = useState(null);
+  const [rejectNotes, setRejectNotes] = useState({});
+
+  const handleReview = async (b, approve) => {
+    const note = (rejectNotes[b.id] || '').trim();
+    if (!approve && note.length < 3) {
+      setNotice({ type: 'error', text: 'Please write a short reason for the expert (at least 3 characters).' });
+      return;
+    }
+    setReviewingId(b.id);
+    const { data, error } = await supabase.rpc('review_broadcast', { p_broadcast_id: b.id, p_approve: approve, p_note: approve ? null : note });
+    setReviewingId(null);
+    if (error) {
+      setNotice({ type: 'error', text: error.message });
+    } else {
+      setNotice({ type: 'success', text: approve ? `Approved and sent to ${data} users.` : 'Rejected. The expert has been told why.' });
+      setRejectNotes(prev => ({ ...prev, [b.id]: '' }));
+    }
+    fetchBroadcasts();
+  };
 
   // Search users when targetType is 'user' and input changes
   useEffect(() => {
@@ -288,30 +321,74 @@ export default function Broadcasts() {
         </div>
 
         {/* Broadcast History */}
-        <div className="lg:col-span-6 card-bg rounded-xl border border-outline-variant p-6 flex flex-col gap-4">
+        <div className="lg:col-span-6 flex flex-col gap-6">
+        <div data-testid="pending-broadcasts" className="card-bg rounded-xl border border-outline-variant p-6 flex flex-col gap-4">
+          <h2 className="font-headline-lg-mobile text-on-surface border-b border-outline-variant/30 pb-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary-container">pending_actions</span>
+            <span>Expert Announcements Waiting for Review ({pending.length})</span>
+          </h2>
+          {pending.length === 0 ? (
+            <div className="p-4 text-center text-on-surface-variant/50 text-body-sm">Nothing waiting. Experts' announcements appear here before anyone receives them.</div>
+          ) : pending.map(b => (
+            <div key={b.id} data-testid="pending-broadcast" className="bg-surface-variant/30 p-4 rounded-xl border border-primary-container/40 flex flex-col gap-2">
+              <div className="flex justify-between items-start gap-2">
+                <h3 className="font-bold text-on-surface text-body-sm">{b.title}</h3>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#F5A623]/20 text-[#F5A623]">pending</span>
+              </div>
+              <p className="text-on-surface-variant text-body-sm whitespace-pre-wrap">{b.message}</p>
+              <div className="text-[11px] text-on-surface-variant/70">
+                From <strong className="text-on-surface">{b.sender?.full_name || 'Expert'}</strong> · To {b.target_role ? `${b.target_role}s` : 'everyone'} · {new Date(b.created_at).toLocaleString()}
+              </div>
+              <input
+                type="text"
+                value={rejectNotes[b.id] || ''}
+                onChange={(e) => setRejectNotes(prev => ({ ...prev, [b.id]: e.target.value }))}
+                placeholder="Reason, if you reject it (sent to the expert)"
+                className="w-full bg-[#1c221e] border border-outline-variant rounded-xl px-3 py-2 text-on-surface text-body-sm focus:outline-none focus:border-primary-container"
+              />
+              <div className="flex gap-2">
+                <button type="button" disabled={reviewingId === b.id} onClick={() => handleReview(b, true)}
+                  className="flex-1 bg-primary-container text-on-primary-container font-semibold py-2 rounded-xl cursor-pointer disabled:opacity-50">
+                  Approve &amp; send
+                </button>
+                <button type="button" disabled={reviewingId === b.id} onClick={() => handleReview(b, false)}
+                  className="flex-1 bg-error/20 text-error font-semibold py-2 rounded-xl cursor-pointer disabled:opacity-50">
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="card-bg rounded-xl border border-outline-variant p-6 flex flex-col gap-4">
           <h2 className="font-headline-lg-mobile text-on-surface border-b border-outline-variant/30 pb-3">
-            Recent Sent Broadcasts ({broadcasts.length})
+            Recent Broadcasts ({history.length})
           </h2>
 
           {loading ? (
             <div className="flex items-center justify-center p-12">
               <span className="animate-spin h-8 w-8 border-4 border-primary-container border-t-transparent rounded-full" />
             </div>
-          ) : broadcasts.length === 0 ? (
+          ) : history.length === 0 ? (
             <div className="p-8 text-center text-on-surface-variant/50">No broadcasts sent yet</div>
           ) : (
             <div className="flex flex-col gap-3 max-h-[600px] overflow-y-auto pr-1">
-              {broadcasts.map(b => (
+              {history.map(b => (
                 <div key={b.id} className="bg-surface-variant/30 p-4 rounded-xl border border-outline-variant/30 flex flex-col gap-2">
                   <div className="flex justify-between items-start">
                     <h3 className="font-bold text-on-surface text-body-sm">{b.title}</h3>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      b.action_type === 'forced' ? 'bg-error/20 text-error' : 'bg-primary-container/20 text-primary-container'
+                      b.status === 'rejected' ? 'bg-error/20 text-error' : 'bg-primary-container/20 text-primary-container'
                     }`}>
-                      {b.action_type}
+                      {b.status === 'rejected' ? 'rejected' : 'sent'}
                     </span>
                   </div>
                   <p className="text-on-surface-variant text-body-sm line-clamp-2">{b.message}</p>
+                  {b.sender?.role === 'Expert' && (
+                    <span className="text-[11px] text-on-surface-variant/70">
+                      Written by expert {b.sender.full_name}{b.review_note ? ` · Reason: ${b.review_note}` : ''}
+                    </span>
+                  )}
                   <div className="flex justify-between items-center text-[11px] text-on-surface-variant/70 border-t border-outline-variant/20 pt-2 mt-1">
                     <span>Recipients: <strong className="text-on-surface">{b.recipient_count || 0} users</strong></span>
                     <span>{new Date(b.created_at).toLocaleString()}</span>
@@ -320,6 +397,7 @@ export default function Broadcasts() {
               ))}
             </div>
           )}
+        </div>
         </div>
 
       </div>

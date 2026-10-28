@@ -208,6 +208,27 @@ describe('21 — four launch districts', () => {
     assert.equal(stats.find((r) => r.district === 'Idukki').farmers, 2);
   });
 
+  test('a district with no local posts, and a user with no district, still see every other district', async () => {
+    const db = await setup21(); await fourDistricts(db);
+    // remove the only Kannur post: a Kannur viewer now has no local post at all
+    await db.query(`delete from public.posts where caption = 'kannur-1min'`);
+    const kannur = await feed(db, ids.farmerA);
+    assert.deepEqual(kannur.map((r) => r.district), ['Pathanamthitta', 'Idukki', 'Kottayam'], 'others, newest first');
+    assert.ok(kannur.every((r) => r.feed_rank === 1));
+    // a viewer without a district: everything, newest first (nothing hidden, nothing ranked first)
+    await setDistrict(db, ids.farmerA, null);
+    const none = await feed(db, ids.farmerA);
+    assert.deepEqual(none.map((r) => r.district), ['Pathanamthitta', 'Idukki', 'Kottayam']);
+    // a post whose author has no district is shown to everyone too (after the local group)
+    await setDistrict(db, ids.farmerB, null);
+    await post(db, ids.farmerB, 'no-district-post', 0);
+    for (const [d, viewer] of [['Idukki', ids.expertUser], ['Kottayam', ids.admin]]) {
+      const rows = await feed(db, viewer);
+      assert.equal(rows[0].district, d, `${d}: own first`);
+      assert.ok(rows.some((r) => r.caption === 'no-district-post'), `${d}: post without a district is visible`);
+    }
+  });
+
   test('21 is re-runnable', async () => {
     const db = await setup21(); await fourDistricts(db);
     const { applyProposed } = await import('./harness.mjs');

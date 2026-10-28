@@ -9,6 +9,7 @@ export default function ExpertMenuSheet({
   onMeetingHistory,
   onExpertProfile,
   onUpdateResume,
+  onSendAnnouncement,
   onLeaveExpertMode
 }) {
   if (!expertProfile) return null;
@@ -79,6 +80,18 @@ export default function ExpertMenuSheet({
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>upload_file</span>
               <span style={{ fontSize: '14px', fontWeight: '600' }}>Update Resume (PDF)</span>
+            </div>
+            <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
+          </div>
+
+          {/* Row 3c: Send an announcement (admin approves it first) */}
+          <div
+            onClick={() => { onClose(); onSendAnnouncement(); }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>campaign</span>
+              <span style={{ fontSize: '14px', fontWeight: '600' }}>Send an Announcement</span>
             </div>
             <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
           </div>

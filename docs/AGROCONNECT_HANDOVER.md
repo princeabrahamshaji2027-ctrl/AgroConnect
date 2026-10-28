@@ -46,7 +46,7 @@ AgroConnect is an agricultural digital platform connecting farmers with agricult
 |---|---|---|---|
 | **Admin Dashboard** | `https://agroconnect-h7nj.onrender.com/` | Pending Render manual rebuild (`1289b3e` on GitHub `main`) | `1289b3e` |
 | **Supabase Cloud** | `https://mgreapakfchcxcrauheq.supabase.co` | **Active & Healthy** (HTTP 200 on API endpoints with publishable key) | Live schema verified |
-| **Android Package** | `com.agroconnect.app` (v1.1, code 2) | Built debug APK ready for testing; production keystore needed for signed Play Store release | Commit `1289b3e` assets |
+| **Android Package** | `com.agroconnect.app` (v1.2, code 3) | Built debug APK ready for testing; production keystore needed for signed Play Store release | Commit `1289b3e` assets |
 
 ---
 
@@ -388,6 +388,29 @@ Never store values in version control. The application references these variable
 
 - **Admin Web Dashboard**: Built in `admin-dashboard/dist/`
 - **Mobile Web Bundle**: Built in `dist/`
-- **Android APK**: `android/app/build/outputs/apk/debug/app-debug.apk` (15 MB, versionCode 2, versionName 1.1)
+- **Android APK (production backend)**: `~/Desktop/AgroConnect-1.2-debug.apk` (15 MB, `com.agroconnect.app`, versionCode 3, versionName 1.2). Signed with the Android **debug** certificate only; not a release build.
+- **Android APK (staging backend)**: `~/Desktop/AgroConnect-1.2-staging-debug.apk` (`com.agroconnect.app.staging`, 1.2-staging, debug certificate). It installs next to the production app.
 - **Handover Document**: `docs/AGROCONNECT_HANDOVER.md`
+- **Production audit (2026-10-28)**: `docs/AGROCONNECT_PRODUCTION_AUDIT.md`
+- **Test matrix (2026-10-28)**: `docs/AGROCONNECT_TEST_MATRIX.md`
+
+---
+
+## 13. Changes on 2026-10-28 (final release round)
+
+- **Feed.** All four districts are shown, with the user's own district first. The "X first" banner is gone, and the feed
+  reloads when the app returns to the foreground.
+- **Catch Up.**
+  - Every verified expert is listed: local first, then experts with open times.
+  - An expert with no open times shows "No open times yet" and has no Book button.
+  - The screen reloads on booking notifications, so a Meet link saved by the expert appears without a manual refresh.
+- **Header.** The duplicate eco button beside the bell was removed.
+- **Expert announcements (migration 25).**
+  - Experts open ☰ → **Send an Announcement**. The announcement waits until an admin opens Broadcasts → **Expert
+    Announcements Waiting for Review**, then chooses **Approve & send** or **Reject** (a reason is required).
+  - Recipients can now open the announcement pop-up.
+  - Applied to **staging**. Production needs the owner's approval; until then the admin panel shows nothing pending and
+    the app shows the server's error if an expert tries to submit.
+- **Resumes.** Staging applications all have real PDFs. The 3 production rows without a valid PDF still need owner
+  approval and a production service key (see the audit, §5).
 

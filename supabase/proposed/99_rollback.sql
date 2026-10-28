@@ -68,6 +68,24 @@ drop function if exists public.protect_profile_privileged_columns();
 drop trigger if exists guard_experts_insert on public.experts;
 drop function if exists public.guard_experts_insert();
 
+-- ---- undo 25 (expert broadcasts with admin approval) ---------------------------------------------------------
+-- Pending/rejected expert rows are removed (they were never delivered); approved ones stay as ordinary broadcasts.
+do $u25$ begin
+  if to_regprocedure('public.review_broadcast(uuid,boolean,text)') is not null then
+    drop function public.review_broadcast(uuid, boolean, text);
+    drop function if exists public.submit_expert_broadcast(text, text, public.user_role);
+    drop policy if exists broadcasts_read_own_or_received on public.broadcasts;
+    delete from public.broadcasts where status <> 'approved';
+    drop index if exists public.broadcasts_pending_idx;
+    alter table public.broadcasts drop constraint if exists broadcasts_reviewed_by_fkey;
+    alter table public.broadcasts drop constraint if exists broadcasts_status_check;
+    alter table public.broadcasts drop column if exists review_note, drop column if exists reviewed_at,
+      drop column if exists reviewed_by, drop column if exists status;
+    alter table public.broadcasts drop constraint if exists broadcasts_sent_by_fkey;
+    alter table public.broadcasts add constraint broadcasts_sent_by_fkey foreign key (sent_by) references public.profiles(id);
+  end if;
+end $u25$;
+
 -- ---- undo 24 (expert removal, ban guards, server-attached resumes) -------------------------------------------
 -- Only where 24 was applied (_attach_resume exists). Restores the 09 / 15 / 05 bodies and the pre-24 live ban_user.
 do $u24$ begin

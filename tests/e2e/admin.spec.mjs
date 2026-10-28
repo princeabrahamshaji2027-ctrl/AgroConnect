@@ -266,3 +266,41 @@ test.describe('change list 2026-10-25 (staging)', () => {
     await expect(page.getByText('Reason for leaving')).toBeVisible();
   });
 });
+
+test.describe('expert announcements waiting for review (staging, migration 25)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL || !process.env.FIXTURE_PASSWORD, 'needs staging env');
+
+  test('a pending expert announcement is listed; reject needs a reason; it then moves to the history', async ({ page }) => {
+    const { createClient } = await import('@supabase/supabase-js');
+    const expert = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    await expert.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
+    const title = `Soil test camp ${Date.now() % 100000}`;
+    const { data: id, error } = await expert.rpc('submit_expert_broadcast',
+      { p_title: title, p_message: 'Free soil testing at the Krishi Bhavan on Saturday.', p_target_role: 'Farmer' });
+    expect(error).toBeNull();
+    try {
+      await page.goto('/');
+      await page.getByPlaceholder('admin@agroconnect.com').fill(process.env.E2E_ADMIN_EMAIL);
+      await page.locator('input[type=password]').fill(process.env.E2E_ADMIN_PASSWORD);
+      await page.getByText('Sign In to Dashboard').click();
+      await expect(page.getByText('Total Users')).toBeVisible({ timeout: 20_000 });
+      await page.getByText('Broadcasts', { exact: true }).first().click();
+      const card = page.getByTestId('pending-broadcast').filter({ hasText: title });
+      await expect(card).toBeVisible({ timeout: 15_000 });
+      await expect(card).toContainText('To Farmers');
+      await card.getByRole('button', { name: 'Reject' }).click();
+      await expect(page.getByText('Please write a short reason for the expert (at least 3 characters).')).toBeVisible();
+      await card.getByPlaceholder('Reason, if you reject it (sent to the expert)').fill('Please add the time of the camp');
+      await card.getByRole('button', { name: 'Reject' }).click();
+      await expect(page.getByText('Rejected. The expert has been told why.')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('pending-broadcast').filter({ hasText: title })).toHaveCount(0);
+      await expect(page.getByText('Reason: Please add the time of the camp')).toBeVisible();
+    } finally {
+      const admin = createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+      await admin.auth.signInWithPassword({ email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD });
+      await admin.from('notifications').delete().eq('related_id', id);
+      await expert.from('notifications').delete().eq('related_id', id);
+      await admin.from('broadcasts').delete().eq('id', id);
+    }
+  });
+});

@@ -162,3 +162,53 @@ describe('admin-create-user', { skip }, () => {
     assert.equal(status(await fn(admin.c, { email, full_name: 'Again' })), 409);
   });
 });
+
+describe('expert announcements need admin approval (migration 25)', { skip }, () => {
+  test('expert submits; farmers cannot see it; admin rejects with a reason, then approves another for experts', { timeout: 120_000 }, async () => {
+    const expert = await signIn(fx('expert1'));
+    const made = [];
+    try {
+      // farmers cannot submit, and nobody but an admin reviews
+      const f = await user1.c.rpc('submit_expert_broadcast', { p_title: 'Hello', p_message: 'Farmers cannot send this.' });
+      assert.match(f.error?.message || '', /Only verified experts/);
+      const bad = await expert.c.rpc('submit_expert_broadcast', { p_title: 'x', p_message: 'Too short title' });
+      assert.match(bad.error?.message || '', /Title must be 2 to 120/);
+
+      const one = await expert.c.rpc('submit_expert_broadcast', { p_title: 'Coconut mite advisory',
+        p_message: 'Spray neem oil 2% on young nuts this week.', p_target_role: null });
+      assert.equal(one.error, null); made.push(one.data);
+      assert.equal((await user1.c.from('broadcasts').select('id').eq('id', one.data)).data.length, 0, 'farmer cannot read a pending one');
+      assert.match((await user1.c.rpc('review_broadcast', { p_broadcast_id: one.data, p_approve: true })).error?.message || '',
+        /Admin privileges required/);
+      assert.match((await expert.c.rpc('review_broadcast', { p_broadcast_id: one.data, p_approve: true })).error?.message || '',
+        /Admin privileges required/);
+      const waiting = await admin.c.from('broadcasts').select('status, sender:profiles!broadcasts_sent_by_fkey(full_name)').eq('id', one.data).single();
+      assert.equal(waiting.data.status, 'pending');
+      assert.ok(waiting.data.sender.full_name);
+      const rej = await admin.c.rpc('review_broadcast', { p_broadcast_id: one.data, p_approve: false, p_note: 'Please add the dose per litre' });
+      assert.equal(rej.error, null); assert.equal(rej.data, 0);
+      const mine = await expert.c.from('broadcasts').select('status, review_note').eq('id', one.data).single();
+      assert.deepEqual(mine.data, { status: 'rejected', review_note: 'Please add the dose per litre' });
+
+      // approval for experts only (staging has a single expert: the test expert) reaches them as an announcement
+      const two = await expert.c.rpc('submit_expert_broadcast', { p_title: 'Expert meeting note',
+        p_message: 'Please keep your Meet links ready ten minutes early.', p_target_role: 'Expert' });
+      made.push(two.data);
+      const ok = await admin.c.rpc('review_broadcast', { p_broadcast_id: two.data, p_approve: true });
+      assert.equal(ok.error, null); assert.ok(ok.data >= 1);
+      const got = await expert.c.from('notifications').select('id').eq('related_id', two.data).eq('type', 'announcement');
+      assert.equal(got.data.length, 1);
+      assert.equal((await expert.c.from('broadcasts').select('title').eq('id', two.data).single()).data.title, 'Expert meeting note');
+      assert.equal((await user1.c.from('broadcasts').select('id').eq('id', two.data)).data.length, 0, 'not a recipient');
+      assert.match((await admin.c.rpc('review_broadcast', { p_broadcast_id: two.data, p_approve: true })).error?.message || '',
+        /already reviewed/);
+    } finally {
+      // the test's own rows: the expert's notifications about them, then the broadcasts (admin-only delete)
+      if (made.length) {
+        await expert.c.from('notifications').delete().in('related_id', made);
+        await admin.c.from('notifications').delete().in('related_id', made);
+        await admin.c.from('broadcasts').delete().in('id', made);
+      }
+    }
+  });
+});

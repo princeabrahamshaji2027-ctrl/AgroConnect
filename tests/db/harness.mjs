@@ -34,6 +34,7 @@ export const PROPOSED = {
   '22': 'supabase/proposed/22_storage_file_limits.sql',
   '23': 'supabase/proposed/23_numeric_ranges.sql',
   '24': 'supabase/proposed/24_expert_removal_and_resumes.sql',
+  '25': 'supabase/proposed/25_expert_broadcasts.sql',
   '99': 'supabase/proposed/99_rollback.sql',
 };
 export const ALL = ['01', '02', '03', '04', '05', '07', '08'];
