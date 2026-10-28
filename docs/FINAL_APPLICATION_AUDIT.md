@@ -70,4 +70,21 @@ The new app/admin code needs 1 and 2 first: without `submit-resume`, expert appl
 - The staging seed (50 demo users) is blocked until `STAGING_SUPABASE_SERVICE_ROLE_KEY` is in `.env.staging`.
 - The two broken production resumes (jacob, Anandh) wait for the experts (owner decision).
 - Old app versions (1.0/1.1) can no longer submit expert applications ("Please update the app").
-- Physical-device testing has not been done yet (phone checkpoint).
+- Physical device: done on 2026-10-28 (Nothing Phone (2), Android 16, staging APK 1.2). See "Phone test" below.
+
+## Phone test (Nothing Phone (2), Android 16, `com.agroconnect.app.staging` 1.2-staging)
+`scripts/staging/device-smoke.py` with the staging test accounts (user1 farmer, expert1 expert; the 50 demo users are not
+seeded yet):
+- **First full run: 18 of 19 checks passed.** The full consultation stopped at saving the Meet link: the sheet stayed
+  open, most likely a missed tap.
+- **Rerun 1** failed before starting: the phone had locked (empty screen reads).
+- **Rerun 2**, with the phone unlocked: **passed**. Booking → fee → Meet link → join at T-5 → completion → rating →
+  2 % admin record.
+- No ANR, no FATAL EXCEPTION. The production app (1.1) stayed unchanged; the script checks this.
+
+Launcher icon: on the phone the first icon clipped the "Agro Connect" text, because Nothing's circle mask is smaller
+than assumed. The logo is now scaled to fit Android's guaranteed 66 dp safe circle (46 %). Verified on the phone (App
+info shows the whole logo inside the circle).
+
+"Update Resume (PDF)" on the phone needs the system file picker, which the script does not drive. The same flow passed
+in the Playwright run against the staging build (a `.txt` file refused, a real PDF accepted).

@@ -8,7 +8,7 @@
 | Version | 1.2 (versionCode 3) | 1.2-staging (versionCode 3) |
 | Backend | production Supabase `mgreapakfchcxcrauheq` only | staging Supabase `ahkgvuewgbjyahbiehrx` only |
 | Location permission | none | none |
-| Launcher icon | new AgroConnect logo (adaptive: logo on white) | same |
+| Launcher icon | new AgroConnect logo (adaptive: whole logo inside the safe circle, on white) | same; verified on Nothing Phone (2) |
 
 The demo accounts exist only on **staging** (after the staging seed), so the phone test uses the **staging APK**.
 

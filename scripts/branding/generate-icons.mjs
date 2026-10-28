@@ -56,12 +56,17 @@ async function render(size, { scale, background = 'transparent', circle = false 
 }
 const save = async (url, size, opts) => writeFileSync(url, Buffer.from(await render(size, opts), 'base64'));
 
+// Launchers mask the adaptive icon to a shape that always contains the centre circle of 66 dp on the 108 dp canvas
+// (Nothing OS uses a circle close to that). The whole artwork, corners included, must fit inside it, so the scale of the
+// longest side is 66/108 divided by the artwork's diagonal factor (the wide "Agro Connect" line was clipped at 61 %).
+const diag = Math.hypot(1, Math.min(box.bw, box.bh) / Math.max(box.bw, box.bh));
+const SAFE_SCALE = Math.floor((66 / 108 / diag) * 100) / 100;       // ≈ 0.46 for this logo
+const ROUND_SCALE = Math.floor((0.92 / diag) * 100) / 100;          // legacy round icon: inside the circle, small margin
 const written = [];
 for (const [d, m] of Object.entries(DENSITIES)) {
   await save(res(d, 'ic_launcher.png'), Math.round(48 * m), { scale: 0.8, background: BACKGROUND });
-  await save(res(d, 'ic_launcher_round.png'), Math.round(48 * m), { scale: 0.72, background: BACKGROUND, circle: true });
-  // adaptive foreground: 108 dp canvas, only the inner 72 dp (66.7 %) is guaranteed visible → 61 %
-  await save(res(d, 'ic_launcher_foreground.png'), Math.round(108 * m), { scale: 0.61 });
+  await save(res(d, 'ic_launcher_round.png'), Math.round(48 * m), { scale: ROUND_SCALE, background: BACKGROUND, circle: true });
+  await save(res(d, 'ic_launcher_foreground.png'), Math.round(108 * m), { scale: SAFE_SCALE });
   written.push(`mipmap-${d}/ic_launcher.png`, `mipmap-${d}/ic_launcher_round.png`, `mipmap-${d}/ic_launcher_foreground.png`);
 }
 await save(new URL('public/logo.png', ROOT), 512, { scale: 1 });
@@ -74,5 +79,6 @@ writeFileSync(new URL('android/app/src/main/res/values/ic_launcher_background.xm
 copyFileSync(new URL('logo.svg', ROOT), new URL('public/favicon.svg', ROOT));
 copyFileSync(new URL('logo.svg', ROOT), new URL('admin-dashboard/public/favicon.svg', ROOT));
 written.push('values/ic_launcher_background.xml', 'public/favicon.svg', 'admin-dashboard/public/favicon.svg');
+console.log(`foreground scale ${SAFE_SCALE}, round scale ${ROUND_SCALE}`);
 console.log(`logo.svg ${box.w}×${box.h}; visible artwork ${Math.round(box.bw)}×${Math.round(box.bh)} at (${Math.round(box.x)}, ${Math.round(box.y)})`);
 console.log(written.join('\n'));
