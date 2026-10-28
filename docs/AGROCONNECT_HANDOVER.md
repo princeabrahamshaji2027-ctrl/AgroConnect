@@ -337,8 +337,8 @@ The launch districts are **Kannur, Pathanamthitta, Idukki and Kottayam** (owner 
 * Code: `src/utils/districts.js` and `admin-dashboard/src/constants/districts.js` (one list, used by every screen).
 * Database: CHECK constraints `profiles_district_check` / `posts_district_check`, sign-up trigger `handle_new_user`,
   admin report `admin_district_stats` — migration 20 (three districts) + **migration 21 (adds Idukki)**.
-* Status: migration 21 is applied on **staging**; on **production it waits for the owner's approval** (until then the
-  production database still refuses `Idukki`, so the app's fourth choice would fail to save there).
+* Status: migrations 21, 22 (upload limits) and 23 (number ranges) are applied on **staging and production**
+  (production 2026-10-28; function fingerprints match staging).
 
 ### District-Prioritized Feed (`public.get_feed`, migration 20)
 * The viewer's district is read on the server from their own profile (never sent by the app).
