@@ -11,8 +11,8 @@ android {
         applicationId "com.agroconnect.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.1"
+        versionCode 3
+        versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [appLabel: "@string/app_name", activityLabel: "@string/title_activity_main"]
         if (agroStaging) {

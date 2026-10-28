@@ -163,11 +163,9 @@ test.describe('change list 2026-10-25 (staging)', () => {
     }
   });
 
-  test('districts: dashboard overview, users and posts filter by district', async ({ page }) => {
+  test('districts: no District Overview card; users and posts filter by district', async ({ page }) => {
     await signIn(page);
-    const overview = page.getByTestId('district-stats');
-    await expect(overview).toBeVisible({ timeout: 15_000 });
-    for (const d of ['Kannur', 'Pathanamthitta', 'Idukki', 'Kottayam', 'Not set']) await expect(overview.getByText(d, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('district-stats')).toHaveCount(0);
     await page.getByText('Users', { exact: true }).first().click();
     await expect(page.getByRole('columnheader', { name: 'District' })).toBeVisible();
     await page.getByLabel('District').selectOption('Kannur');
@@ -217,6 +215,45 @@ test.describe('change list 2026-10-25 (staging)', () => {
     await expect(dialog.getByText('Please enter a cancellation reason.')).toBeVisible();
     await dialog.getByRole('button', { name: 'Keep booking' }).click();
     await expect(dialog.getByRole('button', { name: 'Cancel consultation' })).toBeVisible();
+  });
+
+  test('users: role filter; own row and admin rows have no actions; Add user form validates', async ({ page }) => {
+    await signIn(page);
+    await page.getByText('Users', { exact: true }).first().click();
+    await page.getByLabel('Role').selectOption('Expert');
+    const rows = page.locator('tbody tr');
+    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    for (const t of await rows.locator('td:nth-child(3)').allTextContents()) expect(t.trim()).toBe('Expert');
+    await expect(page.getByRole('button', { name: 'Remove expert role' }).first()).toBeVisible();
+    await page.getByLabel('Role').selectOption('Admin');
+    await expect(rows.first()).toBeVisible();
+    await expect(page.locator('tbody').getByRole('button')).toHaveCount(0);
+    await page.getByLabel('Role').selectOption('');
+    await page.getByRole('button', { name: 'Add user' }).click();
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await expect(page.getByText('Enter a valid e-mail address.')).toBeVisible();
+    await expect(page.getByText('Enter the full name (2–100 characters).')).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+  });
+
+  test('remove expert role shows a preview first (cancel leaves the expert unchanged)', async ({ page }) => {
+    await signIn(page);
+    await page.getByText('Users', { exact: true }).first().click();
+    await page.getByLabel('Role').selectOption('Expert');
+    await page.getByRole('button', { name: 'Remove expert role' }).first().click();
+    await expect(page.getByRole('heading', { name: /expert role\?$/ })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Their account, profile, posts, messages, past consultations/)).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.locator('tbody tr').first()).toBeVisible();
+  });
+
+  test('dashboard has no horizontal scroll at phone and desktop widths', async ({ page }) => {
+    await signIn(page);
+    for (const [width, height] of [[390, 844], [768, 1024], [1280, 800]]) {
+      await page.setViewportSize({ width, height });
+      await expect(page.getByText('Total Users')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${width}px`).toBe(true);
+    }
   });
 
   test('experts: verified experts have a Remove expert action; reports has the expert leave requests tab', async ({ page }) => {

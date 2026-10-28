@@ -25,9 +25,16 @@ export default function Reports() {
   };
 
   const handleApproveResignation = async (r) => {
-    if (!(await confirm({ title: `Approve ${r.profiles?.full_name || 'this expert'}'s request?`, message: 'Their expert badge and expert tools are removed, upcoming meetings are cancelled with a full refund and the farmers are notified.', confirmLabel: 'Approve', danger: true }))) return;
+    if (!(await confirm({ title: `Approve ${r.profiles?.full_name || 'this expert'}'s request?`, message: 'Their expert badge and expert tools are removed. Past meetings and reviews are kept.', confirmLabel: 'Approve', danger: true }))) return;
     setBusy(r.id);
-    const { error } = await supabase.rpc('approve_expert_resignation', { p_resignation_id: r.id });
+    let { error } = await supabase.rpc('approve_expert_resignation', { p_resignation_id: r.id });
+    // upcoming consultations are cancelled only after a second, explicit confirmation
+    if (error?.hint === 'upcoming_bookings') {
+      setBusy(null);
+      if (!(await confirm({ title: 'Cancel upcoming consultations?', message: error.message, confirmLabel: 'Cancel them and approve', danger: true }))) return;
+      setBusy(r.id);
+      ({ error } = await supabase.rpc('approve_expert_resignation', { p_resignation_id: r.id, p_cancel_upcoming: true }));
+    }
     setBusy(null);
     if (error) { setNotice({ type: 'error', text: error.message }); return; }
     fetchResignations();

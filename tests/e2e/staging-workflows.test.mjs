@@ -5,6 +5,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { demoResumePdf } from '../../scripts/production/demo-resume.mjs';
 import { demoBook } from './demo-booking.mjs';
 
 const envFile = new URL('../../.env.staging', import.meta.url);
@@ -55,9 +56,16 @@ describe('roles and admin', { skip }, () => {
   });
 
   test('expert application: user cannot self-approve or self-create expert; admin approval works; admin demotion works', async () => {
-    const app = await A.user3.c.from('expert_applications')
-      .insert({ user_id: A.user3.uid, qualification: 'B.Sc', experience: '3 years', cv_file_path: `${A.user3.uid}/cv.pdf` }).select('id').single();
-    assert.ifError(app.error);
+    // 24: applications are only created by the server after the resume is checked (submit-resume); a direct insert is refused
+    const direct = await A.user3.c.from('expert_applications').insert({ user_id: A.user3.uid, qualification: 'B.Sc', experience: '3 years' });
+    assert.ok(direct.error, 'direct application insert accepted');
+    const cvPath = `${A.user3.uid}/${Date.now()}_cv.pdf`;
+    assert.ifError((await A.user3.c.storage.from('expert-cvs').upload(cvPath,
+      new Blob([demoResumePdf({ name: 'User 3', district: 'Kannur', specialization: 'staging' })], { type: 'application/pdf' }),
+      { contentType: 'application/pdf' })).error);
+    const sub = await A.user3.c.functions.invoke('submit-resume', { body: { action: 'apply', path: cvPath, qualification: 'B.Sc', experience: '3 years' } });
+    assert.ifError(sub.error);
+    const app = { data: { id: sub.data.application_id } };
     const self = await A.user3.c.from('expert_applications').update({ status: 'Approved' }).eq('id', app.data.id).select('id');
     assert.ok(self.error || self.data.length === 0, 'self-approved');
     const selfExpert = await A.user3.c.from('experts').insert({ user_id: A.user3.uid });
@@ -91,6 +99,7 @@ describe('roles and admin', { skip }, () => {
 
     // restore fixture: remove the request rows (user3 is already back to Farmer)
     assert.ifError((await A.admin.c.from('expert_applications').delete().eq('id', app.data.id)).error);
+    await A.user3.c.storage.from('expert-cvs').remove([cvPath]);
     await A.admin.c.from('expert_resignations').delete().eq('user_id', A.user3.uid);
   });
 

@@ -87,6 +87,20 @@ test.describe('authenticated (staging)', () => {
     await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
   });
 
+  test('expert1: Update Resume (PDF) refuses a non-PDF and accepts a real PDF', async ({ page }) => {
+    await login(page, fx('expert1'));
+    await nav(page, 'Catch Up').click();
+    await page.getByRole('button', { name: 'Expert Menu' }).click();
+    await page.getByText('Update Resume (PDF)').click();
+    const input = page.getByTestId('resume-input');
+    await input.setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not a resume') });
+    await expect(page.getByRole('alert')).toContainText(/PDF/);
+    const { demoResumePdf } = await import('../../scripts/production/demo-resume.mjs');
+    await input.setInputFiles({ name: 'resume.pdf', mimeType: 'application/pdf', buffer: demoResumePdf({ name: 'Ramesh Expert', district: 'Kannur', specialization: 'e2e' }) });
+    await page.getByRole('button', { name: 'Upload', exact: true }).click();
+    await expect(page.getByText('Resume updated. The admin can now view it.')).toBeVisible({ timeout: 30_000 });
+  });
+
   test('expert1: Catch Up opens in expert mode with availability tools', async ({ page }) => {
     await login(page, fx('expert1'));
     await nav(page, 'Catch Up').click();

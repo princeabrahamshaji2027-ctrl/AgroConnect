@@ -3,7 +3,12 @@ import { supabase } from '../supabase';
 import UserProfileModal from '../components/UserProfileModal';
 import defaultAvatar from '../assets/profile-placeholder.png';
 import { DISTRICTS } from '../constants/districts';
-import InlineNotice from '../components/InlineNotice';
+import InlineNotice, { FieldError } from '../components/InlineNotice';
+import ConfirmDialog from '../components/ConfirmDialog';
+import RemoveExpertDialog from '../components/RemoveExpertDialog';
+
+const ROLES = ['Farmer', 'Expert', 'Admin', 'Seller'];
+const EMPTY_NEW_USER = { email: '', full_name: '', district: '' };
 
 export default function Users() {
   const [notice, setNotice] = useState(null);   // in-page message (was window.alert)
@@ -15,6 +20,14 @@ export default function Users() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [banReason, setBanReason] = useState('');
   const [viewingProfileUserId, setViewingProfileUserId] = useState(null);
+  const [roleFilter, setRoleFilter] = useState('');           // '' = all roles
+  const [myId, setMyId] = useState(null);                     // the signed-in admin: no actions on their own row
+  const [removeExpertId, setRemoveExpertId] = useState(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newUser, setNewUser] = useState(EMPTY_NEW_USER);
+  const [newUserErrors, setNewUserErrors] = useState({});
+  const [adding, setAdding] = useState(false);
+  const [setupLink, setSetupLink] = useState(null);           // shown once after creating an account; never stored
 
   const fetchUsers = async () => {
     try {
@@ -35,6 +48,7 @@ export default function Users() {
 
   useEffect(() => {
     fetchUsers();
+    supabase.auth.getUser().then(({ data }) => setMyId(data?.user?.id ?? null));
   }, []);
 
   const handleBanClick = (e, user) => {
@@ -61,29 +75,42 @@ export default function Users() {
 
   const handleUnbanUser = async (e, userId) => {
     e.stopPropagation();
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ is_banned: false, ban_reason: null, banned_at: null })
-        .eq('id', userId);
-
-      if (error) throw error;
-
-      await supabase.from('admin_audit_log').insert({
-        admin_id: (await supabase.auth.getUser()).data.user?.id,
-        action: 'unban_user',
-        target_table: 'profiles',
-        target_id: userId,
-        details: { reason: 'Manually unbanned by administrator' }
-      });
-
-      fetchUsers();
-    } catch (err) {
-      setNotice({ type: 'error', text: err.message || 'Error unbanning user' });
-    }
+    const { error } = await supabase.rpc('unban_user', { p_user_id: userId });
+    if (error) { setNotice({ type: 'error', text: error.message || 'Error unbanning user' }); return; }
+    setNotice({ type: 'success', text: 'The account is unbanned.' });
+    fetchUsers();
   };
 
+  // Admin-created accounts are always normal users; the admin gets a one-time link for the user to set a password.
+  const handleAddUser = async () => {
+    const errs = {};
+    const email = newUser.email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) errs.email = 'Enter a valid e-mail address.';
+    if (newUser.full_name.trim().length < 2 || newUser.full_name.trim().length > 100) errs.full_name = 'Enter the full name (2–100 characters).';
+    setNewUserErrors(errs);
+    if (Object.keys(errs).length) return;
+    setAdding(true);
+    const { data, error } = await supabase.functions.invoke('admin-create-user', {
+      body: { email, full_name: newUser.full_name.trim(), district: newUser.district || null },
+    });
+    setAdding(false);
+    if (error) {
+      let msg = 'The account could not be created. Please try again.';
+      let status = 0;
+      try { status = error.context?.status; msg = (await error.context.json())?.error || msg; } catch { /* keep default */ }
+      if (status === 409) setNewUserErrors({ email: 'An account with this e-mail already exists.' });
+      else setNewUserErrors({ form: msg });
+      return;
+    }
+    setAddOpen(false);
+    setNewUser(EMPTY_NEW_USER);
+    setSetupLink(data?.setup_link || '');
+    fetchUsers();
+  };
+
+
   const filteredUsers = users.filter(user => {
+    if (roleFilter && user.role !== roleFilter) return false;
     const term = searchQuery.toLowerCase();
     if (districtFilter === 'none' ? !!user.district : districtFilter && user.district !== districtFilter) return false;
     return (
@@ -104,6 +131,22 @@ export default function Users() {
           <p className="font-body-sm text-on-surface-variant">Manage Agro Connect user accounts, view profiles, and handle bans.</p>
         </div>
         <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => { setNewUser(EMPTY_NEW_USER); setNewUserErrors({}); setAddOpen(true); }}
+          className="bg-primary-container text-on-primary-container font-semibold px-4 py-2 rounded-lg font-label-md cursor-pointer whitespace-nowrap"
+        >
+          Add user
+        </button>
+        <select
+          aria-label="Role"
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="bg-[#171A1D] border border-outline-variant rounded-lg px-3 py-2 text-on-surface text-body-sm"
+        >
+          <option value="">All roles</option>
+          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
         <select
           aria-label="District"
           value={districtFilter}
@@ -192,7 +235,19 @@ export default function Users() {
                         </span>
                       )}
                     </td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right whitespace-nowrap">
+                      {user.id === myId || user.role === 'Admin' ? (
+                        <span className="text-on-surface-variant/50">—</span>
+                      ) : (
+                      <div className="inline-flex items-center gap-2 justify-end">
+                      {user.role === 'Expert' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setRemoveExpertId(user.id); }}
+                          className="bg-surface-variant text-on-surface hover:bg-surface-variant/70 border border-outline-variant px-3 py-1.5 rounded font-label-sm transition-colors cursor-pointer"
+                        >
+                          Remove expert role
+                        </button>
+                      )}
                       {user.is_banned ? (
                         <button
                           onClick={(e) => handleUnbanUser(e, user.id)}
@@ -207,6 +262,8 @@ export default function Users() {
                         >
                           Ban User
                         </button>
+                      )}
+                      </div>
                       )}
                     </td>
                   </tr>
@@ -264,6 +321,57 @@ export default function Users() {
           </div>
         </div>
       )}
+      <RemoveExpertDialog
+        userId={removeExpertId}
+        onClose={() => setRemoveExpertId(null)}
+        onDone={(r) => { setRemoveExpertId(null); setNotice({ type: 'success', text: r.text }); fetchUsers(); }}
+      />
+
+      <ConfirmDialog
+        open={addOpen}
+        busy={adding}
+        title="Add user"
+        message="Creates a normal user account. Expert status comes only from an approved application."
+        confirmLabel="Create account"
+        onConfirm={handleAddUser}
+        onCancel={() => { if (!adding) setAddOpen(false); }}
+      >
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+            E-mail
+            <input type="email" aria-label="E-mail" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              className="bg-[#171A1D] border border-outline-variant rounded-lg px-3 py-2 text-on-surface" />
+            <FieldError message={newUserErrors.email} />
+          </label>
+          <label className="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+            Full name
+            <input type="text" aria-label="Full name" maxLength={100} value={newUser.full_name} onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
+              className="bg-[#171A1D] border border-outline-variant rounded-lg px-3 py-2 text-on-surface" />
+            <FieldError message={newUserErrors.full_name} />
+          </label>
+          <label className="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+            District (optional)
+            <select aria-label="New user district" value={newUser.district} onChange={(e) => setNewUser({ ...newUser, district: e.target.value })}
+              className="bg-[#171A1D] border border-outline-variant rounded-lg px-3 py-2 text-on-surface">
+              <option value="">Not set</option>
+              {DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
+          <FieldError message={newUserErrors.form} />
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={setupLink !== null}
+        title="Account created"
+        message={setupLink ? 'Send this one-time link to the user so they can set their password. It expires in 1 hour.' : 'The account was created, but no set-up link could be made. The user can use "Forgot password" on the login screen.'}
+        confirmLabel="Done"
+        cancelLabel="Copy link"
+        onConfirm={() => setSetupLink(null)}
+        onCancel={() => { if (setupLink) navigator.clipboard?.writeText(setupLink); }}
+      >
+        {setupLink && <textarea readOnly aria-label="Set-up link" value={setupLink} rows={3} className="w-full bg-[#171A1D] border border-outline-variant rounded-lg p-2 text-[12px] text-on-surface" />}
+      </ConfirmDialog>
     </div>
   );
 }

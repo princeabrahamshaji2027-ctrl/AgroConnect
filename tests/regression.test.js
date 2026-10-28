@@ -250,3 +250,30 @@ test('no browser alert()/confirm() popups in the admin site or the app pages', (
     }
   }
 });
+
+test('resumes go through the server check: no direct application insert, the path is always .pdf', () => {
+  const src = read('src/pages/UserProfile.jsx');
+  assert.doesNotMatch(src, /from\('expert_applications'\)\s*\.insert\(/);
+  assert.doesNotMatch(src, /cvFile\.name\.split\('\.'\)/);
+  assert.match(src, /functions\.invoke\('submit-resume'/);
+  assert.match(src, /_cv\.pdf`/);
+  assert.match(read('src/components/ResumeUploadDialog.jsx'), /action: 'replace'/);
+});
+
+test('admin: no District Overview card; unban and role changes go through server functions', () => {
+  assert.doesNotMatch(read('admin-dashboard/src/pages/Dashboard.jsx'), /district-stats|admin_district_stats/);
+  const users = read('admin-dashboard/src/pages/Users.jsx');
+  assert.doesNotMatch(users, /from\('profiles'\)\s*\.update\(/);
+  assert.match(users, /rpc\('unban_user'/);
+  assert.match(read('admin-dashboard/src/components/RemoveExpertDialog.jsx'), /admin_expert_removal_preview[\s\S]*p_cancel_upcoming/);
+});
+
+test('branding: launcher icons, logo PNGs and favicons come from logo.svg', () => {
+  assert.ok(existsSync(join(root, 'logo.svg')));
+  for (const d of ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) for (const f of ['ic_launcher', 'ic_launcher_round', 'ic_launcher_foreground']) {
+    assert.ok(existsSync(join(root, `android/app/src/main/res/mipmap-${d}/${f}.png`)), `${d}/${f}`);
+  }
+  assert.equal(read('public/favicon.svg'), read('logo.svg'));
+  assert.equal(read('admin-dashboard/public/favicon.svg'), read('logo.svg'));
+  assert.match(read('admin-dashboard/index.html'), /rel="icon"[^>]*favicon\.svg/);
+});

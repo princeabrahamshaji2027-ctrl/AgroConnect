@@ -14,18 +14,19 @@ const TOWNS = {
   Kottayam: ['Pala', 'Changanassery', 'Vaikom', 'Ettumanoor'],
 };
 
-// 10 experts: Kannur 4, Pathanamthitta 4, Idukki 1, Kottayam 1. Fees in paise (₹300–₹600).
+// 10 experts: Kannur 4, Pathanamthitta 4, Idukki 1, Kottayam 1. Fees in paise (₹300–₹600). No "Dr." titles: these are
+// synthetic profiles and must not present a qualification (their resumes say "DEMO DOCUMENT - NOT A REAL QUALIFICATION").
 export const EXPERTS = [
-  { name: 'Dr. Sreejith Nambiar', district: 'Kannur', specialization: 'Coconut and arecanut', feePaise: 50000 },
-  { name: 'Dr. Lakshmi Menon', district: 'Kannur', specialization: 'Pepper and cardamom', feePaise: 60000 },
-  { name: 'Dr. Arjun Kannoth', district: 'Kannur', specialization: 'Cashew and mango orchards', feePaise: 45000 },
-  { name: 'Dr. Swathi Kunhiraman', district: 'Kannur', specialization: 'Soil health and composting', feePaise: 40000 },
-  { name: 'Dr. Rajesh Pillai', district: 'Pathanamthitta', specialization: 'Banana and plantain', feePaise: 35000 },
-  { name: 'Dr. Meera Nair', district: 'Pathanamthitta', specialization: 'Vegetables and organic farming', feePaise: 30000 },
-  { name: 'Dr. Vinod Mathew', district: 'Pathanamthitta', specialization: 'Rubber plantations', feePaise: 50000 },
-  { name: 'Dr. Priya Oommen', district: 'Pathanamthitta', specialization: 'Tuber crops and tapioca', feePaise: 35000 },
-  { name: 'Dr. Asha Varghese', district: 'Idukki', specialization: 'Cardamom, tea and spices', feePaise: 45000 },
-  { name: 'Dr. Thomas Kurian', district: 'Kottayam', specialization: 'Paddy and rice cultivation', feePaise: 40000 },
+  { name: 'Sreejith Nambiar', district: 'Kannur', specialization: 'Coconut and arecanut', feePaise: 50000 },
+  { name: 'Lakshmi Menon', district: 'Kannur', specialization: 'Pepper and cardamom', feePaise: 60000 },
+  { name: 'Arjun Kannoth', district: 'Kannur', specialization: 'Cashew and mango orchards', feePaise: 45000 },
+  { name: 'Swathi Kunhiraman', district: 'Kannur', specialization: 'Soil health and composting', feePaise: 40000 },
+  { name: 'Rajesh Pillai', district: 'Pathanamthitta', specialization: 'Banana and plantain', feePaise: 35000 },
+  { name: 'Meera Nair', district: 'Pathanamthitta', specialization: 'Vegetables and organic farming', feePaise: 30000 },
+  { name: 'Vinod Mathew', district: 'Pathanamthitta', specialization: 'Rubber plantations', feePaise: 50000 },
+  { name: 'Priya Oommen', district: 'Pathanamthitta', specialization: 'Tuber crops and tapioca', feePaise: 35000 },
+  { name: 'Asha Varghese', district: 'Idukki', specialization: 'Cardamom, tea and spices', feePaise: 45000 },
+  { name: 'Thomas Kurian', district: 'Kottayam', specialization: 'Paddy and rice cultivation', feePaise: 40000 },
 ];
 
 // 40 farmers by explicit district (no round-robin): Kannur 16, Pathanamthitta 16, Idukki 4, Kottayam 4.

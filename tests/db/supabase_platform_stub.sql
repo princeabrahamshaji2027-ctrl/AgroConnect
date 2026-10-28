@@ -30,6 +30,7 @@ create table storage.objects (
   bucket_id text references storage.buckets(id),
   name text,
   owner uuid,
+  metadata jsonb,   -- as on Supabase: mimetype, size, …
   path_tokens text[] generated always as (string_to_array(name, '/')) stored
 );
 alter table storage.objects enable row level security;

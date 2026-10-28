@@ -9,6 +9,7 @@ import Dialog from '../components/Dialog';
 import ComingSoon from '../components/ComingSoon';
 import BottomSheet from '../components/BottomSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
+import ResumeUploadDialog from '../components/ResumeUploadDialog';
 import { validatePdfFile, validateRequiredText } from '../utils/validation';
 import { ProfileSkeleton, LoadError } from '../components/Skeleton';
 import { supabase } from '../supabase';
@@ -37,6 +38,7 @@ export default function UserProfile({
 
   // Expert application state
   const [expertAppStatus, setExpertAppStatus] = useState(null);
+  const [isResumeOpen, setIsResumeOpen] = useState(false);
   const [sellerStatus, setSellerStatus] = useState(null);
   const [resignationPending, setResignationPending] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -299,28 +301,25 @@ export default function UserProfile({
 
     setExpertSubmitting(true);
     try {
-      const ext = cvFile.name.split('.').pop() || 'pdf';
-      const cvPath = `${authUser.id}/${Date.now()}_cv.${ext}`;
+      const qualificationText = `${qualification} in ${degree} from ${institution}`.trim();
+      if (qualificationText.length > 150) { setKycStep(1); throw new Error('Qualification, degree and institution together must be under 150 characters.'); }
+      const cvPath = `${authUser.id}/${Date.now()}_cv.pdf`;      // always .pdf: the file was checked by validatePdfFile
       const { error: uploadErr } = await supabase.storage
         .from('expert-cvs')
-        .upload(cvPath, cvFile, { upsert: true, contentType: cvFile.type });
+        .upload(cvPath, cvFile, { upsert: false, contentType: 'application/pdf' });
       // Without the file the admin has nothing to review, so stop here instead of saving a dangling path.
       if (uploadErr) throw new Error(`CV upload failed: ${uploadErr.message}`);
 
-      // Earlier (e.g. Rejected) applications are kept as history; the one_pending_application_per_user
-      // index rejects a second Pending row.
-      const { error: insertErr } = await supabase
-        .from('expert_applications')
-        .insert({
-          user_id: authUser.id,
-          qualification: `${qualification} in ${degree} from ${institution}`,
-          experience: `${experience} years. Specialization: ${specialization}. Bio: ${expertBio}`,
-          cv_file_path: cvPath,
-          status: 'Pending'
-        });
-      if (insertErr) {
-        if (insertErr.code === '23505') throw new Error('You already have an expert application pending review.');
-        throw insertErr;
+      // The server checks the file is a real PDF before the application is saved (it deletes a refused file);
+      // earlier (e.g. Rejected) applications are kept as history and a second Pending one is refused.
+      const { data: res, error: fnErr } = await supabase.functions.invoke('submit-resume', {
+        body: { action: 'apply', path: cvPath, qualification: qualificationText,
+                experience: `${experience} years. Specialization: ${specialization}. Bio: ${expertBio}` },
+      });
+      if (fnErr || !res?.application_id) {
+        let msg = 'Your application was not sent. Please try again.';
+        try { msg = (await fnErr?.context?.json())?.error || msg; } catch { /* keep default */ }
+        throw new Error(msg);
       }
 
       setExpertAppStatus('Pending');
@@ -420,7 +419,10 @@ export default function UserProfile({
       hint={resignationPending ? 'Request sent — waiting for admin approval' : 'Send a request to the admin'}
       disabled={resignationPending} onClick={() => setIsLeaveOpen(true)} />
   ) : expertAppStatus === 'Pending' ? (
-    <MenuRow icon="hourglass_top" label="Become a Verified Expert" hint="Application pending admin approval" disabled onClick={() => {}} />
+    <>
+      <MenuRow icon="hourglass_top" label="Become a Verified Expert" hint="Application pending admin approval" disabled onClick={() => {}} />
+      <MenuRow icon="upload_file" label="Update resume (PDF)" hint="Replace the resume the admin reviews" onClick={() => setIsResumeOpen(true)} />
+    </>
   ) : expertAppStatus === 'Rejected' ? (
     <MenuRow icon="verified" label="Reapply as Expert" hint="Your last application was rejected" onClick={handleBecomeExpertClick} />
   ) : (
@@ -557,6 +559,11 @@ export default function UserProfile({
         </div>
       </BottomSheet>
 
+      <ResumeUploadDialog
+        open={isResumeOpen}
+        onClose={() => setIsResumeOpen(false)}
+        onDone={() => { setIsResumeOpen(false); if (onShowToast) onShowToast('✅ Resume updated. The admin can now view it.'); }}
+      />
       <LeaveExpertDialog
         isOpen={isLeaveOpen}
         onClose={() => setIsLeaveOpen(false)}

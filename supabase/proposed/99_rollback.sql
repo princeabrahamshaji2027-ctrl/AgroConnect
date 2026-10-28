@@ -68,6 +68,121 @@ drop function if exists public.protect_profile_privileged_columns();
 drop trigger if exists guard_experts_insert on public.experts;
 drop function if exists public.guard_experts_insert();
 
+-- ---- undo 24 (expert removal, ban guards, server-attached resumes) -------------------------------------------
+-- Only where 24 was applied (_attach_resume exists). Restores the 09 / 15 / 05 bodies and the pre-24 live ban_user.
+do $u24$ begin
+  if to_regprocedure('public._attach_resume(uuid,text)') is not null then
+    drop trigger if exists guard_expert_application_cv on public.expert_applications;
+    drop function if exists public.guard_expert_application_cv();
+    drop function if exists public._attach_resume(uuid, text);
+    drop function if exists public.unban_user(uuid);
+    drop function if exists public.admin_expert_removal_preview(uuid);
+    drop function if exists public.approve_expert_resignation(uuid, boolean);
+    drop function if exists public.demote_expert(uuid, boolean);
+    execute $q$create or replace function public.demote_expert(p_user_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_expert uuid;
+  b record;
+begin
+  if not public.is_admin() then raise exception 'not authorized'; end if;
+  select id into v_expert from public.experts where user_id = p_user_id;
+
+  if v_expert is not null then
+    for b in
+      select bk.id, bk.meeting_date, f.user_id as farmer_uid,
+             coalesce((select s.rate from public.consultation_slots s where s.id = bk.slot_id), 500) as rate
+        from public.consultation_bookings bk
+        join public.farmer_profiles f on f.id = bk.farmer_id
+       where bk.expert_id = v_expert and bk.status = 'Booked'
+    loop
+      update public.consultation_bookings
+         set status = 'Cancelled', cancellation_reason = 'Expert is no longer available on AgroConnect',
+             refund_status = 'Pending', refund_amount = b.rate, updated_at = now()
+       where id = b.id;
+      perform public._notify(b.farmer_uid, 'booking',
+        format('Your meeting on %s was cancelled because the expert is no longer available. A full refund of ₹%s has been requested.',
+               b.meeting_date, b.rate), b.id);
+    end loop;
+
+    -- open future slots disappear; slots referenced by bookings stay for the history
+    delete from public.consultation_slots s
+     where s.expert_id = v_expert and s.slot_date >= current_date
+       and not exists (select 1 from public.consultation_bookings bk where bk.slot_id = s.id);
+    update public.consultation_slots set is_booked = false
+     where expert_id = v_expert and slot_date >= current_date;
+
+    update public.experts set is_active = false where id = v_expert;
+  end if;
+
+  update public.profiles set role = 'Farmer' where id = p_user_id and role = 'Expert';
+  perform public._notify(p_user_id, 'system', 'Your account is now a normal user account. Expert features have been removed.', p_user_id);
+  insert into public.admin_audit_log (admin_id, action, target_table, target_id)
+    values (auth.uid(), 'demote_expert', 'profiles', p_user_id);
+end;
+$$;$q$;
+    execute $q$create or replace function public.approve_expert_resignation(p_resignation_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_user_id uuid;
+begin
+  if not public.is_admin() then raise exception 'not authorized'; end if;
+  select user_id into v_user_id from public.expert_resignations where id = p_resignation_id and status = 'Pending';
+  if v_user_id is null then raise exception 'request not found or not pending'; end if;
+  update public.expert_resignations set status = 'Approved' where id = p_resignation_id;
+  perform public.demote_expert(v_user_id);
+end;
+$$;$q$;
+    execute $q$create or replace function public.set_consultation_fee(p_fee_paise integer) returns integer
+language plpgsql security definer set search_path = public as $$
+declare v_expert uuid;
+begin
+  if auth.uid() is null then raise exception 'not authenticated' using errcode = '42501'; end if;
+  if exists (select 1 from public.profiles where id = auth.uid() and is_banned) then raise exception 'Your account is banned.' using errcode = '42501'; end if;
+  select id into v_expert from public.experts where user_id = auth.uid();
+  if v_expert is null then raise exception 'Only experts can set a consultation fee.' using errcode = '42501'; end if;
+  if p_fee_paise is null or p_fee_paise < 100 or p_fee_paise > 10000000 then
+    raise exception 'The consultation fee must be between ₹1 and ₹1,00,000.' using errcode = '22023';
+  end if;
+  update public.experts set consultation_fee_paise = p_fee_paise where id = v_expert;
+  return p_fee_paise;
+end $$;$q$;
+    execute $q$create or replace function public.guard_consultation_slots() returns trigger
+language plpgsql set search_path = public as $$
+declare v_row public.consultation_slots%rowtype := case when tg_op = 'DELETE' then old else new end;
+begin
+  if not public.is_client_request() or public.is_admin() then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+  if not exists (select 1 from public.experts where id = v_row.expert_id and user_id = auth.uid()) then
+    raise exception 'you can only manage your own slots' using errcode = '42501';
+  end if;
+  if tg_op = 'INSERT' and new.is_booked then
+    raise exception 'is_booked is set by the booking functions' using errcode = '42501';
+  end if;
+  if tg_op = 'UPDATE' and (new.is_booked is distinct from old.is_booked or new.expert_id is distinct from old.expert_id) then
+    raise exception 'is_booked/expert_id are set by the booking functions' using errcode = '42501';
+  end if;
+  if tg_op in ('UPDATE', 'DELETE') and old.is_booked then
+    raise exception 'a booked slot cannot be changed; cancel the booking instead' using errcode = '42501';
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;$q$;
+    execute $q$create or replace function public.ban_user(p_user_id uuid, p_reason text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'not authorized'; end if;
+  update public.profiles set is_banned = true, ban_reason = p_reason, banned_at = now() where id = p_user_id;
+  insert into public.admin_audit_log (admin_id, action, target_table, target_id, details)
+    values (auth.uid(), 'ban_user', 'profiles', p_user_id, jsonb_build_object('reason', p_reason));
+end;
+$$;$q$;
+    revoke all on function public.demote_expert(uuid) from public, anon;
+    revoke all on function public.approve_expert_resignation(uuid) from public, anon;
+    grant execute on function public.demote_expert(uuid) to authenticated;
+    grant execute on function public.approve_expert_resignation(uuid) to authenticated;
+  end if;
+end $u24$;
+
 -- ---- undo 23 (numeric ranges) --------------------------------------------------------------------------------
 alter table public.experts drop constraint if exists experts_meeting_duration_range;
 alter table public.experts drop constraint if exists experts_buffer_time_range;

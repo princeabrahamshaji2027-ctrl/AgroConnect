@@ -5,6 +5,7 @@ import Dialog from '../components/Dialog';
 import BottomSheet from '../components/BottomSheet';
 import ExpertMenuSheet from '../components/ExpertMenuSheet';
 import LeaveExpertDialog from '../components/LeaveExpertDialog';
+import ResumeUploadDialog from '../components/ResumeUploadDialog';
 import DemoCheckout from '../components/DemoCheckout';
 import ConsultationFeeEditor from '../components/ConsultationFeeEditor';
 import InputField, { FieldError, FormMessage } from '../components/InputField';
@@ -324,6 +325,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   // Expert Menu & Leave Expert Mode states
   const [isMenuSheetOpen, setIsMenuSheetOpen] = useState(false);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
 
   // Meeting Detail Sheet & Cancellation states
   const [selectedMeetingDetail, setSelectedMeetingDetail] = useState(null);
@@ -2301,6 +2303,7 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
         onCustomizeAvailability={() => setActiveSubTab('availability')}
         onMeetingHistory={() => setActiveSubTab('history')}
         onExpertProfile={() => setIsExpertProfileEditOpen(true)}
+        onUpdateResume={() => setIsResumeDialogOpen(true)}
         onLeaveExpertMode={() => setIsLeaveModalOpen(true)}
       />
 
@@ -2566,6 +2569,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       </BottomSheet>
 
       {/* ── Leave expert mode: request goes to the admin ───────── */}
+      <ResumeUploadDialog
+        open={isResumeDialogOpen}
+        onClose={() => setIsResumeDialogOpen(false)}
+        onDone={() => { setIsResumeDialogOpen(false); onShowToast?.('✅ Resume updated. The admin can now view it.'); }}
+      />
       <LeaveExpertDialog
         isOpen={isLeaveModalOpen}
         onClose={() => setIsLeaveModalOpen(false)}

@@ -8,6 +8,7 @@ export default function ExpertMenuSheet({
   onCustomizeAvailability,
   onMeetingHistory,
   onExpertProfile,
+  onUpdateResume,
   onLeaveExpertMode
 }) {
   if (!expertProfile) return null;
@@ -66,6 +67,18 @@ export default function ExpertMenuSheet({
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>badge</span>
               <span style={{ fontSize: '14px', fontWeight: '600' }}>Expert Profile</span>
+            </div>
+            <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
+          </div>
+
+          {/* Row 3b: Update Resume */}
+          <div
+            onClick={() => { onClose(); onUpdateResume(); }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: '12px', backgroundColor: '#1E1E1E', cursor: 'pointer', border: '1px solid var(--border-color)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="material-symbols-outlined" style={{ color: 'var(--primary-green)' }}>upload_file</span>
+              <span style={{ fontSize: '14px', fontWeight: '600' }}>Update Resume (PDF)</span>
             </div>
             <span className="material-symbols-outlined" style={{ color: 'var(--text-secondary)' }}>chevron_right</span>
           </div>

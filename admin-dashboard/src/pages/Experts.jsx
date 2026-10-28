@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import defaultAvatar from '../assets/profile-placeholder.png';
 import InlineNotice from '../components/InlineNotice';
-import ConfirmDialog from '../components/ConfirmDialog';
+import RemoveExpertDialog from '../components/RemoveExpertDialog';
 
 export default function Experts() {
   const [activeSubTab, setActiveSubTab] = useState('applications'); // 'applications' | 'verified'
@@ -18,8 +18,8 @@ export default function Experts() {
 
   const [notice, setNotice] = useState(null);            // page message (was window.alert)
   const [resumeByUser, setResumeByUser] = useState({});   // verified experts: user_id -> latest approved CV path
-  const [removeTarget, setRemoveTarget] = useState(null); // expert awaiting "Remove expert" confirmation
-  const [removing, setRemoving] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState(null); // expert awaiting "Remove expert role" (RemoveExpertDialog)
+  const [missingPaths, setMissingPaths] = useState(new Set()); // referenced CV paths with no file in storage
 
   const fetchData = async () => {
     try {
@@ -67,6 +67,36 @@ export default function Experts() {
     }
   };
 
+  // Which referenced CV files really exist: one storage listing per applicant folder (admins may read every CV).
+  const [pendingPaths, setPendingPaths] = useState([]);
+  useEffect(() => {
+    const paths = activeSubTab === 'applications'
+      ? applications.map((a) => a.cv_file_path).filter(Boolean)
+      : Object.values(resumeByUser).filter(Boolean);
+    setPendingPaths(paths);
+  }, [activeSubTab, applications, resumeByUser]);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const missing = new Set();
+      const byFolder = new Map();
+      for (const p of pendingPaths) {
+        const i = p.lastIndexOf('/');
+        const folder = i > 0 ? p.slice(0, i) : '';
+        if (!byFolder.has(folder)) byFolder.set(folder, []);
+        byFolder.get(folder).push(p);
+      }
+      for (const [folder, paths] of byFolder) {
+        const { data, error } = await supabase.storage.from('expert-cvs').list(folder, { limit: 1000 });
+        if (error) continue;   // unknown: keep the View button; opening it explains a missing file
+        const names = new Set((data || []).map((o) => o.name));
+        for (const p of paths) if (!names.has(p.slice(p.lastIndexOf('/') + 1))) missing.add(p);
+      }
+      if (live) setMissingPaths(missing);
+    })();
+    return () => { live = false; };
+  }, [pendingPaths]);
+
   useEffect(() => {
     fetchData();
   }, [activeSubTab]);
@@ -107,16 +137,6 @@ export default function Experts() {
     }
   };
 
-  const confirmRemoveExpert = async () => {
-    const exp = removeTarget;
-    setRemoving(true);
-    const { error } = await supabase.rpc('demote_expert', { p_user_id: exp.user_id });
-    setRemoving(false);
-    setRemoveTarget(null);
-    if (error) { setNotice({ type: 'error', text: error.message || 'Error removing expert' }); return; }
-    setNotice({ type: 'success', text: `${exp.profiles?.full_name || 'The expert'} is now a normal user.` });
-    fetchData();
-  };
 
   // expert-cvs is a PRIVATE bucket: open a short-lived signed link (admins may read every CV by storage policy).
   const handleViewResume = async (path) => {
@@ -138,7 +158,12 @@ export default function Experts() {
     }
   };
 
-  const resumeButton = (path) => (path ? (
+  const resumeButton = (path) => (path && missingPaths.has(path) ? (
+    <span className="text-error font-semibold inline-flex items-center gap-1" data-testid="resume-missing">
+      <span className="material-symbols-outlined text-[16px]">error</span>
+      <span>Resume missing — ask the expert to upload a PDF again</span>
+    </span>
+  ) : path ? (
     <button
       onClick={() => handleViewResume(path)}
       className="text-primary-container hover:underline inline-flex items-center gap-1 font-semibold cursor-pointer bg-transparent border-none p-0"
@@ -218,7 +243,7 @@ export default function Experts() {
                     <td className="p-4 text-on-surface">{app.qualification}</td>
                     <td className="p-4 text-on-surface-variant max-w-[250px] truncate">{app.experience}</td>
                     <td className="p-4">
-                      {resumeButton(app.cv_file_path) || <span className="text-on-surface-variant/40">No CV attached</span>}
+                      {resumeButton(app.cv_file_path) || <span className="text-on-surface-variant/40">No resume</span>}
                     </td>
                     <td className="p-4">
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
@@ -291,7 +316,7 @@ export default function Experts() {
                       </span>
                     </td>
                     <td className="p-4">
-                      {resumeButton(resumeByUser[exp.user_id]) || <span className="text-on-surface-variant/40">No resume on file</span>}
+                      {resumeButton(resumeByUser[exp.user_id]) || <span className="text-on-surface-variant/40">No resume</span>}
                     </td>
                     <td className="p-4 text-right">
                       <button
@@ -350,15 +375,10 @@ export default function Experts() {
         </div>
       )}
 
-      <ConfirmDialog
-        open={!!removeTarget}
-        danger
-        busy={removing}
-        title={`Remove ${removeTarget?.profiles?.full_name || 'this expert'} as an expert?`}
-        message="The green tick and all expert tools are removed and the account becomes a normal user. Upcoming meetings are cancelled with a full refund and the farmers are notified. Past meetings and reviews are kept."
-        confirmLabel="Remove expert"
-        onConfirm={confirmRemoveExpert}
-        onCancel={() => setRemoveTarget(null)}
+      <RemoveExpertDialog
+        userId={removeTarget?.user_id || null}
+        onClose={() => setRemoveTarget(null)}
+        onDone={(r) => { setRemoveTarget(null); setNotice({ type: 'success', text: r.text }); fetchData(); }}
       />
     </div>
   );
