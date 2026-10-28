@@ -52,8 +52,8 @@ Found while testing (deviations from the written plan, both fixed and covered by
 ## Migration and deployment state
 | | Production | Staging |
 |---|---|---|
-| Migrations | up to `remediation_23_numeric_ranges` | + `remediation_24_expert_removal_and_resumes`, `remediation_24b_attach_resume_no_applicant_audit` |
-| Edge Functions | `admin-delete-user`, `push-dispatch`, `video-room-token` | + `submit-resume`, `admin-create-user` |
+| Migrations | + `remediation_24_expert_removal_and_resumes` (applied 2026-10-28 with the owner's approval; the file already contains the `_attach_resume` fix; 9/9 function fingerprints = staging) | + `remediation_24_expert_removal_and_resumes`, `remediation_24b_attach_resume_no_applicant_audit` |
+| Edge Functions | + `submit-resume`, `admin-create-user` (2026-10-28, same code hashes as staging; both refuse calls without a session) | + `submit-resume`, `admin-create-user` |
 | Admin website (Render) | still commit `1289b3e` (manual deploy needed) | — |
 | Git | `main` = `e34d870` | branch `feat/admin-roles-resumes-branding` pushed |
 
