@@ -30,8 +30,8 @@ Every automated run used **staging** (`ahkgvuewgbjyahbiehrx`); the scripts refus
 | Experts from every district listed, local first | code change in `Connect.jsx`; staging check through the app | experts without open times still listed, with "No open times yet" | verified in the staging UI (one staging expert) | PASS (single expert on staging; the zero-local case is the same code path) |
 | Duplicate header button removed | Playwright app suite (header and bell tests) | one bell, no eco button beside it | as expected | PASS |
 | Meet link: only HTTPS Meet, only the booking's expert, persists, farmer sees it | db `meet-and-demo-payment`; staging `staging-meet-payment-push`; Playwright "expert: invalid link refused, valid Google Meet link saved and kept after reload; farmer sees link ready" | invalid link refused; link kept; farmer sees the same URL | as expected | PASS |
-| Catch Up shows a newly saved link without a manual refresh | new realtime and visibility reload in `Connect.jsx`; realtime delivery tested by staging "farmer receives a server-created booking notification over realtime" | screen reloads on the `booking` notification | notification delivery passed; on-screen refresh not yet seen on a device | PASS (delivery) / phone check pending |
-| Joining and leaving the Meet call | — | opens Google Meet; leaving happens in Meet | — | BLOCKED: needs the phone and a Google account (physical test) |
+| Catch Up shows a newly saved link without a manual refresh | three-client test (phone saves, web farmer watching) | link appears on the open screen | appeared after about 6.5 s, no reload | PASS (2026-10-29, phone) |
+| Joining and leaving the Meet call | three-client test: farmer Join; Meet tab closed | Join opens exactly the saved URL; Catch Up still there after leaving | same URL; card still shown | PASS for the app side. Signing in to a real Meet call was not tested; the test used a stand-in page. |
 | Expert announcement: only active experts submit; validation; max 3 pending | db `expert-broadcasts` (9 tests); staging "expert announcements need admin approval" | farmer, banned or inactive experts and anonymous callers refused | as expected | PASS |
 | Pending announcement reaches nobody; admin is notified | db and staging | 0 announcement notifications; farmer cannot read it | as expected | PASS |
 | Admin approves: delivered once to the chosen audience; recipient can read it | db; staging (experts-only audience) | `recipient_count` matches; one notification each; second review refused | as expected | PASS |
@@ -43,7 +43,7 @@ Every automated run used **staging** (`ahkgvuewgbjyahbiehrx`); the scripts refus
 | Admin workflow (login, users, experts, remove expert with preview, ban, consultations, reports) | Playwright admin suite; staging `staging-admin-roles` | as each test describes | as expected | PASS |
 | Chat delivery | staging `staging-cancel-messaging`; Playwright messaging tests | message sent once; request flow | as expected | PASS |
 | Production user counts (50 target) | read-only SQL | 50 users | 9 users | FAIL (data): seeding is blocked; see audit §8 |
-| Same feed post on 3 clients at once (web, phone, admin) | — | post appears on all 3 | — | BLOCKED: phone test pending (see the checklist below) |
+| Same feed post on 3 clients at once (web, phone, admin) | three-client test | post appears on all 3 | web about 1 s; phone 3.5–6 s, no reload; admin Posts page lists it | PASS (2026-10-29, phone) |
 | Release signing | — | — | debug certificate only (CN=Android Debug); no release keystore on this Mac | NOT SIGNED for release |
 
 ## Physical demo checklist (to run with the phone)
@@ -65,3 +65,44 @@ Use one database for all three clients:
    - Admin → Broadcasts → Approve & send.
    - The web farmer sees the announcement pop-up.
 5. **Admin data.** Check that the bookings, reviews and resume (PDF opens) are shown in the admin.
+
+## Three-client run on the phone (2026-10-29)
+
+`ANDROID_SERIAL=cda20634 node scripts/staging/three-client-test.mjs`
+
+Setup:
+- **Farmer:** web app on localhost:4174, `dist-staging`.
+- **Expert:** Nothing Phone (2), staging app 1.2-staging.
+- **Admin:** localhost:4173, `dist-staging`.
+
+Screenshots are in `appium-results/2026-10-29_three_clients/`.
+
+| Check | Result |
+|---|---|
+| Sign-in on all three clients | PASS |
+| Feed: the farmer's post reaches the phone without a reload | PASS (3.5–6.2 s) |
+| Feed: the admin Posts page lists the post | PASS |
+| Chat: farmer (web) to expert (phone, conversation open) | PASS (about 2.6 s) |
+| Chat: expert reply from the phone to the farmer (web) | PASS (about 4 s) |
+| Meet: the expert saves the link on the phone | PASS |
+| Meet: the farmer's open Catch Up shows it without a reload | PASS (about 6.5 s) |
+| Meet: the stored URL is the same one the expert typed | PASS |
+| Meet: Join opens that same URL; the farmer leaves and is back in Catch Up | PASS |
+| Announcement: the expert submits on the phone; the admin sees it waiting | PASS |
+| Announcement: after approval, the farmer gets the pop-up | PASS on the final run (1.6 s). Missed once in 3 approved runs: it did not appear within 20 s, and the cause was not found. |
+| Announcement: the expert is told it was approved | PASS |
+| Admin: the booking is listed with the link "Saved", and the detail shows the issue | PASS |
+| Admin: no "Resume missing" on the Experts page (staging) | PASS (0 shown) |
+
+The final run passed 17/17. Earlier runs failed only on the script's own screen-matching and timing, which were fixed.
+
+**Not covered:**
+- signing in to a real Google Meet call;
+- joining from the phone (it opens the Google Meet app);
+- the admin opening a resume PDF (the "View Resume" button was not on the tab the script opened);
+- the production app (all data was staging).
+
+**Clean-up:** the test removes its own post, booking and slot, and the announcement it created. Approved announcements
+also reach the other staging farmers, so the script prints a delete statement for those notifications, which must be
+run afterwards. Leftovers from earlier runs were removed on staging: 7 test posts, and 14 announcement notifications,
+4 of which had gone to 2 staging accounts that are not test accounts. The chat messages are kept.

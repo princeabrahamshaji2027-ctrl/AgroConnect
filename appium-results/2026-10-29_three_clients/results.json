@@ -1,0 +1,87 @@
+[
+  {
+    "name": "sign-in on all three clients",
+    "ok": true,
+    "detail": "farmer web, expert phone (Ramesh Menon), admin web"
+  },
+  {
+    "name": "feed: farmer sees own post",
+    "ok": true,
+    "detail": "844 ms"
+  },
+  {
+    "name": "feed: post reaches the expert phone without reload",
+    "ok": true,
+    "detail": "6241 ms"
+  },
+  {
+    "name": "feed: admin Posts lists the post",
+    "ok": true,
+    "detail": "6853 ms (page opened after posting)"
+  },
+  {
+    "name": "chat: farmer message appears on the expert phone (conversation open)",
+    "ok": true,
+    "detail": "2583 ms"
+  },
+  {
+    "name": "chat: expert reply from the phone appears on the farmer web",
+    "ok": true,
+    "detail": "3990 ms"
+  },
+  {
+    "name": "meet: expert saves the link on the phone",
+    "ok": true,
+    "detail": "https://meet.google.com/agr-cbei-tst"
+  },
+  {
+    "name": "meet: farmer Catch Up shows the link without reload",
+    "ok": true,
+    "detail": "6498 ms"
+  },
+  {
+    "name": "meet: the farmer gets exactly the URL the expert saved",
+    "ok": true,
+    "detail": "https://meet.google.com/agr-cbei-tst"
+  },
+  {
+    "name": "meet: farmer Join opens that same URL (enter)",
+    "ok": true,
+    "detail": "https://meet.google.com/agr-cbei-tst"
+  },
+  {
+    "name": "meet: farmer leaves (closes the Meet tab) and is back in Catch Up",
+    "ok": true,
+    "detail": "card still shown"
+  },
+  {
+    "name": "announcement: expert submits on the phone",
+    "ok": true,
+    "detail": "Rhinoceros beetle alert 2148"
+  },
+  {
+    "name": "announcement: admin sees it waiting for review",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "announcement: farmer web gets the pop-up after approval",
+    "ok": true,
+    "detail": "pop-up after 1637 ms"
+  },
+  {
+    "name": "announcement: expert is notified of the approval",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "admin: the booking is listed with the Meet link saved, and its detail shows the issue",
+    "ok": true,
+    "detail": "row true, link Saved true, detail true"
+  },
+  {
+    "name": "admin: no \"Resume missing\" on the Experts page",
+    "ok": true,
+    "detail": "0 shown"
+  }
+]
