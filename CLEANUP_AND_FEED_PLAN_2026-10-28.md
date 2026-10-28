@@ -323,6 +323,7 @@ It needs the 50 seed accounts, so it is **blocked until the staging service key 
   bookings) and the audit was clean again.
 - The notifications screen was not reached by the audit (the bell's tap target was not found). Rows R2 remove all
   test-account notifications anyway.
-- Still visible: the old staging post "Best Source of Protein / Almost 50g protine" by the test expert, with location
-  "Gill Village, Ludhiana, Punjab, India" (2026-10-25). It is not covered by the approved rules, so it was not deleted.
+- The old staging post "Best Source of Protein / Almost 50g protine" by the test expert (location "Gill Village,
+  Ludhiana, Punjab, India", 2026-10-25; no media file, likes, comments or reports) was deleted on 2026-10-28 with the
+  owner's approval, by its author through the normal RLS path. Staging now has 0 posts until the demo feed is seeded.
 - Feed and demo users: still blocked by the missing `STAGING_SUPABASE_SERVICE_ROLE_KEY`.
