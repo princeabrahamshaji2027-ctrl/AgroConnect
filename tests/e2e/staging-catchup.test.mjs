@@ -7,6 +7,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { demoBook } from './demo-booking.mjs';
+import { cleanupTestTraffic } from './cleanup.mjs';
+
+const RUN_START = Date.now();   // rows this file creates between test accounts are removed again in after()
+import { NAMES, esc } from '../fixtures/staging-accounts.mjs';
 
 const envFile = new URL('../../.env.staging', import.meta.url);
 const env = existsSync(envFile) ? Object.fromEntries(readFileSync(envFile, 'utf8').split('\n')
@@ -47,6 +51,7 @@ before(async () => {
 });
 after(async () => {
   for (const id of created.slots) await A.expert1.c.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
+  await cleanupTestTraffic(RUN_START);   // no-op without STAGING_SUPABASE_SERVICE_ROLE_KEY
 });
 
 async function newSlot(minutes, rate = 450) {
@@ -75,8 +80,8 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     // immediate notifications, one each, with names
     const e1 = await myNotes(A.expert1, id);
     const f1 = await myNotes(A.user1, id);
-    assert.equal(e1.length, 1); assert.match(e1[0], /^New consultation booked! Test User 1 \(Farmer\) booked a session with you for .+ at \d{1,2}:\d{2} [AP]M\./);
-    assert.equal(f1.length, 1); assert.match(f1[0], /^Your consultation with Dr\. Ramesh Expert is booked for .+ at \d{1,2}:\d{2} [AP]M\.$/);
+    assert.equal(e1.length, 1); assert.match(e1[0], new RegExp(`^New consultation booked! ${esc(NAMES.user1)} booked a session with you for .+ at \\d{1,2}:\\d{2} [AP]M\\.`));
+    assert.equal(f1.length, 1); assert.match(f1[0], new RegExp(`^Your consultation with ${esc(NAMES.expert1)} is booked for .+ at \\d{1,2}:\\d{2} [AP]M\\.$`));
     // duplicate submit: same booking, nothing new; another farmer cannot take the slot and gets nothing
     assert.equal((await demoBook(A.user1.c, slot, 'Catch Up lifecycle test', { key })).data, id);   // retry of the same checkout
     assert.ok((await demoBook(A.user2.c, slot, 'race')).error, 'slot double-booked');
@@ -104,8 +109,8 @@ describe('Catch Up meeting lifecycle (staging, real time)', { skip }, () => {
     assert.equal((await A.user2.c.from('video_meetings').select('meeting_link').eq('booking_id', id)).data.length, 0, 'stranger read the link');
 
     // the real scheduler sends the 5-minute reminder to both, once
-    await waitFor(async () => (await myNotes(A.user1, id)).some((m) => m.startsWith('Reminder: your consultation with Dr. Ramesh Expert starts at')), 240000, 'farmer 5-min reminder');
-    await waitFor(async () => (await myNotes(A.expert1, id)).some((m) => m.startsWith('Reminder: your consultation with Test User 1 (Farmer) starts at')), 60000, 'expert 5-min reminder');
+    await waitFor(async () => (await myNotes(A.user1, id)).some((m) => m.startsWith(`Reminder: your consultation with ${NAMES.expert1} starts at`)), 240000, 'farmer 5-min reminder');
+    await waitFor(async () => (await myNotes(A.expert1, id)).some((m) => m.startsWith(`Reminder: your consultation with ${NAMES.user1} starts at`)), 60000, 'expert 5-min reminder');
 
     // window open: both participants join, same room
     const fj = await waitFor(async () => { const r = await A.user1.c.rpc('join_consultation', { p_booking_id: id }); return r.error ? null : r.data; }, 120000, 'farmer join');

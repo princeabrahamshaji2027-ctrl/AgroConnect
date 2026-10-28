@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { NAMES, esc } from '../fixtures/staging-accounts.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { demoBook } from './demo-booking.mjs';
 
@@ -78,10 +79,10 @@ test.describe('authenticated (staging)', () => {
     await login(page, fx('user1'));
     await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
     await nav(page, 'Profile').click();
-    await expect(page.locator('.profile-name')).toHaveText('Test User 1 (Farmer)');
+    await expect(page.locator('.profile-name')).toHaveText(NAMES.user1);
     await nav(page, 'Catch Up').click();
     await expect(page.getByText('Available Verified Experts')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText('Dr. Ramesh Expert')).toBeVisible();
+    await expect(page.getByText(NAMES.expert1)).toBeVisible();
     await expect(page.getByText('Manage Availability')).toHaveCount(0);
     await page.reload();
     await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
@@ -96,7 +97,7 @@ test.describe('authenticated (staging)', () => {
     await input.setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not a resume') });
     await expect(page.getByRole('alert')).toContainText(/PDF/);
     const { demoResumePdf } = await import('../../scripts/production/demo-resume.mjs');
-    await input.setInputFiles({ name: 'resume.pdf', mimeType: 'application/pdf', buffer: demoResumePdf({ name: 'Ramesh Expert', district: 'Kannur', specialization: 'e2e' }) });
+    await input.setInputFiles({ name: 'resume.pdf', mimeType: 'application/pdf', buffer: demoResumePdf({ name: NAMES.expert1, district: 'Kannur', specialization: 'e2e' }) });
     await page.getByRole('button', { name: 'Upload', exact: true }).click();
     await expect(page.getByText('Resume updated. The admin can now view it.')).toBeVisible({ timeout: 30_000 });
   });
@@ -150,7 +151,7 @@ test.describe('change list 2026-10-25 (staging)', () => {
       await expect(page.locator('.bottom-nav')).not.toContainText(label);
     }
     await nav(page, 'Profile').click();
-    await expect(page.locator('.profile-name')).toHaveText('Test User 1 (Farmer)');
+    await expect(page.locator('.profile-name')).toHaveText(NAMES.user1);
     await expect(page.getByRole('button', { name: 'Edit Profile' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Log Out' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Profile menu' }).click();
@@ -163,7 +164,7 @@ test.describe('change list 2026-10-25 (staging)', () => {
   test('Catch Up: experts show their dates; calendar opens on Book; a date shows its times; date is not typed', async ({ page }) => {
     await login(page, fx('user1'));
     await nav(page, 'Catch Up').click();
-    const card = page.locator('.card', { hasText: 'Dr. Ramesh Expert' });
+    const card = page.locator('.card', { hasText: NAMES.expert1 });
     await expect(card.getByText('Available:')).toBeVisible({ timeout: 20_000 });
     await expect(card.getByText('Select a Date')).toHaveCount(0);
     await card.getByRole('button', { name: 'Book Consultation' }).click();
@@ -177,8 +178,8 @@ test.describe('change list 2026-10-25 (staging)', () => {
   test('tapping an expert opens their profile', async ({ page }) => {
     await login(page, fx('user1'));
     await nav(page, 'Catch Up').click();
-    await page.getByRole('img', { name: 'Dr. Ramesh Expert' }).first().click();
-    await expect(page.getByText("Dr. Ramesh Expert's Posts")).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('img', { name: NAMES.expert1 }).first().click();
+    await expect(page.getByText(`${NAMES.expert1}'s Posts`)).toBeVisible({ timeout: 15_000 });
   });
 
   test('expert: ☰ menu has "Leave being an expert"; the request needs a reason and waits for the admin', async ({ page }) => {
@@ -210,7 +211,7 @@ test.describe('own profile from a post (staging)', () => {
     await login(page, fx('user1'));
     const post = page.locator('.card', { hasText: 'E2E own-avatar check' }).first();
     await expect(post).toBeVisible({ timeout: 20_000 });
-    await post.getByText('Test User 1 (Farmer)').first().click();
+    await post.getByText(NAMES.user1).first().click();
     await expect(page.getByRole('button', { name: 'Edit Profile' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: /^Connect/ })).toHaveCount(0);
     await expect(page.getByText('My Posts')).toBeVisible();
@@ -355,7 +356,7 @@ test.describe('Catch Up meetings (staging)', () => {
     await login(page, fx('user1'));
     await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
     await page.locator('.feed-header-icon').last().click();
-    await expect(page.getByText(/Your consultation with Dr\. Ramesh Expert is booked for/).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(`Your consultation with ${esc(NAMES.expert1)} is booked for`)).first()).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -488,7 +489,7 @@ test.describe('expert fee, checkout + Google Meet links (staging)', () => {
   const openCheckout = async (page, slot, issue) => {
     await login(page, fx('user1'));
     await nav(page, 'Catch Up').click();
-    const card = page.locator('.card', { hasText: 'Dr. Ramesh Expert' });
+    const card = page.locator('.card', { hasText: NAMES.expert1 });
     await card.getByRole('button', { name: 'Book Consultation' }).click({ timeout: 20_000 });
     const day = String(Number(slot.slot_date.slice(8, 10)));
     await card.locator('div[style*="cursor: pointer"]').filter({ has: page.locator(`span:text-is("${day}")`) }).first().click();
@@ -505,7 +506,7 @@ test.describe('expert fee, checkout + Google Meet links (staging)', () => {
     page.on('request', (r) => hosts.add(new URL(r.url()).host));
     await login(page, fx('user1'));
     await nav(page, 'Catch Up').click();
-    const card = page.locator('.card', { hasText: 'Dr. Ramesh Expert' });
+    const card = page.locator('.card', { hasText: NAMES.expert1 });
     await expect(card.getByTestId('expert-fee')).toHaveText(`Consultation fee ${inr(73550)}`, { timeout: 20_000 });
     await expect(card.getByText(/From ₹|per session/)).toHaveCount(0);
     await card.getByRole('button', { name: 'Book Consultation' }).click();
@@ -723,10 +724,10 @@ test.describe('cancellation & messaging 2026-10-26 (staging)', () => {
   test('Message button on an expert profile opens a normal chat; the message is sent once', async ({ page }) => {
     await login(page, fx('user1'));
     await nav(page, 'Catch Up').click();
-    await page.getByRole('img', { name: 'Dr. Ramesh Expert' }).first().click();
+    await page.getByRole('img', { name: NAMES.expert1 }).first().click();
     await page.getByRole('button', { name: 'Message' }).click();
     await expect(page.getByLabel('Message', { exact: true })).toBeVisible({ timeout: 15_000 });   // the chat screen
-    await expect(page.getByRole('heading', { name: 'Dr. Ramesh Expert', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: NAMES.expert1, exact: true })).toBeVisible();
     await expect(page.getByText(/will see your messages as a request/)).toHaveCount(0);   // they share a booking
     const text = `E2E hello ${Date.now()}`;
     await page.getByLabel('Message', { exact: true }).fill(text);

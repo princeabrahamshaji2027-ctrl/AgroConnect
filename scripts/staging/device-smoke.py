@@ -18,6 +18,8 @@ OUT = os.path.join(ROOT, 'appium-results', '2026-10-25_staging_device')
 os.makedirs(OUT, exist_ok=True)
 env = dict(l.split('=', 1) for l in open(os.path.join(ROOT, '.env.staging')).read().splitlines() if re.match(r'^[A-Z0-9_]+=', l))
 fx = lambda n: f"agroconnect-stg-{n}-{env['FIXTURE_EMAIL_TOKEN']}@{env['FIXTURE_EMAIL_DOMAIN']}"
+# display names of the staging test accounts (single source: tests/fixtures/staging-accounts.json)
+NAMES = {k: v['name'] for k, v in json.load(open(os.path.join(ROOT, 'tests', 'fixtures', 'staging-accounts.json')))['accounts'].items()}
 results = []
 T0 = None  # device time at start; logcat is read from here instead of being cleared
 
@@ -136,8 +138,8 @@ back = lambda: (adb('shell', 'input', 'keyevent', '4'), time.sleep(1.5))
 def farmer():
     fresh_login('user1', env['FIXTURE_PASSWORD'])
     wait_text(SIGNED_IN, 40); shot('01_farmer_feed')
-    nav('Profile'); wait_text(r'Test User 1 \(Farmer\)'); shot('02_farmer_profile')
-    nav('Catch Up'); wait_text(r'Available Verified Experts'); wait_text(r'Dr\. Ramesh Expert'); shot('03_farmer_catchup')
+    nav('Profile'); wait_text(re.escape(NAMES['user1'])); shot('02_farmer_profile')
+    nav('Catch Up'); wait_text(r'Available Verified Experts'); wait_text(re.escape(NAMES['expert1'])); shot('03_farmer_catchup')
     t = texts(); assert 'Manage Availability' not in t, 'farmer sees expert tools'
 
 def persistence():
@@ -363,7 +365,7 @@ def full_consultation():
         adb('shell', 'input', 'text', topic.replace(' ', '%s')); adb('shell', 'input', 'keyevent', '111'); time.sleep(0.8)
         tap_text(r'^Pay & Book$')
         t = wait_text(r'Confirm your consultation', 30)
-        assert '₹450.00' in t and 'Dr. Ramesh Expert' in t and '30 minutes' in t, 'checkout summary wrong'
+        assert '₹450.00' in t and NAMES['expert1'] in t and '30 minutes' in t, 'checkout summary wrong'
         assert not re.search(r'demo|no real money|simulated|mock', t, re.I), 'demo wording on the checkout'
         shot('36_phone_checkout')
         tap_where(lambda n: re.fullmatch(r'Pay\s*₹?\s*450\.00|Pay', (n.get('text') or n.get('content-desc') or '').strip()) is not None, 'Pay button')
@@ -504,8 +506,8 @@ def messaging_phone():
     """Message button on the expert's profile opens the chat (they share a booking: normal chat); the input stays above
     the keyboard; the message is stored once."""
     fresh_login('user1', env['FIXTURE_PASSWORD'])
-    wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(r'Dr\. Ramesh Expert', 30)
-    tap_text(r'^Dr\. Ramesh Expert$'); wait_text(r"Dr\. Ramesh Expert's Posts", 20)
+    wait_text(SIGNED_IN, 40); nav('Catch Up'); wait_text(re.escape(NAMES['expert1']), 30)
+    tap_text('^' + re.escape(NAMES['expert1']) + '$'); wait_text(re.escape(NAMES['expert1'] + "'s Posts"), 20)
     tap_text(r'Message$'); wait_text(r'Send message', 20)
     assert not re.search(r'will see your messages as a request', texts()), 'shared-booking chat shown as a request'
     box = edit_texts(); assert box, 'no message box'
@@ -592,7 +594,7 @@ def farmer_changes():
     assert 'Leave being an expert' not in t, 'farmer sees leave-expert'
     shot('13_farmer_profile_menu'); back()
 
-    nav('Catch Up'); wait_text(r'Dr\. Ramesh Expert')
+    nav('Catch Up'); wait_text(re.escape(NAMES['expert1']))
     t = wait_text(r'Available:'); assert 'Select a Date' not in t, 'calendar open before Book'
     shot('14_catchup_expert_dates')
     tap_text(r'^Book Consultation$'); wait_text(r'Select a Date')
@@ -605,7 +607,7 @@ def farmer_changes():
     shot('16_catchup_times_for_date')
     tap_text(r'^Cancel$')
 
-    tap_text(r'^Dr\. Ramesh Expert$'); wait_text(r"Dr\. Ramesh Expert's Posts")
+    tap_text('^' + re.escape(NAMES['expert1']) + '$'); wait_text(re.escape(NAMES['expert1'] + "'s Posts"))
     shot('17_expert_profile_from_catchup'); back()
 
 def own_avatar():
@@ -615,7 +617,7 @@ def own_avatar():
     try:
         adb('shell', 'am', 'force-stop', PKG); adb('shell', 'am', 'start', '-W', '-n', f'{PKG}/com.agroconnect.app.MainActivity')
         wait_text(SIGNED_IN, 40); nav('Feed'); wait_text(r'Phone test: own avatar')
-        tap_text(r'^Test User 1 \(Farmer\)$')
+        tap_text('^' + re.escape(NAMES['user1']) + '$')
         t = wait_text(r'Edit Profile|Connect')
         assert 'Edit Profile' in t and not re.search(r'(^| \| )Connect( \||$)', t), 'own avatar opened the other-user view'
         shot('18_own_avatar_opens_own_profile')

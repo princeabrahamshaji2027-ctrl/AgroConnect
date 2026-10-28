@@ -368,7 +368,7 @@ export default function Search({ onProfileClick, onPostCommentClick }) {
                 (activeFilter === 'users' && filteredUsers.length === 0) ||
                 (activeFilter === 'communities' && filteredCommunities.length === 0)) && (
                 <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-secondary)' }}>
-                  No results found. Try search keywords like "organic", "blight", "Ramesh".
+                  No results found. Try search keywords like "organic", "blight", "pepper".
                 </div>
               )}
 

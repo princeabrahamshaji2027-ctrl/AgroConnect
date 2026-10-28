@@ -277,3 +277,15 @@ test('branding: launcher icons, logo PNGs and favicons come from logo.svg', () =
   assert.equal(read('admin-dashboard/public/favicon.svg'), read('logo.svg'));
   assert.match(read('admin-dashboard/index.html'), /rel="icon"[^>]*favicon\.svg/);
 });
+
+test('staging test-account names come from tests/fixtures/staging-accounts.json only (no "Test User" literals)', () => {
+  const offenders = [];
+  for (const dir of ['tests', 'scripts']) {
+    for (const f of readdirSync(join(root, dir), { recursive: true }).filter((x) => /\.(m?js|py)$/.test(x))) {
+      if (f.endsWith('regression.test.js')) continue;
+      if (/Test User \d|Ramesh Expert|Staging Admin/.test(readFileSync(join(root, dir, f), 'utf8'))) offenders.push(`${dir}/${f}`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+  assert.equal(existsSync(join(root, 'src/mock')), false, 'unused mock data is back');
+});

@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { demoBook } from './demo-booking.mjs';
+import { cleanupTestTraffic } from './cleanup.mjs';
+
+const RUN_START = Date.now();   // rows this file creates between test accounts are removed again in after()
 
 const envFile = new URL('../../.env.staging', import.meta.url);
 const env = existsSync(envFile) ? Object.fromEntries(readFileSync(envFile, 'utf8').split('\n')
@@ -38,6 +41,7 @@ after(async () => {
   for (const id of slots) await A.expert1.c.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
   if (A.originalFee) await A.expert1?.c.rpc('set_consultation_fee', { p_fee_paise: A.originalFee });
   await A.user1?.c.rpc('unregister_push_device', { p_token: `test-token-${env.FIXTURE_EMAIL_TOKEN}-${'y'.repeat(30)}` });
+  await cleanupTestTraffic(RUN_START);   // no-op without STAGING_SUPABASE_SERVICE_ROLE_KEY
 });
 const MEET = 'https://meet.google.com/stg-test-lnk';
 const FEE = 30000;   // ₹300 — set on expert1 for these tests, original fee restored afterwards

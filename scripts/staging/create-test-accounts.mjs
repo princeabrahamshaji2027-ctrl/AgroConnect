@@ -3,6 +3,7 @@
 //   node scripts/staging/create-test-accounts.mjs
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { NAMES } from '../../tests/fixtures/staging-accounts.mjs';
 
 const env = Object.fromEntries(readFileSync(new URL('../../.env.staging', import.meta.url), 'utf8')
   .split('\n').filter((l) => /^[A-Z0-9_]+=/.test(l)).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
@@ -21,12 +22,12 @@ if (!domain || !token || !env.FIXTURE_PASSWORD || !env.E2E_ADMIN_PASSWORD) throw
 const fx = (name) => `agroconnect-stg-${name}-${token}@${domain}`;
 
 const ACCOUNTS = [
-  [fx('user1'), 'Test User 1 (Farmer)', env.FIXTURE_PASSWORD],
-  [fx('user2'), 'Test User 2 (Pending Expert)', env.FIXTURE_PASSWORD],
-  [fx('user3'), 'Test User 3 (Fresh Farmer)', env.FIXTURE_PASSWORD],
-  [fx('user4'), 'Test User 4 (Rejected Expert)', env.FIXTURE_PASSWORD],
-  [fx('expert1'), 'Dr. Ramesh Expert', env.FIXTURE_PASSWORD],
-  [fx('admin'), 'Staging Admin', env.E2E_ADMIN_PASSWORD],
+  [fx('user1'), NAMES.user1, env.FIXTURE_PASSWORD],
+  [fx('user2'), NAMES.user2, env.FIXTURE_PASSWORD],
+  [fx('user3'), NAMES.user3, env.FIXTURE_PASSWORD],
+  [fx('user4'), NAMES.user4, env.FIXTURE_PASSWORD],
+  [fx('expert1'), NAMES.expert1, env.FIXTURE_PASSWORD],
+  [fx('admin'), NAMES.admin, env.E2E_ADMIN_PASSWORD],
 ];
 
 const emails = ACCOUNTS.map(([e]) => e);

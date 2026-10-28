@@ -12,6 +12,7 @@ async function bundleText(origin) {
 }
 
 export default async function globalSetup(config) {
+  process.env.E2E_RUN_START ??= String(Date.now());   // read by global-teardown.mjs (test-traffic clean-up)
   if (process.env.E2E_STAGING !== '1') return;
   if ((process.env.STAGING_SUPABASE_URL || '').includes(PRODUCTION_REF)) {
     throw new Error('Refusing to run: STAGING_SUPABASE_URL points at production.');

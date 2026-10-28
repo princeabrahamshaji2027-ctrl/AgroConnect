@@ -11,6 +11,9 @@ import { readFileSync, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { demoBook } from './demo-booking.mjs';
+import { cleanupTestTraffic } from './cleanup.mjs';
+
+const RUN_START = Date.now();   // rows this file creates between test accounts are removed again in after()
 
 const envFile = new URL('../../.env.staging', import.meta.url);
 const env = existsSync(envFile) ? Object.fromEntries(readFileSync(envFile, 'utf8').split('\n')
@@ -43,6 +46,7 @@ after(async () => {
   if (skip) return;
   for (const id of created.slots) await A.expert1.c.from('consultation_slots').delete().eq('id', id).eq('is_booked', false);
   for (const [who, other] of created.follows) await A[who].c.from('followers').delete().eq('follower_id', A[who].uid).eq('following_id', A[other].uid);
+  await cleanupTestTraffic(RUN_START);   // no-op without STAGING_SUPABASE_SERVICE_ROLE_KEY
 });
 
 // slot `minutes` from now; minute collisions with other test slots retry on the next minute

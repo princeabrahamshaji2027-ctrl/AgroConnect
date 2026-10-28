@@ -1,0 +1,12 @@
+{
+  "note": "Display names of the synthetic STAGING test accounts (agroconnect-stg-<key>-<token>@<domain>). Fictional people, used only by the automated tests; read by create-test-accounts.mjs, rename-fixtures.mjs, the e2e tests and device-smoke.py.",
+  "synthetic": true,
+  "accounts": {
+    "user1": { "name": "Anil Varghese", "role": "Farmer", "purpose": "main farmer" },
+    "user2": { "name": "Deepa Kurian", "role": "Farmer", "purpose": "pending expert application" },
+    "user3": { "name": "Manoj Pillai", "role": "Farmer", "purpose": "fresh farmer" },
+    "user4": { "name": "Sreelakshmi Nair", "role": "Farmer", "purpose": "rejected expert application" },
+    "expert1": { "name": "Ramesh Menon", "role": "Expert", "purpose": "verified expert" },
+    "admin": { "name": "AgroConnect Admin", "role": "Admin", "purpose": "staging administrator" }
+  }
+}

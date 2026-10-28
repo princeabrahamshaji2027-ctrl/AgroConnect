@@ -13,6 +13,7 @@ export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: /.*\.spec\.mjs/,
   globalSetup: './tests/e2e/global-setup.mjs', // refuses signed-in runs against non-staging builds
+  globalTeardown: './tests/e2e/global-teardown.mjs', // removes test traffic between staging test accounts (needs the service key)
   timeout: 60_000,
   reporter: [['list']],
   outputDir: 'test-results/e2e',

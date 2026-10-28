@@ -38,3 +38,6 @@ android/app/google-services.json
 private/
 .venv/
 demo.pptx
+
+# downloaded originals of the demo feed media (converted copies in seed/media/<district>/ are committed)
+seed/media/originals/

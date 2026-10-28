@@ -1,0 +1,210 @@
+[
+ {
+  "slug": "coconut-climber",
+  "district": "Kannur",
+  "kind": "image",
+  "title": "File:Coconut tree climbing DSCN0226.jpg",
+  "shows": "a man climbing a tall coconut palm"
+ },
+ {
+  "slug": "areca-farm",
+  "district": "Kannur",
+  "kind": "image",
+  "title": "File:Areca farm.jpg",
+  "shows": "rows of young areca palms in a field"
+ },
+ {
+  "slug": "areca-palm",
+  "district": "Kannur",
+  "kind": "image",
+  "title": "File:Areca catechu 2 (cropped).jpg",
+  "shows": "an areca palm with its nut bunch below the leaves"
+ },
+ {
+  "slug": "pepper-on-jackfruit",
+  "district": "Kannur",
+  "kind": "image",
+  "title": "File:Black Pepper on Jackfruit Tree - Kerala - IMG 3623.jpg",
+  "shows": "a black pepper vine climbing a jackfruit tree"
+ },
+ {
+  "slug": "cashew-apples",
+  "district": "Kannur",
+  "kind": "image",
+  "title": "File:Cashew apples.jpg",
+  "shows": "yellow cashew apples with nuts on the tree"
+ },
+ {
+  "slug": "mango-flowers",
+  "district": "Kannur",
+  "kind": "image",
+  "title": "File:Mango tree flowers, Umaria district, MP, India.jpg",
+  "shows": "a mango tree branch in flower"
+ },
+ {
+  "slug": "banana-farm",
+  "district": "Pathanamthitta",
+  "kind": "image",
+  "title": "File:Banana Farm - Kerala.jpg",
+  "shows": "a banana farm in Kerala"
+ },
+ {
+  "slug": "plantain-bunch",
+  "district": "Pathanamthitta",
+  "kind": "image",
+  "title": "File:Plantain in Kerala.jpg",
+  "shows": "green plantain bunches on the plant"
+ },
+ {
+  "slug": "rubber-tapping",
+  "district": "Pathanamthitta",
+  "kind": "image",
+  "title": "File:Rubber tapping 2016.jpg",
+  "shows": "a tapped rubber tree with latex running into a cup"
+ },
+ {
+  "slug": "rubber-sheets",
+  "district": "Pathanamthitta",
+  "kind": "image",
+  "title": "File:Rubber sheet.JPG",
+  "shows": "rubber sheets hanging on a line to dry"
+ },
+ {
+  "slug": "tapioca-plants",
+  "district": "Pathanamthitta",
+  "kind": "image",
+  "title": "File:Tapioca kerala.JPG",
+  "shows": "tapioca (cassava) plants"
+ },
+ {
+  "slug": "bitter-gourd-seedling",
+  "district": "Pathanamthitta",
+  "kind": "image",
+  "title": "File:Bitter gourd- bitter melon plant.JPG",
+  "shows": "a young bitter gourd plant in a pot"
+ },
+ {
+  "slug": "cardamom-plant",
+  "district": "Idukki",
+  "kind": "image",
+  "title": "File:Cardamom plant.jpg",
+  "shows": "cardamom plants under shade trees"
+ },
+ {
+  "slug": "cardamom-pods",
+  "district": "Idukki",
+  "kind": "image",
+  "title": "File:Elettaria cardamomum Capsules and seeds.jpg",
+  "shows": "dried cardamom pods and seeds"
+ },
+ {
+  "slug": "tea-estate",
+  "district": "Idukki",
+  "kind": "image",
+  "title": "File:Tea plantation munnar.jpg",
+  "shows": "a tea plantation in Munnar"
+ },
+ {
+  "slug": "tea-baskets",
+  "district": "Idukki",
+  "kind": "image",
+  "title": "File:Baskets of fresh tea leaves (28656058492).jpg",
+  "shows": "baskets and sacks of freshly plucked tea leaves"
+ },
+ {
+  "slug": "green-pepper-spike",
+  "district": "Idukki",
+  "kind": "image",
+  "title": "File:Black Pepper (Piper nigrum) fruits.jpg",
+  "shows": "a spike of green pepper berries on the vine"
+ },
+ {
+  "slug": "rice-transplanting",
+  "district": "Kottayam",
+  "kind": "image",
+  "title": "File:Rice transplanters in the Philippines.jpg",
+  "shows": "two people transplanting rice seedlings in a flooded field"
+ },
+ {
+  "slug": "paddy-harvest",
+  "district": "Kottayam",
+  "kind": "image",
+  "title": "File:TraditionalHarvesting.jpg",
+  "shows": "workers harvesting paddy by hand"
+ },
+ {
+  "slug": "ripening-paddy",
+  "district": "Kottayam",
+  "kind": "image",
+  "title": "File:Paddy Field at Eravathour Thrissur.jpg",
+  "shows": "ripening paddy close to harvest"
+ },
+ {
+  "slug": "vermicompost-tank",
+  "district": "Kottayam",
+  "kind": "image",
+  "title": "File:Vermicompost tank.JPG",
+  "shows": "a brick vermicompost tank"
+ },
+ {
+  "slug": "okra-pod",
+  "district": "Kottayam",
+  "kind": "image",
+  "title": "File:Hong Kong Okra Aug 25 2012.JPG",
+  "shows": "an okra pod growing on the plant"
+ },
+ {
+  "slug": "coconut-palms-video",
+  "district": "Kannur",
+  "kind": "video",
+  "title": "File:Coconut Plantation.webm",
+  "start": 0,
+  "maxSeconds": 10,
+  "shows": "coconut palms swaying in a plantation"
+ },
+ {
+  "slug": "copra-oil-video",
+  "district": "Kannur",
+  "kind": "video",
+  "title": "File:Cold Pressed Coconut Oil Extraction.webm",
+  "start": 0,
+  "maxSeconds": 25,
+  "shows": "dried coconut (copra) going into an oil press (Salem, Tamil Nadu)"
+ },
+ {
+  "slug": "latex-collection-video",
+  "district": "Pathanamthitta",
+  "kind": "video",
+  "title": "File:Latex collection.webm",
+  "start": 0,
+  "maxSeconds": 15,
+  "shows": "latex being collected from tapped rubber trees (Kollam, Kerala)"
+ },
+ {
+  "slug": "latex-dripping-video",
+  "district": "Pathanamthitta",
+  "kind": "video",
+  "title": "File:Latex dripping video 2.webm",
+  "start": 0,
+  "maxSeconds": 20,
+  "shows": "latex dripping from a freshly tapped rubber tree into a cup"
+ },
+ {
+  "slug": "large-cardamom-video",
+  "district": "Idukki",
+  "kind": "video",
+  "title": "File:Cardamom harvest in Kalimpong, West Bengal.webm",
+  "start": 0,
+  "maxSeconds": 15,
+  "shows": "harvested large cardamom being sorted (Kalimpong, West Bengal)"
+ },
+ {
+  "slug": "rice-combine-video",
+  "district": "Kottayam",
+  "kind": "video",
+  "title": "File:20200724-NRCS-LSC-0030-Rice Harvesting.webm",
+  "start": 0,
+  "maxSeconds": 12,
+  "shows": "aerial view of a combine harvesting a large rice field (Texas, USA)"
+ }
+]
