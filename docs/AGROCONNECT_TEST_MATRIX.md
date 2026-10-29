@@ -128,3 +128,15 @@ run afterwards. Leftovers from earlier runs were removed on staging: 7 test post
 | Live loop on staging: apply while the admin has Experts open → listed without reload + count → approve → user is Expert | PASS (Playwright) |
 | APK 1.2 (code 3) installed over 1.1 on the Nothing Phone (2); production backend; debug certificate | PASS (installed, app opens to login) |
 | Signed-in checks on the phone | WAITING: the owner signs in (production passwords are not typed by the assistant) |
+
+## 2026-10-29: specific-date availability, post ⋯ menu, live admin
+
+| Check | Result |
+|---|---|
+| Root cause "available only next month": Dr. Anita Rao's weekly schedule is Monday-only; saved on Thu 29 Oct, the first Monday is 2 Nov | Confirmed from production data (read-only) |
+| Expert adds a time for today in "Add times for a specific date"; farmer can see that date bookable | PASS (Playwright, staging) |
+| Author deletes own post from ⋯ (no Report offered); gone in the UI and the database | PASS (Playwright, staging) |
+| Another user reports a post from ⋯ (no Delete offered); the admin receives a Pending report | PASS (Playwright, staging) |
+| Report/delete dialogs show over the whole screen (portal) | PASS after fix (they were trapped inside the card) |
+| Full suites | unit 62/62, DB 145/145, Playwright 57/58: "Join opens …" countdown check failed once, then passed 2/2 on rerun (intermittent, cause not proven) |
+| APK 1.2 with these changes, production backend, debug-signed | Built; not yet installed (phone disconnected) |
