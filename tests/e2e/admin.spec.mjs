@@ -304,3 +304,48 @@ test.describe('expert announcements waiting for review (staging, migration 25)',
     }
   });
 });
+
+test.describe('live admin: expert application appears and is approved without reloading (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL || !process.env.FIXTURE_PASSWORD, 'needs staging env');
+
+  test('user applies with a PDF while the admin has Experts open → listed live with a sidebar count → approve → user is an expert', async ({ page }) => {
+    test.setTimeout(120_000);
+    const { createClient } = await import('@supabase/supabase-js');
+    const { demoResumePdf } = await import('../../scripts/production/demo-resume.mjs');
+    const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const admin = mk();
+    await admin.auth.signInWithPassword({ email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD });
+    const email = fx(`live${Date.now()}`); const name = `Live Applicant ${Date.now() % 100000}`;
+    const user = mk();
+    expect((await user.auth.signUp({ email, password: process.env.FIXTURE_PASSWORD, options: { data: { full_name: name } } })).error).toBeNull();
+    const { data: si } = await user.auth.signInWithPassword({ email, password: process.env.FIXTURE_PASSWORD });
+    const uid = si.user.id;
+    try {
+      await page.goto('/');
+      await page.getByPlaceholder('admin@agroconnect.com').fill(process.env.E2E_ADMIN_EMAIL);
+      await page.locator('input[type=password]').fill(process.env.E2E_ADMIN_PASSWORD);
+      await page.getByText('Sign In to Dashboard').click();
+      await expect(page.getByText('Total Users')).toBeVisible({ timeout: 20_000 });
+      await page.getByText('Experts', { exact: true }).first().click();
+      await expect(page.getByRole('heading', { name: 'Experts Management' })).toBeVisible();
+      await page.waitForTimeout(2500);   // realtime subscription ready
+      // the user applies in the app (same calls as the app: upload own PDF, then submit-resume)
+      const path = `${uid}/${Date.now()}_cv.pdf`;
+      expect((await user.storage.from('expert-cvs').upload(path, new Blob([demoResumePdf({ name, district: 'Kannur', specialization: 'Soil' })],
+        { type: 'application/pdf' }), { contentType: 'application/pdf' })).error).toBeNull();
+      const r = await user.functions.invoke('submit-resume', { body: { action: 'apply', path, qualification: 'MSc Agriculture', experience: '6 years' } });
+      expect(r.error).toBeNull();
+      const row = page.locator('tr', { hasText: name });
+      await expect(row).toBeVisible({ timeout: 15_000 });                       // no reload
+      await expect(page.getByTestId('pending-experts')).toBeVisible();
+      await expect(row.getByText('View Resume')).toBeVisible();
+      await row.getByText('Approve', { exact: true }).click();
+      await expect(page.getByText('Application approved. The user is now an expert.')).toBeVisible({ timeout: 15_000 });
+      await expect.poll(async () => (await user.from('profiles').select('role').eq('id', uid).single()).data?.role, { timeout: 15_000 }).toBe('Expert');
+    } finally {
+      await admin.functions.invoke('admin-delete-user', { body: { user_id: uid } });
+      const { data } = await admin.storage.from('expert-cvs').list(uid);
+      if (data?.length) await admin.storage.from('expert-cvs').remove(data.map((o) => `${uid}/${o.name}`));
+    }
+  });
+});

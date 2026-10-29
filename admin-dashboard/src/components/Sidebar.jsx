@@ -1,7 +1,38 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import logoImg from '../assets/logo.png';
+import { supabase } from '../supabase';
+
+// Live "waiting for you" counts: expert applications and expert announcements that need an admin decision.
+function usePendingCounts() {
+  const [counts, setCounts] = useState({});
+  useEffect(() => {
+    let live = true;
+    const load = async () => {
+      const [apps, bcs] = await Promise.all([
+        supabase.from('expert_applications').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
+        supabase.from('broadcasts').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      ]);
+      if (live) setCounts({ experts: apps.count || 0, broadcasts: bcs.error ? 0 : bcs.count || 0 });
+    };
+    load();
+    let channel = null;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!live || !user) return;
+      // applications are in the realtime publication; announcements notify every admin when submitted
+      channel = supabase.channel('admin-pending-counts')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'expert_applications' }, load)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, load)
+        .subscribe();
+    });
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { live = false; if (channel) supabase.removeChannel(channel); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
+  return counts;
+}
 
 export default function Sidebar({ activeTab, onTabChange, onLogout, onClose, isOpen = true }) {
+  const pending = usePendingCounts();
   const menuGroups = [
     {
       title: "User Management",
@@ -92,6 +123,12 @@ export default function Sidebar({ activeTab, onTabChange, onLogout, onClose, isO
               >
                 <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
                 <span className="font-label-md">{item.label}</span>
+                {pending[item.id] > 0 && (
+                  <span data-testid={`pending-${item.id}`} title="Waiting for review"
+                    className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-error text-white text-[11px] font-bold flex items-center justify-center">
+                    {pending[item.id]}
+                  </span>
+                )}
               </button>
             ))}
           </div>

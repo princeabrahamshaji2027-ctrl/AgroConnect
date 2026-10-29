@@ -698,7 +698,8 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       if (cancelled || !session?.user) return;
       channel = supabase.channel(`catchup-bookings-${session.user.id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${session.user.id}` },
-          (payload) => { if (payload.new?.type === 'booking') fetchDataRef.current(); })
+          // booking changes, and the expert approval ('announcement') that turns this screen into expert mode
+          (payload) => { if (['booking', 'announcement', 'system'].includes(payload.new?.type)) fetchDataRef.current(); })
         .subscribe();
     });
     const onVisible = () => { if (document.visibilityState === 'visible') fetchDataRef.current(); };

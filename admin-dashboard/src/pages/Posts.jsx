@@ -16,9 +16,9 @@ export default function Posts() {
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
 
-  const fetchPosts = async () => {
+  const fetchPosts = async (quiet = false) => {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       const { data, error } = await supabase
         .from('posts')
         .select('*, profiles(id, full_name, role, profile_image_path)')
@@ -35,6 +35,11 @@ export default function Posts() {
 
   useEffect(() => {
     fetchPosts();
+    // new, edited or deleted posts from the app appear without reloading the page
+    const channel = supabase.channel('admin-posts-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => fetchPosts(true))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const handleDeletePost = async (e, postId) => {

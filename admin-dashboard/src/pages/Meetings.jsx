@@ -99,6 +99,12 @@ export default function Meetings() {
   }, [applied, page]);
 
   useEffect(() => { load(); }, [load]);
+  // bookings, links and reviews made in the app meanwhile: reload when the admin returns to this browser tab
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
 
   const apply = (e) => { e?.preventDefault(); setPage(0); setApplied(clean(filters)); };
   const reset = () => { setFilters(EMPTY); setPage(0); setApplied({}); };

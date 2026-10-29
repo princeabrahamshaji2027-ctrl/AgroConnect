@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
 import defaultAvatar from '../assets/profile-placeholder.png';
 import InlineNotice from '../components/InlineNotice';
@@ -23,9 +23,9 @@ export default function Experts() {
   // older applications recorded "<ts>_cv.pdf" while the file was stored as "<ts>_cv.jpeg/.jpg": recorded path -> stored file
   const [storedPaths, setStoredPaths] = useState(new Map());
 
-  const fetchData = async () => {
+  const fetchData = async (quiet = false) => {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       if (activeSubTab === 'applications') {
         const { data, error } = await supabase
           .from('expert_applications')
@@ -113,6 +113,16 @@ export default function Experts() {
   useEffect(() => {
     fetchData();
   }, [activeSubTab]);
+
+  // a new application (or a resume replaced in the app) shows up here at once, without reloading the page
+  const fetchDataRef = useRef(fetchData);
+  fetchDataRef.current = fetchData;
+  useEffect(() => {
+    const channel = supabase.channel('admin-expert-applications')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expert_applications' }, () => fetchDataRef.current(true))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const handleApprove = async (appId) => {
     try {
