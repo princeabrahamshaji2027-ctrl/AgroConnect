@@ -12,7 +12,7 @@ written for this audit; production changes that still need the owner's approval 
 | Staging Supabase | `ahkgvuewgbjyahbiehrx` | `.env.staging`; every staging script refuses the production ref |
 | Render admin site | `https://agroconnect-h7nj.onrender.com` | serves a bundle that calls production and already contains the migration-24 code (`admin_expert_removal_preview`) → it was deployed from `origin/main` after `1289b3e` |
 | Work branch | `feat/admin-roles-resumes-branding` | `git status`; `main` is only fast-forwarded |
-| Production migrations | up to `remediation_24_expert_removal_and_resumes` | `list_migrations` |
+| Production migrations | up to `remediation_25_expert_broadcasts` (applied 2026-10-29) | `list_migrations` |
 | Staging migrations | up to `remediation_25_expert_broadcasts` | applied in this round (staging only) |
 | Service-role keys on this Mac | none (`.env.production.local` holds only comments; `.env.staging` has no service key) | file inspection, values never printed |
 
@@ -126,8 +126,9 @@ The target was 50 users (Kannur 20, Pathanamthitta 20, Idukki 5, Kottayam 5) wit
 
 ## 9. Waiting for the owner
 
-1. **Apply migration 25 to production.** The admin site and the app degrade safely without it: the pending list is
-   empty, and an expert who tries to submit gets an error.
+1. ~~Apply migration 25 to production~~ **Done 2026-10-29 with the owner's approval.** The two functions and the read
+   policy match staging exactly (md5 of the definitions); `anon` cannot execute them; the 1 existing broadcast is
+   `approved`. Security advisors show no new findings.
 2. **Repair the production resumes** (§5). Needs a production service key in `.env.production.local`.
 3. **Seed production** (§8). Needs a service key and approval.
 4. **Render.** Run Manual Deploy of the pushed `main` if auto-deploy is off, then smoke-test the site.
@@ -135,3 +136,14 @@ The target was 50 users (Kannur 20, Pathanamthitta 20, Idukki 5, Kottayam 5) wit
    - The Render admin site and the installed production app use production.
    - A localhost web app built with `.env.production` also uses production.
    - The staging APK and `dist-staging` use staging.
+
+## 10. Follow-up 2026-10-29
+
+- **"Expert post not in the admin":** the post ("Best Source of Protein", Ramesh Menon, 01:57 UTC) was created in the
+  **staging** app on the phone. The Render admin reads **production**, which has 0 posts. No code fault.
+- **"Resume missing" on production:** jacob's and Anandh's records point to `<ts>_cv.pdf`, while their files are stored
+  as `<ts>_cv.jpeg` / `<ts>_cv.jpg` (images of their resumes). The admin now opens the stored file, labelled
+  "(image)". The test account "Dr. Ramesh Expert" has no file at all and shows a neutral "No resume file uploaded".
+  Commit `269237e`; no data was changed.
+- **Render** last served a build from 02:04 UTC (`index-B__bAgdk.js`). It contains the announcement review panel but
+  not `269237e`. A Manual Deploy of the latest `main` is needed.
