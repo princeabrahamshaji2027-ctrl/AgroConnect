@@ -118,3 +118,13 @@ run afterwards. Leftovers from earlier runs were removed on staging: 7 test post
 | No district / district with no local posts still sees all the other posts | PASS in PGlite |
 | Production import | NOT RUN: production has 0 designated demo accounts; needs owner approval and a production service key |
 | 30 posts visible in the production UI and the Android app | BLOCKED until the import runs |
+
+## Production phone + Render check (2026-10-29)
+
+| Check | Result |
+|---|---|
+| Render serves `a7bcfe1` admin (`index-DOIo909h.js`, 05:33 UTC): live Experts/Posts refresh, pending counts, resume fix; production only | PASS (bundle inspected) |
+| Ravi Kumar's expert application on production: Pending, PDF stored; visible under the admin's permissions | PASS (read-only SQL as the admin) |
+| Live loop on staging: apply while the admin has Experts open → listed without reload + count → approve → user is Expert | PASS (Playwright) |
+| APK 1.2 (code 3) installed over 1.1 on the Nothing Phone (2); production backend; debug certificate | PASS (installed, app opens to login) |
+| Signed-in checks on the phone | WAITING: the owner signs in (production passwords are not typed by the assistant) |
