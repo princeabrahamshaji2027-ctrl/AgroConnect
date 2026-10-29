@@ -20,6 +20,8 @@ export default function Experts() {
   const [resumeByUser, setResumeByUser] = useState({});   // verified experts: user_id -> latest approved CV path
   const [removeTarget, setRemoveTarget] = useState(null); // expert awaiting "Remove expert role" (RemoveExpertDialog)
   const [missingPaths, setMissingPaths] = useState(new Set()); // referenced CV paths with no file in storage
+  // older applications recorded "<ts>_cv.pdf" while the file was stored as "<ts>_cv.jpeg/.jpg": recorded path -> stored file
+  const [storedPaths, setStoredPaths] = useState(new Map());
 
   const fetchData = async () => {
     try {
@@ -79,6 +81,7 @@ export default function Experts() {
     let live = true;
     (async () => {
       const missing = new Set();
+      const stored = new Map();
       const byFolder = new Map();
       for (const p of pendingPaths) {
         const i = p.lastIndexOf('/');
@@ -89,10 +92,20 @@ export default function Experts() {
       for (const [folder, paths] of byFolder) {
         const { data, error } = await supabase.storage.from('expert-cvs').list(folder, { limit: 1000 });
         if (error) continue;   // unknown: keep the View button; opening it explains a missing file
-        const names = new Set((data || []).map((o) => o.name));
-        for (const p of paths) if (!names.has(p.slice(p.lastIndexOf('/') + 1))) missing.add(p);
+        const files = (data || []).filter((o) => o.id);   // folders have no id
+        const names = new Set(files.map((o) => o.name));
+        for (const p of paths) {
+          const name = p.slice(p.lastIndexOf('/') + 1);
+          if (names.has(name)) continue;
+          // same upload under another extension, else the applicant's newest file in their own folder
+          const stem = name.replace(/\.[^.]+$/, '');
+          const match = files.find((o) => o.name.replace(/\.[^.]+$/, '') === stem)
+            || [...files].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+          if (match) stored.set(p, folder ? `${folder}/${match.name}` : match.name);
+          else missing.add(p);
+        }
       }
-      if (live) setMissingPaths(missing);
+      if (live) { setMissingPaths(missing); setStoredPaths(stored); }
     })();
     return () => { live = false; };
   }, [pendingPaths]);
@@ -158,10 +171,11 @@ export default function Experts() {
     }
   };
 
-  const resumeButton = (path) => (path && missingPaths.has(path) ? (
-    <span className="text-error font-semibold inline-flex items-center gap-1" data-testid="resume-missing">
-      <span className="material-symbols-outlined text-[16px]">error</span>
-      <span>Resume missing — ask the expert to upload a PDF again</span>
+  const resumeButton = (recorded) => {
+    const path = recorded && (storedPaths.get(recorded) || recorded);
+    return path && missingPaths.has(recorded) ? (
+    <span className="text-on-surface-variant/60 inline-flex items-center gap-1" data-testid="resume-missing">
+      <span>No resume file uploaded</span>
     </span>
   ) : path ? (
     <button
@@ -169,9 +183,10 @@ export default function Experts() {
       className="text-primary-container hover:underline inline-flex items-center gap-1 font-semibold cursor-pointer bg-transparent border-none p-0"
     >
       <span className="material-symbols-outlined text-[16px]">file_open</span>
-      <span>View Resume</span>
+      <span>View Resume{/\.pdf$/i.test(path) ? '' : ' (image)'}</span>
     </button>
-  ) : null);
+  ) : null;
+  };
 
   return (
     <div className="p-6 pb-24 max-w-[1600px] mx-auto flex flex-col gap-6">
