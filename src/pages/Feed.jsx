@@ -221,6 +221,9 @@ export default function Feed({
             });
         }
       )
+      // a post deleted by its author (or an admin) disappears from everyone's feed
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' },
+        (payload) => { if (payload.old?.id) setPosts((prev) => prev.filter((p) => p.id !== payload.old.id)); })
       .subscribe();
 
     return () => {
@@ -627,6 +630,7 @@ export default function Feed({
               onConnectToggle={handleConnectToggle}
               isConnected={connectedUserIds.has(post.userId)}
               currentUserId={currentUserId}
+              onDeleted={(id) => setPosts((prev) => prev.filter((p) => p.id !== id))}
             />
           </div>
         ))}

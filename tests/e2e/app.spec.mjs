@@ -907,3 +907,82 @@ test.describe('district feed: four districts + pagination (staging)', () => {
     expect(firstPage.length).toBe(20);
   });
 });
+
+test.describe('2026-10-29: availability for a specific date, post ⋯ menu (staging)', () => {
+  test.skip(!staging || !process.env.STAGING_SUPABASE_URL, 'needs staging env');
+  const mk = () => createClient(process.env.STAGING_SUPABASE_URL, process.env.STAGING_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+  const istNow = () => new Date(Date.now() + 330 * 60000);
+
+  test('expert adds times for today (or tomorrow late at night); a farmer sees that date bookable', async ({ page }) => {
+    const expert = mk(); const farmer = mk();
+    const e = await expert.auth.signInWithPassword({ email: fx('expert1'), password: process.env.FIXTURE_PASSWORD });
+    await farmer.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
+    const expertId = (await expert.from('experts').select('id').eq('user_id', e.data.user.id).single()).data.id;
+    // a time 2–3 h ahead on today's date; after 20:00 IST use tomorrow 10:00
+    const n = istNow(); const late = n.getUTCHours() >= 20;
+    const d = late ? new Date(n.getTime() + 864e5) : n;
+    const date = d.toISOString().slice(0, 10);
+    const time = late ? '10:00' : `${String(n.getUTCHours() + 2).padStart(2, '0')}:${n.getUTCMinutes() < 30 ? '30' : '45'}`;
+    await expert.from('consultation_slots').delete().eq('expert_id', expertId).eq('slot_date', date).eq('start_time', time).eq('is_booked', false);
+    await login(page, fx('expert1'));
+    await nav(page, 'Catch Up').click();
+    await page.getByText('Manage Availability').first().click();
+    const box = page.getByTestId('one-date-availability');
+    await expect(box).toBeVisible();
+    await box.getByLabel('Availability date').fill(date);
+    await box.getByLabel('Availability time').fill(time);
+    await box.getByRole('button', { name: '+ Add time' }).click();
+    await box.getByRole('button', { name: `Save times for ${date}` }).click();
+    await expect(page.getByText(new RegExp(`saved for ${date}`))).toBeVisible({ timeout: 15_000 });
+    try {
+      const { data } = await farmer.from('consultation_slots').select('id, is_booked').eq('expert_id', expertId).eq('slot_date', date).eq('start_time', `${time}:00`);
+      expect(data).toHaveLength(1);
+      expect(data[0].is_booked).toBe(false);
+    } finally {
+      await expert.from('consultation_slots').delete().eq('expert_id', expertId).eq('slot_date', date).eq('start_time', time).eq('is_booked', false);
+    }
+  });
+
+  test('author deletes own post from ⋯; another user reports a post from ⋯ and the admin receives it', async ({ page }) => {
+    const u1 = mk(); const admin = mk();
+    const s1 = await u1.auth.signInWithPassword({ email: fx('user1'), password: process.env.FIXTURE_PASSWORD });
+    await admin.auth.signInWithPassword({ email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD });
+    const stamp = Date.now() % 100000;
+    const mine = (await u1.from('posts').insert({ user_id: s1.data.user.id, title: `Neem spray tip ${stamp}`, caption: `Neem spray tip ${stamp}\n\nMix neem oil with soap water.`, status: 'Approved' }).select('id').single()).data.id;
+    let reportIds = [];
+    try {
+      // user1: own post → Delete
+      await login(page, fx('user1'));
+      await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
+      const card = page.locator('.card', { hasText: `Neem spray tip ${stamp}` }).first();
+      await expect(card).toBeVisible({ timeout: 20_000 });
+      await card.getByRole('button', { name: 'Post options' }).click();
+      await expect(card.getByRole('menuitem', { name: /Report post/ })).toHaveCount(0);
+      await card.getByRole('menuitem', { name: /Delete post/ }).click();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      await expect(page.locator('.card', { hasText: `Neem spray tip ${stamp}` })).toHaveCount(0, { timeout: 15_000 });
+      expect((await admin.from('posts').select('id').eq('id', mine)).data).toHaveLength(0);
+
+      // user2: someone else's post → Report (no Delete offered)
+      const other = (await u1.from('posts').insert({ user_id: s1.data.user.id, title: `Drip line check ${stamp}`, caption: `Drip line check ${stamp}\n\nFlush the lines weekly.`, status: 'Approved' }).select('id').single()).data.id;
+      await page.context().clearCookies(); await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+      await login(page, fx('user2'));
+      await expect(nav(page, 'Feed')).toBeVisible({ timeout: 20_000 });
+      const theirs = page.locator('.card', { hasText: `Drip line check ${stamp}` }).first();
+      await expect(theirs).toBeVisible({ timeout: 20_000 });
+      await theirs.getByRole('button', { name: 'Post options' }).click();
+      await expect(theirs.getByRole('menuitem', { name: /Delete post/ })).toHaveCount(0);
+      await theirs.getByRole('menuitem', { name: /Report post/ }).click();
+      await page.getByLabel('Not about farming').check();
+      await page.getByRole('button', { name: 'Send report' }).click();
+      await expect(page.getByText('An admin will review this post.')).toBeVisible({ timeout: 15_000 });
+      const reps = (await admin.from('reports').select('id, reason, status').eq('post_id', other)).data;
+      expect(reps).toEqual([expect.objectContaining({ reason: 'Not about farming', status: 'Pending' })]);
+      reportIds = reps.map((r) => r.id);
+      await admin.from('posts').delete().eq('id', other);   // also removes the report (cascade)
+    } finally {
+      await admin.from('posts').delete().eq('id', mine);
+      if (reportIds.length) await admin.from('reports').delete().in('id', reportIds);
+    }
+  });
+});

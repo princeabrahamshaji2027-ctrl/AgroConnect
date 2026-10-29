@@ -2,17 +2,18 @@ import React, { useEffect, useState } from 'react';
 import logoImg from '../assets/logo.png';
 import { supabase } from '../supabase';
 
-// Live "waiting for you" counts: expert applications and expert announcements that need an admin decision.
+// Live "waiting for you" counts: expert applications, expert announcements and post reports that need an admin decision.
 function usePendingCounts() {
   const [counts, setCounts] = useState({});
   useEffect(() => {
     let live = true;
     const load = async () => {
-      const [apps, bcs] = await Promise.all([
+      const [apps, bcs, reps] = await Promise.all([
         supabase.from('expert_applications').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
         supabase.from('broadcasts').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
       ]);
-      if (live) setCounts({ experts: apps.count || 0, broadcasts: bcs.error ? 0 : bcs.count || 0 });
+      if (live) setCounts({ experts: apps.count || 0, broadcasts: bcs.error ? 0 : bcs.count || 0, reports: reps.count || 0 });
     };
     load();
     let channel = null;
@@ -21,6 +22,7 @@ function usePendingCounts() {
       // applications are in the realtime publication; announcements notify every admin when submitted
       channel = supabase.channel('admin-pending-counts')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'expert_applications' }, load)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, load)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, load)
         .subscribe();
     });

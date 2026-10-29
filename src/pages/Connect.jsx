@@ -387,6 +387,11 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
   const [meetingDuration, setMeetingDuration] = useState(30);
   const [bufferTime, setBufferTime] = useState(10);
   const [slotPickerTime, setSlotPickerTime] = useState({ Mon: '09:00', Tue: '09:00', Wed: '09:00', Thu: '09:00', Fri: '09:00', Sat: '09:00', Sun: '09:00' });
+  // One specific date (today included) in addition to the weekly pattern
+  const [oneDate, setOneDate] = useState(todayIST());
+  const [oneDateTime, setOneDateTime] = useState('17:00');
+  const [oneDateTimes, setOneDateTimes] = useState([]);
+  const [savingOneDate, setSavingOneDate] = useState(false);
 
   // Database States & Calendar States
   const [expertsList, setExpertsList] = useState([]);
@@ -828,6 +833,41 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
       ...prev,
       [dayStr]: updated
     }));
+  };
+
+  const handleAddOneDateTime = () => {
+    if (oneDateTimes.includes(oneDateTime)) return;
+    if (!slotStartsSoonEnough(oneDate, oneDateTime)) {
+      if (onShowToast) onShowToast(`⚠️ ${formatTime12h(oneDateTime)} on ${oneDate} is too soon or already past. Pick a time at least 30 minutes from now.`);
+      return;
+    }
+    if (!slotEndTime(oneDateTime, meetingDuration)) {
+      if (onShowToast) onShowToast('⚠️ A slot must end before midnight.');
+      return;
+    }
+    setOneDateTimes([...oneDateTimes, oneDateTime].sort());
+  };
+
+  const handleSaveOneDate = async () => {
+    if (!currentExpertId || savingOneDate) return;
+    const valid = oneDateTimes.filter((t) => slotStartsSoonEnough(oneDate, t) && slotEndTime(t, meetingDuration));
+    if (!valid.length) {
+      if (onShowToast) onShowToast('⚠️ Add at least one time (30 minutes or more from now) for this date.');
+      return;
+    }
+    setSavingOneDate(true);
+    const { error } = await supabase.from('consultation_slots').upsert(
+      valid.map((t) => ({ expert_id: currentExpertId, slot_date: oneDate, start_time: t, end_time: slotEndTime(t, meetingDuration), is_booked: false })),
+      { onConflict: 'expert_id,slot_date,start_time', ignoreDuplicates: true });
+    setSavingOneDate(false);
+    if (error) {
+      if (onShowToast) onShowToast(/fetch|network/i.test(error.message || '') ? 'No connection. Your times were not saved.' : `Your times could not be saved: ${error.message}`);
+      return;
+    }
+    if (onShowToast) onShowToast(`✅ ${valid.length} time${valid.length > 1 ? 's' : ''} saved for ${oneDate}. Farmers can book now.`);
+    setOneDateTimes([]);
+    fetchMySlots(currentExpertId);
+    fetchData();
   };
 
   const handleSaveAvailability = async () => {
@@ -1474,6 +1514,40 @@ export default function Connect({ onPeaAIClick, onShowToast, initialBooking, cle
               }}>
                 <span className="material-symbols-outlined" style={{ fontSize: '24px' }}>edit_calendar</span>
               </div>
+            </div>
+
+            {/* Specific date (e.g. today) */}
+            <div className="card fade-in" data-testid="one-date-availability" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--primary-green)' }}>Add times for a specific date</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }}>
+                For today or any day — farmers can book these as soon as you save.
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input type="date" aria-label="Availability date" value={oneDate} min={todayIST()}
+                  onChange={(e) => { setOneDate(e.target.value); setOneDateTimes([]); }}
+                  style={{ flex: '1 1 140px', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: '#1E1E1E', color: 'var(--text-primary)', colorScheme: 'dark' }} />
+                <input type="time" aria-label="Availability time" value={oneDateTime} step="900"
+                  onChange={(e) => setOneDateTime(e.target.value)}
+                  style={{ flex: '1 1 110px', padding: '10px', borderRadius: '10px', border: '1px solid var(--border-color)', backgroundColor: '#1E1E1E', color: 'var(--text-primary)', colorScheme: 'dark' }} />
+                <button type="button" onClick={handleAddOneDateTime}
+                  style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid var(--primary-green)', backgroundColor: 'transparent', color: 'var(--primary-green)', fontWeight: 700, cursor: 'pointer' }}>
+                  + Add time
+                </button>
+              </div>
+              {oneDateTimes.length > 0 && (
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {oneDateTimes.map((t) => (
+                    <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 10px', borderRadius: '999px', backgroundColor: 'rgba(136, 217, 130, 0.12)', color: 'var(--primary-green)', fontSize: '13px', fontWeight: 600 }}>
+                      {formatTime12h(t)}
+                      <button type="button" aria-label={`Remove ${formatTime12h(t)}`} onClick={() => setOneDateTimes(oneDateTimes.filter((x) => x !== t))}
+                        style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: '14px' }}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Button type="button" variant="primary" onClick={handleSaveOneDate} disabled={savingOneDate || oneDateTimes.length === 0}>
+                {savingOneDate ? 'Saving…' : `Save times for ${oneDate}`}
+              </Button>
             </div>
 
             {/* Section 1: Select Available Days */}

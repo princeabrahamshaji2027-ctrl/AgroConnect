@@ -1,5 +1,99 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './components.css';
+import Dialog from './Dialog';
+import { supabase } from '../supabase';
+
+const REPORT_REASONS = ['Spam or misleading', 'Harmful or dangerous advice', 'Hate or harassment', 'Not about farming', 'Other'];
+
+// ⋯ on a post: the author can delete it; anyone else can report it to the admin (reports table, admin-only to read).
+function PostMenu({ post, currentUserId, onDeleted }) {
+  const [me, setMe] = useState(currentUserId || null);
+  const [open, setOpen] = useState(false);
+  const [dialog, setDialog] = useState(null);   // 'delete' | 'report' | 'reported'
+  const [reason, setReason] = useState(REPORT_REASONS[0]);
+  const [details, setDetails] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (currentUserId) { setMe(currentUserId); return; }
+    supabase.auth.getSession().then(({ data: { session } }) => setMe(session?.user?.id || null));
+  }, [currentUserId]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  const own = !!me && post.userId === me;
+
+  const doDelete = async () => {
+    setBusy(true); setError(null);
+    const { data, error: e } = await supabase.from('posts').delete().eq('id', post.id).select('id');
+    setBusy(false);
+    if (e || !data?.length) { setError(e?.message || 'The post could not be deleted.'); return; }
+    setDialog(null);
+    onDeleted?.(post.id);
+  };
+  const doReport = async () => {
+    setBusy(true); setError(null);
+    const text = details.trim() ? `${reason}: ${details.trim().slice(0, 500)}` : reason;
+    const { error: e } = await supabase.from('reports').insert({ reported_by: me, post_id: post.id, reason: text });
+    setBusy(false);
+    if (e) { setError(e.message); return; }
+    setDialog('reported'); setDetails('');
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button className="post-card-action-btn" aria-label="Post options" aria-haspopup="menu" aria-expanded={open}
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>
+        <span className="material-symbols-outlined">more_vert</span>
+      </button>
+      {open && (
+        <div role="menu" style={{ position: 'absolute', right: 0, top: '100%', zIndex: 30, minWidth: '170px', backgroundColor: '#1E1E1E',
+          border: '1px solid var(--border-color)', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+          {own ? (
+            <button role="menuitem" onClick={() => { setOpen(false); setError(null); setDialog('delete'); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '12px 14px', background: 'none', border: 'none', color: 'var(--error)', fontSize: '14px', cursor: 'pointer' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>delete</span>Delete post
+            </button>
+          ) : (
+            <button role="menuitem" disabled={!me} onClick={() => { setOpen(false); setError(null); setDialog('report'); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '12px 14px', background: 'none', border: 'none', color: 'var(--text-primary)', fontSize: '14px', cursor: 'pointer' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>flag</span>Report post
+            </button>
+          )}
+        </div>
+      )}
+      {dialog && createPortal(<>   {/* on <body>: the card's animation would otherwise trap the fixed overlay inside it */}
+      <Dialog isOpen={dialog === 'delete'} title="Delete this post?" confirmText={busy ? 'Deleting…' : 'Delete'} confirmDisabled={busy}
+        onConfirm={doDelete} onCancel={() => setDialog(null)}>
+        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '10px 0' }}>It is removed for everyone, with its likes and comments. This cannot be undone.</p>
+        {error && <p role="alert" style={{ color: 'var(--error)', fontSize: '13px' }}>{error}</p>}
+      </Dialog>
+      <Dialog isOpen={dialog === 'report'} title="Report this post" confirmText={busy ? 'Sending…' : 'Send report'} confirmDisabled={busy}
+        onConfirm={doReport} onCancel={() => setDialog(null)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '10px 0' }}>
+          {REPORT_REASONS.map((r) => (
+            <label key={r} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+              <input type="radio" name={`report-${post.id}`} checked={reason === r} onChange={() => setReason(r)} />{r}
+            </label>
+          ))}
+          <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={2} maxLength={500} placeholder="More details (optional)"
+            aria-label="Report details"
+            style={{ padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: '#1E1E1E', color: 'var(--text-primary)', resize: 'none' }} />
+          {error && <p role="alert" style={{ color: 'var(--error)', fontSize: '13px' }}>{error}</p>}
+        </div>
+      </Dialog>
+      <Dialog isOpen={dialog === 'reported'} title="Thanks for reporting" confirmText="OK" onConfirm={() => setDialog(null)} onCancel={() => setDialog(null)}>
+        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '10px 0' }}>An admin will review this post.</p>
+      </Dialog>
+      </>, document.body)}
+    </div>
+  );
+}
 
 // One attachment per post (posts.image_path + posts.media_type). Videos get a native player inside the card; a file
 // that cannot be loaded shows a placeholder instead of a broken image.
@@ -29,7 +123,8 @@ function PostMedia({ src, mediaType }) {
   return <img src={src} alt="Post Attachment" className="post-card-image" loading="lazy" onError={() => setFailed(true)} />;
 }
 
-export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileClick, onConnectToggle, isConnected = false, currentUserId }) {
+export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileClick, onConnectToggle, isConnected = false, currentUserId, onDeleted }) {
+  const [removed, setRemoved] = useState(false);
   const [isLiked, setIsLiked] = useState(post.liked);
   const [likesCount, setLikesCount] = useState(post.likes);
   const [isBookmarked, setIsBookmarked] = useState(post.bookmarked);
@@ -55,6 +150,7 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
     if (onBookmark) onBookmark(post.id, newBookmarked);
   };
 
+  if (removed) return null;
   return (
     <div className="card fade-in">
       <div className="post-card-header">
@@ -108,9 +204,7 @@ export function PostCard({ post, onLike, onBookmark, onCommentClick, onProfileCl
             {isConnected ? 'Connected ✓' : 'Connect'}
           </button>
         )}
-        <button className="post-card-action-btn">
-          <span className="material-symbols-outlined">more_vert</span>
-        </button>
+        <PostMenu post={post} currentUserId={currentUserId} onDeleted={(id) => { setRemoved(true); onDeleted?.(id); }} />
       </div>
 
       <div className="post-card-content">{post.content}</div>
