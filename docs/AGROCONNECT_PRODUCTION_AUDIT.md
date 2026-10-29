@@ -147,3 +147,50 @@ The target was 50 users (Kannur 20, Pathanamthitta 20, Idukki 5, Kottayam 5) wit
   Commit `269237e`; no data was changed.
 - **Render** last served a build from 02:04 UTC (`index-B__bAgdk.js`). It contains the announcement review panel but
   not `269237e`. A Manual Deploy of the latest `main` is needed.
+
+## 11. 30-post content rollout from "demo post s.pdf" (prepared 2026-10-29, not yet imported)
+
+**Source.**
+- File: `/Users/macadmin/Downloads/demo post s.pdf`, 13 pages.
+- Each post has a bold "N. heading", the image caption and its source, `POST NN · CATEGORY`, a bold title and the
+  description.
+- The PDF contains 61 link annotations. Matching them by page position gives each post **exactly one image link**
+  (`images.openai.com/static-rsc-4/…`). 25 posts also link a source web page; posts 2, 8, 14, 17 and 20 do not.
+
+**Extraction checks:**
+- 30 posts, indexes 1–30.
+- Every `POST NN` marker matches its number.
+- 30 unique titles and 30 unique image URLs.
+- No empty descriptions; each one is between 598 and 782 characters, one paragraph.
+- The manifest is `data/agroconnect_demo_posts.json`. The descriptions are kept word for word.
+
+**Images.** All 30 URLs returned HTTP 200 `image/jpeg` (59–423 KB) on 2026-10-29, including when requested with the
+Render and localhost addresses as referrer.
+- These are cached copies hosted by images.openai.com (`cache-control: max-age=1209600`) of pictures from third-party
+  sites. They may stop working later, and the rights to the pictures belong to those sites.
+- The app shows `posts.image_path` as an ordinary `<img>`, so external URLs work. Nothing is copied into storage.
+
+**Production state (read-only, 2026-10-29):**
+- 9 accounts: 2 Admin, 4 Expert, 3 Farmer.
+- **0 designated demo accounts.**
+- Every district is null.
+- 0 posts.
+
+Posts take their district from the author, so the posts cannot be spread across the 4 districts without demo authors.
+
+**Plan (needs the owner's approval and a production service key in `.env.production.local`):**
+1. `seed-community.mjs` creates the 50 designated demo accounts: Kannur 20, Pathanamthitta 20, Idukki 5, Kottayam 5;
+   10 of them are experts with demo PDF resumes and no bookable times.
+2. `import-demo-posts.mjs` publishes the 30 posts as those accounts, deterministically: Kannur 8, Pathanamthitta 8,
+   Idukki 7, Kottayam 7. The table comes from `node scripts/production/import-demo-posts.mjs --plan`.
+   - Duplicates are skipped by (title, image_path), so a re-run creates nothing.
+   - Nothing existing is deleted or edited.
+   - Proposed counts: **30 new, 0 duplicates** (production has 0 posts).
+
+**Verified before importing:** `tests/db/demo-posts-feed.test.mjs`, on the production schema in PGlite with these
+exact 30 posts, shows:
+- each district viewer gets all 30 through `get_feed` pages of 7, own district first, with no duplicates;
+- each image and description stays matched to its title;
+- an older local post ranks above the newest non-local one;
+- a viewer with no district gets all 30, newest first;
+- a district with no local posts still gets every other post.

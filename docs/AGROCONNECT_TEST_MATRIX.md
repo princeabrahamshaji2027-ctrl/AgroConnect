@@ -106,3 +106,15 @@ The final run passed 17/17. Earlier runs failed only on the script's own screen-
 also reach the other staging farmers, so the script prints a delete statement for those notifications, which must be
 run afterwards. Leftovers from earlier runs were removed on staging: 7 test posts, and 14 announcement notifications,
 4 of which had gone to 2 staging accounts that are not test accounts. The chat messages are kept.
+
+## 30-post content rollout (2026-10-29)
+
+| Test | Result |
+|---|---|
+| PDF extraction: 30 posts, markers match, unique titles and images, full descriptions | PASS (`demo-posts-feed.test.mjs`, manifest test) |
+| All 30 image URLs reachable (HTTP 200 image/jpeg), also with the app's addresses as referrer | PASS (curl, 2026-10-29) |
+| All 30 visible to each of the 4 districts, local first, through pagination, no duplicates | PASS in PGlite on the production schema |
+| Older local post ranks above a newer non-local post | PASS in PGlite |
+| No district / district with no local posts still sees all the other posts | PASS in PGlite |
+| Production import | NOT RUN: production has 0 designated demo accounts; needs owner approval and a production service key |
+| 30 posts visible in the production UI and the Android app | BLOCKED until the import runs |
