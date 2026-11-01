@@ -168,31 +168,45 @@
 
 ---
 
-## Slide 18 — Technical Architecture: Full-Stack System Architecture & Technology Stack
-* **Main Message:** Client tier (Capacitor/React), Cloud tier (Render/Supabase), and Data tier (PostgreSQL).
+## Slide 18 — IoT Hardware Subsystem: Autonomous Soil Moisture Telemetry via ESP32
+* **Main Message:** Autonomous edge telemetry powered by an ESP32 microcontroller, capacitive analog probe on GPIO 34 (ADC1), and standalone HTTP server on port 80.
 * **Spoken Script:**
-  > "Our architecture divides into three tiers:
-  > - **Client Tier**: Capacitor Android native wrapper running a modern React 18 SPA.
-  > - **Cloud Tier**: Render Static Cloud for web administration, Supabase Cloud for GoTrue authentication and real-time WebSockets.
-  > - **Data Tier**: PostgreSQL with PL/pgSQL stored procedures, pg_cron lifecycle triggers, and Row Level Security."
-* **Transition:** "Let us review our rigorous quality assurance and verification results."
+  > "Slide 18 details our embedded IoT subsystem for precision agriculture.
+  > - **Hardware Circuit**: An ESP32 NodeMCU microcontroller connects to a corrosion-resistant capacitive soil sensor powered safely from the 3.3V rail. We intentionally routed analog data to **GPIO 34 (ADC1 Channel 6)** because ESP32 ADC2 channels conflict with the 2.4 GHz Wi-Fi radio. ADC1 guarantees jitter-free readings with 10-sample averaging.
+  > - **Embedded Web Engine**: Running natively on port 80 directly from flash memory, it serves a dark-mode mobile dashboard and a real-time JSON `/data` endpoint polled every 2 seconds.
+  > - **Non-blocking Resilience**: It uses non-blocking timers and background Wi-Fi station reconnection every 5 seconds, ensuring uninterrupted operation."
+* **Transition:** "Now, let us examine the complete full-stack architecture across both cloud and edge tiers."
 
 ---
 
-## Slide 19 — Quality Assurance: Testing, Verification & Deployment Results
-* **Main Message:** 115 passing database tests, Playwright browser E2E, and real Android 16 physical device verification.
+## Slide 19 — Technical Architecture: Full-Stack System Architecture & Technology Stack
+* **Main Message:** Four integrated tiers: Client tier (Capacitor/React), Cloud tier (Render/Supabase), Data tier (PostgreSQL), and Embedded IoT tier (ESP32/C++).
 * **Spoken Script:**
-  > "Our implementation is validated with empirical proof:
-  > - **OxLint**: Zero linting errors across 136 code files.
+  > "Our architecture divides into four unified tiers:
+  > - **Client Tier**: Capacitor Android native wrapper running a modern React 18 SPA.
+  > - **Cloud Tier**: Render Static Cloud for web administration, Supabase Cloud for GoTrue authentication and real-time WebSockets.
+  > - **Data Tier**: PostgreSQL with PL/pgSQL stored procedures, pg_cron lifecycle triggers, and Row Level Security.
+  > - **Embedded IoT Tier**: Autonomous ESP32 C++ firmware with Arduino Core hosting an HTTP server and `/data` telemetry API."
+* **Transition:** "Let us review our rigorous quality assurance and multi-tier verification results."
+
+---
+
+## Slide 20 — Quality Assurance: Testing, Verification & Deployment Results
+* **Main Message:** 115 passing database tests, Playwright browser E2E, real Android 16 physical device verification, and ESP32 Arduino CLI build verification.
+* **Spoken Script:**
+  > "Our implementation is validated with empirical proof across software and hardware:
   > - **Automated Suite**: **115 passing tests** across 37 test suites in an in-memory PGlite database, verifying RLS policies, slot locking, and 14-hour refund logic.
   > - **Browser E2E**: Playwright tests verifying key hardening and SPA 404 routing.
-  > - **Physical Device**: Built Android APK (v1.1, code 2) tested on a real Android 16 smartphone (`AIN065`), confirming zero crashes and live Supabase streaming."
+  > - **Physical Phone**: Built Android APK (v1.1, code 2) tested on a real Android 16 smartphone (`AIN065`), confirming zero crashes and live Supabase streaming.
+  > - **Embedded IoT Firmware**: Clean Arduino CLI compilation (935 KB flash, 47 KB RAM) with zero warnings and verified non-blocking web server engine."
 * **Transition:** "Finally, let us look at our project conclusions and future trajectory."
 
 ---
 
-## Slide 20 — Conclusion & Next Steps: Project Summary & Future Horizons
+## Slide 21 — Conclusion & Next Steps: Project Summary & Future Horizons
 * **Main Message:** Summary of accomplishments, planned enhancements, and formal Q&A opening.
 * **Spoken Script:**
-  > "In conclusion, AgroConnect bridges the gap between rural farmers and scientific agriculture through a secure, verified, and localized digital platform. In the future, we plan to integrate on-device TensorFlow Lite computer vision models for offline leaf disease scanning, Malayalam voice-assisted queries, and IoT soil moisture sensors.
+  > "In conclusion, AgroConnect bridges the gap between rural farmers and scientific agriculture through a secure, verified, and localized digital platform combined with real-time edge IoT soil telemetry.
+  > Planned future enhancements include on-device TensorFlow Lite computer vision models for offline leaf disease scanning, Malayalam voice-assisted queries, and automated solenoid irrigation relays triggered directly by the ESP32 when soil moisture drops below threshold.
   > Thank you to the evaluation committee and my guide Ms. Sona Maria Sebastian. I welcome your questions and feedback."
+

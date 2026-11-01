@@ -1176,47 +1176,171 @@ def create_presentation():
         "and finishes with transparent ratings and automated transaction auditing.")
 
     # =========================================================================
-    # SLIDE 18: SYSTEM ARCHITECTURE & TECH STACK
+    # SLIDE 18: AGROCONNECT IOT: AUTONOMOUS SOIL MOISTURE TELEMETRY
     # =========================================================================
     s18 = prs.slides.add_slide(blank_layout)
     set_slide_background(s18)
-    add_header(s18, "Full-Stack System Architecture & Technology Stack", "Technical Architecture")
+    add_header(s18, "Autonomous Soil Moisture Telemetry via ESP32", "IoT Hardware Subsystem")
     add_footer(s18, 18)
+
+    # Left Card: Hardware Circuit & Pinout Architecture
+    add_card(s18, Inches(0.6), Inches(1.3), Inches(4.3), Inches(3.0), bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
+    tx_hw = s18.shapes.add_textbox(Inches(0.8), Inches(1.45), Inches(3.9), Inches(2.7))
+    tf_hw = tx_hw.text_frame
+    tf_hw.word_wrap = True
+    tf_hw.margin_left = tf_hw.margin_right = tf_hw.margin_top = tf_hw.margin_bottom = 0
+
+    p_hw = tf_hw.paragraphs[0]
+    p_hw.text = "Hardware Wiring & ADC1 Configuration"
+    p_hw.font.name = FONT_TITLE
+    p_hw.font.size = Pt(12.5)
+    p_hw.font.bold = True
+    p_hw.font.color.rgb = COLOR_ACCENT_GREEN
+
+    hw_items = [
+        ("ESP32 Microcontroller", "30-pin NodeMCU-32S / ESP-WROOM-32 with dual-core 240 MHz Tensilica LX6, 2.4 GHz Wi-Fi radio."),
+        ("Capacitive Soil Sensor (v1.2)", "Corrosion-resistant capacitive probe; measures soil dielectric permittivity without DC electrolysis."),
+        ("Safe 3.3V Power Rail (3V3)", "Sensor powered strictly from 3V3 rail to protect ESP32 inputs from destructive 5V overvoltage."),
+        ("ADC1 Channel 6 (GPIO 34)", "Crucial design choice: ADC2 channels conflict with Wi-Fi RF radio; ADC1 guarantees jitter-free readings."),
+        ("Multi-Sample Averaging", "Samples 10 analog readings at 500µs intervals to filter electrical interference and transients.")
+    ]
+
+    for title, desc in hw_items:
+        p1 = tf_hw.add_paragraph()
+        p1.text = f"• {title}: "
+        p1.font.name = FONT_TITLE
+        p1.font.size = Pt(9.2)
+        p1.font.bold = True
+        p1.font.color.rgb = COLOR_TEXT_MAIN
+        p1.space_before = Pt(3)
+
+        r = p1.add_run()
+        r.text = desc
+        r.font.name = FONT_BODY
+        r.font.size = Pt(8.5)
+        r.font.bold = False
+        r.font.color.rgb = COLOR_TEXT_MUTED
+
+    # Right Card: Embedded Firmware & Real-time Web Server
+    add_card(s18, Inches(5.1), Inches(1.3), Inches(4.3), Inches(3.0), bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
+    tx_fw = s18.shapes.add_textbox(Inches(5.3), Inches(1.45), Inches(3.9), Inches(2.7))
+    tf_fw = tx_fw.text_frame
+    tf_fw.word_wrap = True
+    tf_fw.margin_left = tf_fw.margin_right = tf_fw.margin_top = tf_fw.margin_bottom = 0
+
+    p_fw = tf_fw.paragraphs[0]
+    p_fw.text = "Embedded Web Server & Telemetry Engine"
+    p_fw.font.name = FONT_TITLE
+    p_fw.font.size = Pt(12.5)
+    p_fw.font.bold = True
+    p_fw.font.color.rgb = COLOR_ACCENT_BLUE
+
+    fw_items = [
+        ("Standalone Web Server (Port 80)", "Hosted directly in SPI flash via WebServer.h; zero dependency on cloud brokers, Node.js, or external servers."),
+        ("Live HTML5 Dashboard (/)", "Dark-mode, mobile-responsive UI with dynamic SVG gauge, progress indicator, and auto-calibrated status."),
+        ("Asynchronous JSON API (/data)", "Returns live telemetry payload polled every 2s: {\"raw\": 2150, \"moisture\": 52, \"status\": \"Moderate\"}."),
+        ("Non-Blocking Reconnection", "Background Wi-Fi state check runs on 5s timer; maintains web server responsiveness even during signal drops."),
+        ("Boundary Calibration Guard", "Inverts capacitive analog values (DRY_VALUE: 3000 -> 0%, WET_VALUE: 1300 -> 100%) with division-by-zero protection.")
+    ]
+
+    for title, desc in fw_items:
+        p1 = tf_fw.add_paragraph()
+        p1.text = f"• {title}: "
+        p1.font.name = FONT_TITLE
+        p1.font.size = Pt(9.2)
+        p1.font.bold = True
+        p1.font.color.rgb = COLOR_TEXT_MAIN
+        p1.space_before = Pt(3)
+
+        r = p1.add_run()
+        r.text = desc
+        r.font.name = FONT_BODY
+        r.font.size = Pt(8.5)
+        r.font.bold = False
+        r.font.color.rgb = COLOR_TEXT_MUTED
+
+    # Bottom Stat Row: 4 metrics
+    bottom_stats = [
+        ("Core Toolchain", "Arduino CLI 1.x / ESP32 Core", COLOR_ACCENT_BLUE),
+        ("Memory Footprint", "Flash: 935 KB (71%) · RAM: 47 KB", COLOR_ACCENT_GREEN),
+        ("Wi-Fi Station Mode", "2.4 GHz 802.11 b/g/n Hotspot", COLOR_ACCENT_AMBER),
+        ("Telemetry Latency", "500ms sample / 2.0s refresh", COLOR_ACCENT_BLUE),
+    ]
+
+    bw = Inches(2.1)
+    b_left = Inches(0.6)
+    for label, val, col in bottom_stats:
+        add_card(s18, b_left, Inches(4.4), bw, Inches(0.65), bg_color=RGBColor(16, 24, 34), border_color=COLOR_CARD_BORDER)
+        tx_b = s18.shapes.add_textbox(b_left + Inches(0.1), Inches(4.44), bw - Inches(0.2), Inches(0.55))
+        tf_b = tx_b.text_frame
+        tf_b.word_wrap = True
+        tf_b.margin_left = tf_b.margin_right = tf_b.margin_top = tf_b.margin_bottom = 0
+
+        p1 = tf_b.paragraphs[0]
+        p1.text = label
+        p1.font.name = FONT_BODY
+        p1.font.size = Pt(8.0)
+        p1.font.color.rgb = COLOR_TEXT_DIM
+
+        p2 = tf_b.add_paragraph()
+        p2.text = val
+        p2.font.name = FONT_TITLE
+        p2.font.size = Pt(9.0)
+        p2.font.bold = True
+        p2.font.color.rgb = col
+        p2.space_before = Pt(1)
+
+        b_left += bw + Inches(0.133)
+
+    set_notes(s18,
+        "Slide 18 details AgroConnect's embedded IoT telemetry subsystem. "
+        "An ESP32 microcontroller interfaces with a capacitive analog soil moisture sensor on GPIO 34 (ADC1 channel 6), strictly avoiding ADC2 which is disabled during Wi-Fi transmission. "
+        "The ESP32 runs a standalone HTTP server on port 80 hosting both an interactive mobile dashboard and a real-time JSON /data endpoint, giving farmers instant, local soil moisture diagnostics.")
+
+    # =========================================================================
+    # SLIDE 19: SYSTEM ARCHITECTURE & TECH STACK
+    # =========================================================================
+    s19 = prs.slides.add_slide(blank_layout)
+    set_slide_background(s19)
+    add_header(s19, "Full-Stack System Architecture & Technology Stack", "Technical Architecture")
+    add_footer(s19, 19)
 
     tiers = [
         ("Client Tier (Mobile & Web)", COLOR_ACCENT_GREEN, [
-            "• Mobile Native: Apache Cordova / Ionic Capacitor targeting Android SDK 36",
-            "• Frontend Engine: React 18 SPA with Vite bundler & Tailwind CSS",
-            "• Design System: Custom dark mode with Material Symbols and responsive touch UI",
+            "• Mobile Native: Apache Cordova / Ionic Capacitor targeting Android SDK 36 (Java 17, Gradle 9.2.1)",
+            "• Frontend Engine: React 18 SPA with Vite bundler & Tailwind CSS dark theme design system",
             "• Performance: Optimized chunking, local asset caching, offline splash handling"
         ]),
         ("Cloud & Backend Tier", COLOR_ACCENT_BLUE, [
             "• Admin Hosting: Render Cloud Static Site with automatic SPA fallback (404.html)",
             "• Backend Platform: Supabase Cloud PaaS (PostgREST API, Realtime WebSockets)",
-            "• Authentication: Supabase GoTrue API (Email/Password & Google OAuth 2.0)",
             "• Media Storage: Supabase Cloud Storage (post-images, post-videos, expert-cvs)"
         ]),
         ("Data & Security Tier (PostgreSQL)", COLOR_ACCENT_AMBER, [
             "• Database Engine: PostgreSQL hosted on Supabase Cloud (`mgreapakfchcxcrauheq`)",
-            "• Logic Enforcement: PL/pgSQL stored procedures (`SECURITY DEFINER` pinned path)",
-            "• Access Control: Row Level Security (RLS) policies on every table with deny-by-default",
-            "• Automation: pg_cron scheduled lifecycle tasks for meeting closure & reminders"
+            "• Logic Enforcement: PL/pgSQL stored procedures (`SECURITY DEFINER` pinned search_path)",
+            "• Access Control: Row Level Security (RLS) policies on every table with deny-by-default"
+        ]),
+        ("Embedded IoT Subsystem (Edge Telemetry)", COLOR_ACCENT_GREEN, [
+            "• Edge Microcontroller: ESP32 Tensilica LX6 (240 MHz) with native 802.11 b/g/n Wi-Fi stack",
+            "• Soil Telemetry: Capacitive analog probe on GPIO 34 (ADC1_CH6) with multi-sample noise filtering",
+            "• Standalone Server: C++ firmware running WebServer on port 80 serving HTML5 UI & JSON API"
         ])
     ]
 
     t_w = Inches(8.8)
-    t_h = Inches(1.1)
-    t_top = Inches(1.35)
+    t_h = Inches(0.85)
+    t_top = Inches(1.3)
 
     for (t_name, t_col, t_bullets) in tiers:
-        add_card(s18, Inches(0.6), t_top, t_w, t_h, bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
+        add_card(s19, Inches(0.6), t_top, t_w, t_h, bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
 
-        bar = s18.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), t_top, Inches(0.08), t_h)
+        bar = s19.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), t_top, Inches(0.08), t_h)
         bar.fill.solid()
         bar.fill.fore_color.rgb = t_col
         bar.line.fill.background()
 
-        ttx = s18.shapes.add_textbox(Inches(0.85), t_top + Inches(0.08), t_w - Inches(0.35), t_h - Inches(0.16))
+        ttx = s19.shapes.add_textbox(Inches(0.85), t_top + Inches(0.05), t_w - Inches(0.35), t_h - Inches(0.1))
         ttf = ttx.text_frame
         ttf.word_wrap = True
         ttf.margin_left = ttf.margin_right = ttf.margin_top = ttf.margin_bottom = 0
@@ -1224,7 +1348,7 @@ def create_presentation():
         tp1 = ttf.paragraphs[0]
         tp1.text = t_name
         tp1.font.name = FONT_TITLE
-        tp1.font.size = Pt(12)
+        tp1.font.size = Pt(11)
         tp1.font.bold = True
         tp1.font.color.rgb = t_col
 
@@ -1232,58 +1356,63 @@ def create_presentation():
             p = ttf.add_paragraph()
             p.text = b
             p.font.name = FONT_BODY
-            p.font.size = Pt(9.0)
+            p.font.size = Pt(8.5)
             p.font.color.rgb = COLOR_TEXT_MUTED
             p.space_before = Pt(1)
 
-        t_top += Inches(1.22)
+        t_top += Inches(0.92)
 
-    set_notes(s18,
-        "Here is the complete architectural stack. "
+    set_notes(s19,
+        "Here is the complete architectural stack across four integrated tiers: "
         "The client tier uses React 18 packaged with Capacitor into an Android APK. "
-        "The web admin dashboard runs on Render Static Cloud. "
-        "The backend is powered by Supabase with PostgreSQL, enforcing all business logic via PL/pgSQL stored procedures and Row Level Security.")
+        "The admin dashboard runs on Render Static Cloud. "
+        "The backend is powered by Supabase PostgreSQL with PL/pgSQL and RLS. "
+        "The embedded IoT tier runs autonomous C++ firmware on an ESP32 for direct field soil telemetry.")
 
     # =========================================================================
-    # SLIDE 19: IMPLEMENTATION & VERIFICATION
+    # SLIDE 20: IMPLEMENTATION & VERIFICATION
     # =========================================================================
-    s19 = prs.slides.add_slide(blank_layout)
-    set_slide_background(s19)
-    add_header(s19, "Testing, Verification & Deployment Results", "Quality Assurance")
-    add_footer(s19, 19)
+    s20 = prs.slides.add_slide(blank_layout)
+    set_slide_background(s20)
+    add_header(s20, "Testing, Verification & Deployment Results", "Quality Assurance")
+    add_footer(s20, 20)
 
     test_cards = [
         ("Automated Test Suite (PGlite)", "115 Tests Passed · 0 Failures", COLOR_ACCENT_GREEN, [
             "• Unit & Database Integration: Verified across 37 test suites using in-memory PostgreSQL (PGlite).",
             "• Consultation RPC Verification: Tested booking atomicity, reminder delivery, and no-show processing.",
-            "• Financial Refund Reconciliations: Full 14-hour boundary test verifying exact percentage distributions.",
-            "• Role Security Protections: Privilege escalation attacks, self-promotion, and anonymous reads blocked."
+            "• Financial Refund Reconciliations: Full 14-hour boundary test verifying exact percentage distributions."
         ]),
-        ("End-to-End Browser Tests (Playwright)", "3 E2E Suites Passed · Chrome", COLOR_ACCENT_BLUE, [
-            "• Negative Authentication Checks: Verified invalid credentials return user-friendly errors without API key failure.",
-            "• Publishable Key Hardening: Eliminated legacy JWT 'Invalid API key' failure on production Supabase endpoints.",
-            "• Deep-Link Routing: Tested SPA 404 fallback ensuring direct route refreshes (e.g. /users) load cleanly."
+        ("End-to-End Browser & Key Hardening", "Playwright Suites Passed", COLOR_ACCENT_BLUE, [
+            "• Key Hardening: Fixed publishable key configuration in admin dashboard, eliminating legacy JWT 401 errors.",
+            "• Live Render Verification: Admin dashboard confirmed running live and healthy on Render cloud hosting.",
+            "• Deep-Link Routing: Tested SPA 404 fallback ensuring direct route refreshes load cleanly."
         ]),
-        ("Physical Device Deployment (Android 16)", "Verified on Realme/Oppo AIN065", COLOR_ACCENT_AMBER, [
+        ("Physical Android Phone (Android 16)", "Verified on Realme/Oppo AIN065", COLOR_ACCENT_AMBER, [
             "• Package Identity: `com.agroconnect.app` · Version 1.1 (versionCode 2) built with JDK 17 & Gradle 9.2.1.",
             "• Live On-Device Execution: Streamed install via ADB; zero crashes or unhandled exceptions in Android logcat.",
             "• Real Data Verification: Successfully rendered live Kerala district feed, verified expert cards, and profile views."
+        ]),
+        ("Embedded IoT Firmware & Compilation", "Arduino CLI esp32:esp32 Passed", COLOR_ACCENT_GREEN, [
+            "• Compilation Success: 935,108 bytes (71% flash) and 47,464 bytes (14% RAM) built cleanly with zero warnings.",
+            "• Non-Blocking Web Engine: HTTP server on port 80 with 500ms multi-sample ADC1 caching and /data JSON endpoint.",
+            "• Failover Resilience: Background Wi-Fi state machine re-establishes station connection every 5s automatically."
         ])
     ]
 
     tc_w = Inches(8.8)
-    tc_h = Inches(1.1)
-    tc_top = Inches(1.35)
+    tc_h = Inches(0.85)
+    tc_top = Inches(1.3)
 
     for (tc_title, tc_badge, tc_col, tc_bullets) in test_cards:
-        add_card(s19, Inches(0.6), tc_top, tc_w, tc_h, bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
+        add_card(s20, Inches(0.6), tc_top, tc_w, tc_h, bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
 
-        bar = s19.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), tc_top, Inches(0.08), tc_h)
+        bar = s20.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), tc_top, Inches(0.08), tc_h)
         bar.fill.solid()
         bar.fill.fore_color.rgb = tc_col
         bar.line.fill.background()
 
-        ttx = s19.shapes.add_textbox(Inches(0.85), tc_top + Inches(0.06), tc_w - Inches(0.35), tc_h - Inches(0.12))
+        ttx = s20.shapes.add_textbox(Inches(0.85), tc_top + Inches(0.05), tc_w - Inches(0.35), tc_h - Inches(0.1))
         ttf = ttx.text_frame
         ttf.word_wrap = True
         ttf.margin_left = ttf.margin_right = ttf.margin_top = ttf.margin_bottom = 0
@@ -1291,7 +1420,7 @@ def create_presentation():
         tp1 = ttf.paragraphs[0]
         tp1.text = f"{tc_title}   —   {tc_badge}"
         tp1.font.name = FONT_TITLE
-        tp1.font.size = Pt(11.5)
+        tp1.font.size = Pt(11)
         tp1.font.bold = True
         tp1.font.color.rgb = tc_col
 
@@ -1299,28 +1428,29 @@ def create_presentation():
             p = ttf.add_paragraph()
             p.text = b
             p.font.name = FONT_BODY
-            p.font.size = Pt(8.8)
+            p.font.size = Pt(8.5)
             p.font.color.rgb = COLOR_TEXT_MUTED
-            p.space_before = Pt(1.5)
+            p.space_before = Pt(1)
 
-        tc_top += Inches(1.22)
+        tc_top += Inches(0.92)
 
-    set_notes(s19,
-        "Verification is evidence-based, not assumed. "
-        "We executed 115 database integration tests with 100% pass rates, verifying atomic slot reservations and financial refund rules. "
-        "Browser E2E tests verified key hardening, and we successfully installed and verified the native build on a physical Android 16 device.")
+    set_notes(s20,
+        "Verification is evidence-based across all software and embedded tiers: "
+        "115 database integration tests with 100% pass rates, browser E2E test hardening, "
+        "successful physical Android 16 APK installation and verification, "
+        "and clean Arduino CLI compilation and test verification for the ESP32 IoT firmware.")
 
     # =========================================================================
-    # SLIDE 20: CONCLUSION & FUTURE SCOPE
+    # SLIDE 21: CONCLUSION & FUTURE SCOPE
     # =========================================================================
-    s20 = prs.slides.add_slide(blank_layout)
-    set_slide_background(s20)
-    add_header(s20, "Project Summary & Future Horizons", "Conclusion & Next Steps")
-    add_footer(s20, 20)
+    s21 = prs.slides.add_slide(blank_layout)
+    set_slide_background(s21)
+    add_header(s21, "Project Summary & Future Horizons", "Conclusion & Next Steps")
+    add_footer(s21, 21)
 
     # Left: Future Scope
-    add_card(s20, Inches(0.6), Inches(1.3), Inches(4.3), Inches(3.6), bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
-    tx_f = s20.shapes.add_textbox(Inches(0.8), Inches(1.45), Inches(3.9), Inches(3.3))
+    add_card(s21, Inches(0.6), Inches(1.3), Inches(4.3), Inches(3.6), bg_color=COLOR_CARD, border_color=COLOR_CARD_BORDER)
+    tx_f = s21.shapes.add_textbox(Inches(0.8), Inches(1.45), Inches(3.9), Inches(3.3))
     tff = tx_f.text_frame
     tff.word_wrap = True
     tff.margin_left = tff.margin_right = tff.margin_top = tff.margin_bottom = 0
@@ -1335,7 +1465,7 @@ def create_presentation():
     future_pts = [
         ("Computer Vision Model Integration", "Deploy on-device TensorFlow Lite models for offline leaf disease classification."),
         ("Multilingual Vernacular Support", "Voice-assisted query input and audio playback in Malayalam for older farmers."),
-        ("IoT Telematics Integration", "Connect soil moisture and NPK telemetry sensors for proactive irrigation scheduling."),
+        ("Automated Solenoid Irrigation Relay", "Expand ESP32 node to trigger drip irrigation solenoid valves when moisture drops below 30%."),
         ("Payment Gateway Onboarding", "Integrate live Razorpay/UPI gateway to transition demo escrow into commercial production.")
     ]
 
@@ -1356,8 +1486,8 @@ def create_presentation():
         p2.space_before = Pt(1)
 
     # Right: Conclusion & Thank you
-    add_card(s20, Inches(5.1), Inches(1.3), Inches(4.3), Inches(3.6), bg_color=RGBColor(16, 26, 38), border_color=COLOR_ACCENT_GREEN)
-    tx_th = s20.shapes.add_textbox(Inches(5.3), Inches(1.6), Inches(3.9), Inches(3.0))
+    add_card(s21, Inches(5.1), Inches(1.3), Inches(4.3), Inches(3.6), bg_color=RGBColor(16, 26, 38), border_color=COLOR_ACCENT_GREEN)
+    tx_th = s21.shapes.add_textbox(Inches(5.3), Inches(1.6), Inches(3.9), Inches(3.0))
     tfth = tx_th.text_frame
     tfth.word_wrap = True
     tfth.margin_left = tfth.margin_right = tfth.margin_top = tfth.margin_bottom = 0
@@ -1371,7 +1501,7 @@ def create_presentation():
     pth1.alignment = PP_ALIGN.CENTER
 
     pth2 = tfth.add_paragraph()
-    pth2.text = "AgroConnect demonstrates how modern cloud platforms, regional localization, and AI assistance can modernize rural agriculture."
+    pth2.text = "AgroConnect demonstrates how modern cloud platforms, regional localization, AI assistance, and edge IoT telemetry modernize rural agriculture."
     pth2.font.name = FONT_BODY
     pth2.font.size = Pt(10)
     pth2.font.color.rgb = COLOR_TEXT_MAIN
@@ -1395,9 +1525,9 @@ def create_presentation():
     pth4.alignment = PP_ALIGN.CENTER
     pth4.space_before = Pt(2)
 
-    set_notes(s20,
-        "In conclusion, AgroConnect delivers a cohesive, verified digital platform connecting farmers with certified agronomists and AI insights. "
-        "Future enhancements will introduce computer vision on-device leaf scanning and Malayalam voice queries. "
+    set_notes(s21,
+        "In conclusion, AgroConnect delivers a cohesive, verified digital platform connecting farmers with certified agronomists, AI insights, and real-time ESP32 soil moisture telemetry. "
+        "Future enhancements will introduce computer vision on-device leaf scanning and automated solenoid irrigation relays. "
         "Thank you to the panel and my guide Ms. Sona Maria Sebastian. I now invite your questions and feedback.")
 
     # Save presentation

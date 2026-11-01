@@ -25,6 +25,8 @@ This document catalogues every genuine screenshot and interface asset embedded i
 | **15** | Expert KYC Onboarding | `kyc_cv_uploaded.png` | `appium-results/2026-09-26_21-32/33_scenario_e1_kyc_step2_cv_uploaded.png` | Expert application screen with degree details and uploaded PDF CV resume attachment. |
 | **15** | Expert KYC Onboarding | `expert_catchup.png` | `appium-results/2026-10-25_staging_device/06_expert_catchup.png` | Approved agronomist dashboard displaying consultation schedule and availability settings. |
 | **16** | Admin Dashboard & Governance | `admin_dashboard_login.png` | Playwright Desktop Capture / `docs/presentation_assets/` | Cloud-hosted Admin Dashboard desktop interface on Render Static Cloud. |
+| **18** | IoT Hardware Subsystem | *Circuit & Architecture Cards* | Code: `soil_monitor/soil_monitor.ino` | ESP32 pinout wiring (GPIO 34 ADC1), capacitive sensor calibration, and embedded web server telemetry. |
+| **19** | Full-Stack Architecture | *Tier System Cards* | System Specification / Architecture | Four-tier architectural overview across Mobile Client, Render Cloud, Supabase PaaS, and ESP32 Edge IoT. |
 
 ---
 
@@ -32,3 +34,4 @@ This document catalogues every genuine screenshot and interface asset embedded i
 1. **Zero Stock Images**: All embedded interface captures were gathered directly from actual test runs, device sessions, and web builds of AgroConnect.
 2. **Confidentiality Maintained**: All captures use synthetic test data (`user1@agroconnect.com`, `expert1`, demo accounts) or anonymized placeholders. Zero private phone numbers, personal Gmail addresses, passwords, or production database secrets appear on any slide.
 3. **Aspect Ratios**: Screen captures are fitted and centered with dark container backings to prevent distortion, stretching, or pixelation when projected in classroom settings.
+
